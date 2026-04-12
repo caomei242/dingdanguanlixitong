@@ -1,7 +1,7 @@
 import time
 
 from PySide6.QtGui import QColor, QGuiApplication, QImage
-from PySide6.QtWidgets import QScrollArea
+from PySide6.QtWidgets import QFrame, QScrollArea
 
 from strawberry_order_management.models import ParsedOrder
 from strawberry_order_management import app as app_module
@@ -198,3 +198,5 @@ def test_intake_page_wraps_content_in_scroll_area(qtbot):
 
     assert scroll_area is not None
     assert scroll_area.widgetResizable() is True
+    assert scroll_area.frameShape() == QFrame.Shape.NoFrame
+    assert scroll_area.widget().objectName() == "PageContent"

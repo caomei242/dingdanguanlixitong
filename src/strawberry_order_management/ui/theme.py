@@ -11,6 +11,15 @@ QMainWindow {
     background: #f6f8fc;
 }
 
+QScrollArea {
+    background: transparent;
+    border: none;
+}
+
+QWidget#PageContent {
+    background: #f6f8fc;
+}
+
 QFrame#ShellFrame,
 QFrame#CardFrame {
     background: rgba(255, 255, 255, 0.96);

@@ -90,12 +90,14 @@ class IntakePage(QWidget):
         right_column.addWidget(self.address_widget)
 
         content = QWidget()
+        content.setObjectName("PageContent")
         content_layout = QHBoxLayout(content)
         content_layout.addLayout(left_column, 3)
         content_layout.addLayout(right_column, 2)
 
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
+        scroll_area.setFrameShape(QScrollArea.Shape.NoFrame)
         scroll_area.setWidget(content)
 
         layout = QVBoxLayout(self)
@@ -193,3 +195,15 @@ class IntakePage(QWidget):
     def _clear_worker_refs(self) -> None:
         self._thread = None
         self._worker = None
+
+    def shutdown_background_job(self) -> None:
+        thread = self._thread
+        if thread is None:
+            return
+        thread.quit()
+        thread.wait(3000)
+        self._clear_worker_refs()
+
+    def closeEvent(self, event) -> None:
+        self.shutdown_background_job()
+        super().closeEvent(event)

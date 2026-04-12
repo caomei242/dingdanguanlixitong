@@ -162,4 +162,5 @@ def test_main_window_submits_to_feishu_in_background(qtbot, tmp_path, monkeypatc
         lambda: window.intake_page.capture_widget.status_label.text() == "已写入飞书：草莓店",
         timeout=3000,
     )
+    qtbot.waitUntil(lambda: window._submit_thread is None, timeout=3000)
     assert history_store.list_items()[0]["status"] == "已写入飞书"

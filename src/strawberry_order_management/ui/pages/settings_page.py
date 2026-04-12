@@ -83,6 +83,7 @@ class SettingsPage(QWidget):
         card_layout.addWidget(self.save_button)
 
         content = QWidget()
+        content.setObjectName("PageContent")
         content_layout = QVBoxLayout(content)
         content_layout.addLayout(header)
         content_layout.addWidget(card)
@@ -90,6 +91,7 @@ class SettingsPage(QWidget):
 
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
+        scroll_area.setFrameShape(QScrollArea.Shape.NoFrame)
         scroll_area.setWidget(content)
 
         root = QVBoxLayout(self)

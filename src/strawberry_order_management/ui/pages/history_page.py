@@ -26,6 +26,7 @@ class HistoryPage(QWidget):
         card_layout.addWidget(self.list_widget)
 
         content = QWidget()
+        content.setObjectName("PageContent")
         content_layout = QVBoxLayout(content)
         content_layout.addWidget(title)
         content_layout.addWidget(subtitle)
@@ -34,6 +35,7 @@ class HistoryPage(QWidget):
 
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
+        scroll_area.setFrameShape(QScrollArea.Shape.NoFrame)
         scroll_area.setWidget(content)
 
         root = QVBoxLayout(self)

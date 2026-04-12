@@ -1,4 +1,4 @@
-from PySide6.QtWidgets import QScrollArea
+from PySide6.QtWidgets import QFrame, QScrollArea
 
 from strawberry_order_management.ui.main_window import MainWindow
 from strawberry_order_management.ui.pages.history_page import HistoryPage
@@ -145,6 +145,8 @@ def test_history_page_wraps_content_in_scroll_area(qtbot):
 
     assert scroll_area is not None
     assert scroll_area.widgetResizable() is True
+    assert scroll_area.frameShape() == QFrame.Shape.NoFrame
+    assert scroll_area.widget().objectName() == "PageContent"
 
 
 def test_settings_page_wraps_content_in_scroll_area(qtbot):
@@ -155,6 +157,8 @@ def test_settings_page_wraps_content_in_scroll_area(qtbot):
 
     assert scroll_area is not None
     assert scroll_area.widgetResizable() is True
+    assert scroll_area.frameShape() == QFrame.Shape.NoFrame
+    assert scroll_area.widget().objectName() == "PageContent"
 
 
 def test_main_window_navigates_between_three_pages(qtbot):

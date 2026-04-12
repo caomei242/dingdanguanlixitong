@@ -282,6 +282,19 @@ class MainWindow(QMainWindow):
         self._submit_thread = None
         self._submit_worker = None
 
+    def _shutdown_submit_job(self) -> None:
+        thread = self._submit_thread
+        if thread is None:
+            return
+        thread.quit()
+        thread.wait(3000)
+        self._clear_submit_refs()
+
+    def closeEvent(self, event) -> None:
+        self._shutdown_submit_job()
+        self.intake_page.shutdown_background_job()
+        super().closeEvent(event)
+
     @staticmethod
     def _build_order_pipeline(payload: dict) -> OrderPipeline:
         if payload.get("ocr_use_mcp"):

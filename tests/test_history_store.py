@@ -7,6 +7,7 @@ def test_history_store_appends_and_updates_status(tmp_path: Path):
     store = HistoryStore(tmp_path / "history.json")
     item = store.append(
         {
+            "shop_name": "草莓店",
             "order_id": "6952003434324366473",
             "recipient_name": "何女士",
             "status": "pending_review",
@@ -17,6 +18,7 @@ def test_history_store_appends_and_updates_status(tmp_path: Path):
     rows = store.list_items()
 
     assert rows[0]["order_id"] == "6952003434324366473"
+    assert rows[0]["shop_name"] == "草莓店"
     assert rows[0]["status"] == "written"
 
 

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -11,6 +13,7 @@ from PySide6.QtWidgets import (
     QMainWindow,
 )
 
+from strawberry_order_management.history import HistoryStore
 from strawberry_order_management.services.helper_client import HelperClient
 from strawberry_order_management.services.mcp_ocr_client import McpOCRClient
 from strawberry_order_management.services.ocr_client import OCRClient
@@ -26,12 +29,14 @@ class MainWindow(QMainWindow):
         self,
         on_settings_save=None,
         config_store=None,
+        history_store=None,
         order_pipeline_factory=None,
     ) -> None:
         super().__init__()
         self.setWindowTitle("草莓订单管理系统")
         self._on_settings_save = on_settings_save
         self._config_store = config_store
+        self._history_store = history_store
         self._order_pipeline_factory = order_pipeline_factory or self._build_order_pipeline
 
         self.nav = QListWidget()
@@ -39,7 +44,11 @@ class MainWindow(QMainWindow):
         self.nav.setFixedWidth(180)
 
         self.stack = QStackedWidget()
-        self.intake_page = IntakePage(on_process_image=self._extract_order_from_image)
+        self.intake_page = IntakePage(
+            on_process_image=self._extract_order_from_image,
+            on_submit=self._handle_submit_request,
+            on_save_history=self._handle_save_history_request,
+        )
         self.history_page = HistoryPage()
         self.settings_page = SettingsPage()
         self.stack.addWidget(self.intake_page)
@@ -78,15 +87,53 @@ class MainWindow(QMainWindow):
         self.settings_page.save_requested.connect(self._handle_settings_save)
 
         if self._config_store is not None:
-            self.settings_page.load_payload(self._config_store.load())
+            payload = self._config_store.load()
+            self.settings_page.load_payload(payload)
+            self._sync_shop_selector(payload)
+        if self._history_store is not None:
+            self.history_page.load_rows(self._history_store.list_items())
 
         apply_theme(self)
 
     def _handle_settings_save(self, payload: dict) -> None:
         if self._config_store is not None:
             self._config_store.save(payload)
+        self._sync_shop_selector(payload)
         if self._on_settings_save is not None:
             self._on_settings_save(payload)
+
+    def _handle_save_history_request(self, payload: dict) -> None:
+        self._append_history(payload, "仅存历史")
+
+    def _handle_submit_request(self, payload: dict) -> None:
+        self._append_history(payload, "待写入飞书")
+
+    def _append_history(self, payload: dict, status: str) -> None:
+        if self._history_store is None:
+            return
+        order = payload["order"]
+        row = {
+            "shop_name": payload.get("shop_name") or "-",
+            "order_id": order.order_id,
+            "recipient_name": order.recipient_name,
+            "status": status,
+            "product_name": order.product_name,
+            "created_at": datetime.now().isoformat(timespec="seconds"),
+        }
+        self._history_store.append(row)
+        self.history_page.load_rows(self._history_store.list_items())
+
+    def _sync_shop_selector(self, payload: dict) -> None:
+        shop_names = []
+        for shop in payload.get("shops", []):
+            if isinstance(shop, dict):
+                name = str(shop.get("name", "")).strip()
+                if name:
+                    shop_names.append(name)
+        self.intake_page.set_shop_names(
+            shop_names,
+            str(payload.get("selected_shop_name", "")).strip() or None,
+        )
 
     def _extract_order_from_image(self, image_bytes: bytes):
         payload = self.settings_page.to_payload()

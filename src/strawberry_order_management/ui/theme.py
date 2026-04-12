@@ -66,7 +66,7 @@ QPushButton:disabled {
     color: #f7f9fd;
 }
 
-QLineEdit, QTextEdit {
+QLineEdit, QTextEdit, QComboBox {
     background: #ffffff;
     border: 1px solid #d9e2f1;
     border-radius: 12px;
@@ -78,6 +78,10 @@ QTextEdit {
     min-height: 84px;
 }
 
+QComboBox {
+    padding-right: 28px;
+}
+
 QLabel#SectionTitle {
     font-size: 18px;
     font-weight: 700;
@@ -86,6 +90,24 @@ QLabel#SectionTitle {
 
 QLabel#MutedText {
     color: #74829a;
+}
+
+QLabel#OrderFieldLabel {
+    color: #7c8aa6;
+    font-weight: 600;
+}
+
+QLineEdit#OrderValueEdit,
+QTextEdit#OrderValueEdit {
+    color: #17253d;
+    background: #fcfdff;
+    border: 1px solid #dbe4f4;
+}
+
+QTextEdit#HighlightedValueEdit {
+    color: #15233d;
+    background: #f7faff;
+    border: 1px solid #c7d7ff;
 }
 """
 

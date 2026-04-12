@@ -44,3 +44,7 @@ class HistoryStore:
 
     def list_items(self) -> list[dict[str, Any]]:
         return self._load_rows()
+
+
+def default_history_path() -> Path:
+    return Path.home() / ".config" / "strawberry-order-management" / "history.json"

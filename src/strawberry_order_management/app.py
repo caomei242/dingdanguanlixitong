@@ -1,6 +1,7 @@
 from PySide6.QtWidgets import QApplication
 
 from strawberry_order_management.config import ConfigStore, default_config_path
+from strawberry_order_management.history import HistoryStore, default_history_path
 from strawberry_order_management.ui.main_window import MainWindow
 
 
@@ -14,7 +15,10 @@ def build_app() -> QApplication:
 
 def main() -> int:
     app = build_app()
-    window = MainWindow(config_store=ConfigStore(default_config_path()))
+    window = MainWindow(
+        config_store=ConfigStore(default_config_path()),
+        history_store=HistoryStore(default_history_path()),
+    )
     window.show()
     return app.exec()
 

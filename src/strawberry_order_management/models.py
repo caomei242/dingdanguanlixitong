@@ -24,3 +24,11 @@ class ParsedOrder:
     code: str
     address: str
     delivery_note: str
+
+
+@dataclass(frozen=True)
+class ShopConfig:
+    name: str
+    app_token: str
+    table_id: str
+    table_name: str

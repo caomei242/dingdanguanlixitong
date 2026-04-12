@@ -3,8 +3,10 @@ from __future__ import annotations
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QCheckBox,
+    QComboBox,
     QFormLayout,
     QFrame,
+    QHBoxLayout,
     QLabel,
     QLineEdit,
     QPushButton,
@@ -28,10 +30,17 @@ class SettingsPage(QWidget):
         self.helper_api_key_edit = QLineEdit()
         self.feishu_app_id_edit = QLineEdit()
         self.feishu_app_secret_edit = QLineEdit()
-        self.feishu_table_id_edit = QLineEdit()
-        self.feishu_table_name_edit = QLineEdit()
+        self.shop_selector = QComboBox()
+        self.shop_name_edit = QLineEdit()
+        self.shop_app_token_edit = QLineEdit()
+        self.shop_table_id_edit = QLineEdit()
+        self.shop_table_name_edit = QLineEdit()
+        self.add_shop_button = QPushButton("新增店铺")
+        self.save_shop_button = QPushButton("保存店铺")
+        self.remove_shop_button = QPushButton("删除店铺")
         self.save_button = QPushButton("保存/应用")
         self.ocr_mcp_command_edit.setText("uvx minimax-coding-plan-mcp -y")
+        self._shops: list[dict[str, str]] = []
 
         header = QVBoxLayout()
         title = QLabel("设置")
@@ -50,13 +59,26 @@ class SettingsPage(QWidget):
         form.addRow("辅助提取 API Key", self.helper_api_key_edit)
         form.addRow("飞书 App ID", self.feishu_app_id_edit)
         form.addRow("飞书 App Secret", self.feishu_app_secret_edit)
-        form.addRow("飞书表格 ID", self.feishu_table_id_edit)
-        form.addRow("飞书表格名称", self.feishu_table_name_edit)
+
+        shop_button_row = QHBoxLayout()
+        shop_button_row.addWidget(self.add_shop_button)
+        shop_button_row.addWidget(self.save_shop_button)
+        shop_button_row.addWidget(self.remove_shop_button)
+
+        shop_form = QFormLayout()
+        shop_form.addRow("已保存店铺", self.shop_selector)
+        shop_form.addRow("店铺名称", self.shop_name_edit)
+        shop_form.addRow("飞书 App Token", self.shop_app_token_edit)
+        shop_form.addRow("飞书 Table ID", self.shop_table_id_edit)
+        shop_form.addRow("表名备注", self.shop_table_name_edit)
 
         card = QFrame()
         card.setObjectName("CardFrame")
         card_layout = QVBoxLayout(card)
         card_layout.addLayout(form)
+        card_layout.addWidget(QLabel("店铺与 Sheet 映射"))
+        card_layout.addLayout(shop_button_row)
+        card_layout.addLayout(shop_form)
         card_layout.addWidget(self.save_button)
 
         root = QVBoxLayout(self)
@@ -64,8 +86,12 @@ class SettingsPage(QWidget):
         root.addWidget(card)
         root.addStretch(1)
         self.save_button.clicked.connect(self._emit_save_requested)
+        self.add_shop_button.clicked.connect(self._handle_add_shop)
+        self.save_shop_button.clicked.connect(self._handle_save_shop)
+        self.remove_shop_button.clicked.connect(self._handle_remove_shop)
+        self.shop_selector.currentIndexChanged.connect(self._load_selected_shop)
 
-    def to_payload(self) -> dict[str, str]:
+    def to_payload(self) -> dict:
         return {
             "ocr_use_mcp": self.ocr_use_mcp_checkbox.isChecked(),
             "ocr_mcp_command": self.ocr_mcp_command_edit.text().strip(),
@@ -75,8 +101,8 @@ class SettingsPage(QWidget):
             "helper_api_key": self.helper_api_key_edit.text().strip(),
             "feishu_app_id": self.feishu_app_id_edit.text().strip(),
             "feishu_app_secret": self.feishu_app_secret_edit.text().strip(),
-            "feishu_table_id": self.feishu_table_id_edit.text().strip(),
-            "feishu_table_name": self.feishu_table_name_edit.text().strip(),
+            "shops": [dict(shop) for shop in self._shops],
+            "selected_shop_name": self.shop_selector.currentText().strip(),
         }
 
     def load_payload(self, payload: dict) -> None:
@@ -91,11 +117,79 @@ class SettingsPage(QWidget):
         self.helper_api_key_edit.setText(self._clean_text(payload.get("helper_api_key")))
         self.feishu_app_id_edit.setText(self._clean_text(payload.get("feishu_app_id")))
         self.feishu_app_secret_edit.setText(self._clean_text(payload.get("feishu_app_secret")))
-        self.feishu_table_id_edit.setText(self._clean_text(payload.get("feishu_table_id")))
-        self.feishu_table_name_edit.setText(self._clean_text(payload.get("feishu_table_name")))
+        self._shops = [
+            {
+                "name": self._clean_text(shop.get("name")),
+                "app_token": self._clean_text(shop.get("app_token")),
+                "table_id": self._clean_text(shop.get("table_id")),
+                "table_name": self._clean_text(shop.get("table_name")),
+            }
+            for shop in payload.get("shops", [])
+            if isinstance(shop, dict) and self._clean_text(shop.get("name"))
+        ]
+        self._refresh_shop_selector(self._clean_text(payload.get("selected_shop_name")))
 
     def _emit_save_requested(self) -> None:
         self.save_requested.emit(self.to_payload())
+
+    def _handle_add_shop(self) -> None:
+        self.shop_name_edit.clear()
+        self.shop_app_token_edit.clear()
+        self.shop_table_id_edit.clear()
+        self.shop_table_name_edit.clear()
+        self.shop_name_edit.setFocus()
+
+    def _handle_save_shop(self) -> None:
+        shop = {
+            "name": self.shop_name_edit.text().strip(),
+            "app_token": self.shop_app_token_edit.text().strip(),
+            "table_id": self.shop_table_id_edit.text().strip(),
+            "table_name": self.shop_table_name_edit.text().strip(),
+        }
+        if not shop["name"]:
+            return
+
+        for index, existing in enumerate(self._shops):
+            if existing["name"] == shop["name"]:
+                self._shops[index] = shop
+                break
+        else:
+            self._shops.append(shop)
+
+        self._refresh_shop_selector(shop["name"])
+
+    def _handle_remove_shop(self) -> None:
+        selected_name = self.shop_selector.currentText().strip()
+        if not selected_name:
+            return
+        self._shops = [shop for shop in self._shops if shop["name"] != selected_name]
+        self._refresh_shop_selector()
+
+    def _refresh_shop_selector(self, selected_name: str | None = None) -> None:
+        self.shop_selector.blockSignals(True)
+        self.shop_selector.clear()
+        self.shop_selector.addItems([shop["name"] for shop in self._shops])
+        if selected_name:
+            index = self.shop_selector.findText(selected_name)
+            if index >= 0:
+                self.shop_selector.setCurrentIndex(index)
+        self.shop_selector.blockSignals(False)
+        self._load_selected_shop()
+
+    def _load_selected_shop(self) -> None:
+        selected_name = self.shop_selector.currentText().strip()
+        for shop in self._shops:
+            if shop["name"] == selected_name:
+                self.shop_name_edit.setText(shop["name"])
+                self.shop_app_token_edit.setText(shop["app_token"])
+                self.shop_table_id_edit.setText(shop["table_id"])
+                self.shop_table_name_edit.setText(shop["table_name"])
+                return
+        if not selected_name:
+            self.shop_name_edit.clear()
+            self.shop_app_token_edit.clear()
+            self.shop_table_id_edit.clear()
+            self.shop_table_name_edit.clear()
 
     @staticmethod
     def _clean_text(value) -> str:

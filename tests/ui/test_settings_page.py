@@ -16,8 +16,11 @@ def test_settings_page_collects_api_configuration(qtbot):
     page.helper_api_key_edit.setText("helper-key")
     page.feishu_app_id_edit.setText("cli_xxx")
     page.feishu_app_secret_edit.setText("secret_xxx")
-    page.feishu_table_id_edit.setText("tbl_xxx")
-    page.feishu_table_name_edit.setText("草莓订单表")
+    page.shop_name_edit.setText("草莓店")
+    page.shop_app_token_edit.setText("app_token_1")
+    page.shop_table_id_edit.setText("tbl_xxx")
+    page.shop_table_name_edit.setText("草莓订单表")
+    page.save_shop_button.click()
 
     payload = page.to_payload()
 
@@ -29,8 +32,15 @@ def test_settings_page_collects_api_configuration(qtbot):
     assert payload["helper_api_key"] == "helper-key"
     assert payload["feishu_app_id"] == "cli_xxx"
     assert payload["feishu_app_secret"] == "secret_xxx"
-    assert payload["feishu_table_id"] == "tbl_xxx"
-    assert payload["feishu_table_name"] == "草莓订单表"
+    assert payload["shops"] == [
+        {
+            "name": "草莓店",
+            "app_token": "app_token_1",
+            "table_id": "tbl_xxx",
+            "table_name": "草莓订单表",
+        }
+    ]
+    assert payload["selected_shop_name"] == "草莓店"
 
 
 def test_settings_page_load_payload_and_save_requested(qtbot):
@@ -46,8 +56,15 @@ def test_settings_page_load_payload_and_save_requested(qtbot):
         "helper_api_key": " helper-key ",
         "feishu_app_id": " cli_xxx ",
         "feishu_app_secret": " secret_xxx ",
-        "feishu_table_id": " tbl_xxx ",
-        "feishu_table_name": " 草莓订单表 ",
+        "shops": [
+            {
+                "name": "草莓店",
+                "app_token": " app_token_1 ",
+                "table_id": " tbl_xxx ",
+                "table_name": " 草莓订单表 ",
+            }
+        ],
+        "selected_shop_name": "草莓店",
     }
 
     emitted = []
@@ -64,8 +81,11 @@ def test_settings_page_load_payload_and_save_requested(qtbot):
     assert page.helper_api_key_edit.text() == "helper-key"
     assert page.feishu_app_id_edit.text() == "cli_xxx"
     assert page.feishu_app_secret_edit.text() == "secret_xxx"
-    assert page.feishu_table_id_edit.text() == "tbl_xxx"
-    assert page.feishu_table_name_edit.text() == "草莓订单表"
+    assert page.shop_selector.count() == 1
+    assert page.shop_selector.currentText() == "草莓店"
+    assert page.shop_app_token_edit.text() == "app_token_1"
+    assert page.shop_table_id_edit.text() == "tbl_xxx"
+    assert page.shop_table_name_edit.text() == "草莓订单表"
     assert emitted == [page.to_payload()]
 
 
@@ -76,11 +96,13 @@ def test_history_page_load_rows_shows_summary_and_items(qtbot):
     page.load_rows(
         [
             {
+                "shop_name": "草莓店",
                 "recipient_name": "何女士",
                 "status": "已写入",
                 "order_id": "6952003434324366473",
             },
             {
+                "shop_name": "蓝莓店",
                 "recipient_name": "彭柏棋",
                 "status": "待重试",
                 "order_id": "6952003434324366474",
@@ -90,8 +112,8 @@ def test_history_page_load_rows_shows_summary_and_items(qtbot):
 
     assert page.summary_label.text() == "共 2 条记录"
     assert page.list_widget.count() == 2
-    assert page.list_widget.item(0).text() == "何女士 · 已写入 · 6952003434324366473"
-    assert page.list_widget.item(1).text() == "彭柏棋 · 待重试 · 6952003434324366474"
+    assert page.list_widget.item(0).text() == "草莓店 · 何女士 · 已写入 · 6952003434324366473"
+    assert page.list_widget.item(1).text() == "蓝莓店 · 彭柏棋 · 待重试 · 6952003434324366474"
 
 
 def test_history_page_renders_none_as_dash(qtbot):
@@ -101,6 +123,7 @@ def test_history_page_renders_none_as_dash(qtbot):
     page.load_rows(
         [
             {
+                "shop_name": None,
                 "recipient_name": None,
                 "status": None,
                 "order_id": None,
@@ -109,7 +132,7 @@ def test_history_page_renders_none_as_dash(qtbot):
     )
 
     assert page.list_widget.count() == 1
-    assert page.list_widget.item(0).text() == "- · - · -"
+    assert page.list_widget.item(0).text() == "- · - · - · -"
 
 
 def test_main_window_navigates_between_three_pages(qtbot):
@@ -157,6 +180,15 @@ def test_main_window_loads_initial_settings_from_config_store(qtbot):
         {
             "helper_base_url": "https://api.minimaxi.com/v1",
             "helper_api_key": "minimax-secret",
+            "shops": [
+                {
+                    "name": "草莓店",
+                    "app_token": "app_token_1",
+                    "table_id": "tbl_1",
+                    "table_name": "草莓订单表",
+                }
+            ],
+            "selected_shop_name": "草莓店",
         }
     )
     window = MainWindow(config_store=store)
@@ -164,6 +196,7 @@ def test_main_window_loads_initial_settings_from_config_store(qtbot):
 
     assert window.settings_page.helper_base_url_edit.text() == "https://api.minimaxi.com/v1"
     assert window.settings_page.helper_api_key_edit.text() == "minimax-secret"
+    assert window.intake_page.shop_selector.currentText() == "草莓店"
 
 
 def test_main_window_saves_settings_into_config_store(qtbot):
@@ -213,16 +246,26 @@ def test_main_window_uses_current_settings_to_process_images(qtbot):
                 "ocr_api_key": "ocr-secret",
                 "helper_base_url": "https://api.minimaxi.com/v1",
                 "helper_api_key": "helper-secret",
+                "shops": [
+                    {
+                        "name": "草莓店",
+                        "app_token": "app_token_1",
+                        "table_id": "tbl_1",
+                        "table_name": "草莓订单表",
+                    }
+                ],
+                "selected_shop_name": "草莓店",
             }
         ),
         order_pipeline_factory=pipeline_factory,
     )
     qtbot.addWidget(window)
+    window.intake_page._use_background_thread = False
 
     window.intake_page.process_image_bytes(b"image-bytes", "剪贴板截图")
 
     assert captured_payloads == [window.settings_page.to_payload()]
-    assert window.intake_page.order_card_widget.order_id_value.text() == "6952003434324366473"
+    assert window.intake_page.order_card_widget.order_id_edit.text() == "6952003434324366473"
 
 
 def test_main_window_uses_default_mcp_command_when_enabled(qtbot):
@@ -264,6 +307,7 @@ def test_main_window_uses_default_mcp_command_when_enabled(qtbot):
         order_pipeline_factory=pipeline_factory,
     )
     qtbot.addWidget(window)
+    window.intake_page._use_background_thread = False
 
     window.intake_page.process_image_bytes(b"image-bytes", "剪贴板截图")
 

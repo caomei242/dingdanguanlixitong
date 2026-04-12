@@ -39,10 +39,11 @@ class HistoryPage(QWidget):
             return
 
         for row in rows:
+            shop_name = self._display_value(row.get("shop_name"))
             recipient = self._display_value(row.get("recipient_name"))
             status = self._display_value(row.get("status"))
             order_id = self._display_value(row.get("order_id"))
-            self.list_widget.addItem(f"{recipient} · {status} · {order_id}")
+            self.list_widget.addItem(f"{shop_name} · {recipient} · {status} · {order_id}")
 
     @staticmethod
     def _display_value(value) -> str:

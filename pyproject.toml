@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "strawberry-order-management"
+version = "0.1.0"
+dependencies = [
+  "PySide6>=6.7,<7",
+  "requests>=2.32,<3",
+  "Pillow>=10,<11",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8,<9",
+  "pytest-qt>=4.4,<5",
+]

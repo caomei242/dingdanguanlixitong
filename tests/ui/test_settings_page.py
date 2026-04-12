@@ -1,6 +1,7 @@
 from strawberry_order_management.ui.main_window import MainWindow
 from strawberry_order_management.ui.pages.history_page import HistoryPage
 from strawberry_order_management.ui.pages.settings_page import SettingsPage
+from strawberry_order_management.models import ParsedOrder
 
 
 def test_settings_page_collects_api_configuration(qtbot):
@@ -167,3 +168,48 @@ def test_main_window_saves_settings_into_config_store(qtbot):
     window.settings_page.save_button.click()
 
     assert store.saved_payloads == [window.settings_page.to_payload()]
+
+
+def test_main_window_uses_current_settings_to_process_images(qtbot):
+    captured_payloads = []
+
+    def pipeline_factory(payload):
+        captured_payloads.append(payload)
+
+        class StubPipeline:
+            def extract_order(self, image_bytes):
+                assert image_bytes == b"image-bytes"
+                return ParsedOrder(
+                    order_id="6952003434324366473",
+                    placed_at="2026-04-11 20:57:15",
+                    order_status="已发货",
+                    product_name="澳大利亚进口婴儿水",
+                    quantity="1",
+                    order_amount="405.00",
+                    income_amount="162.00",
+                    recipient_name="何女士",
+                    phone_number="15781304332",
+                    code="3612",
+                    address="四川省成都市金牛区营门口街道友谊花园9-2304",
+                    delivery_note="请电话送货上门谢谢【3612】",
+                )
+
+        return StubPipeline()
+
+    window = MainWindow(
+        config_store=MemoryConfigStore(
+            {
+                "ocr_base_url": "https://api.minimaxi.com/v1",
+                "ocr_api_key": "ocr-secret",
+                "helper_base_url": "https://api.minimaxi.com/v1",
+                "helper_api_key": "helper-secret",
+            }
+        ),
+        order_pipeline_factory=pipeline_factory,
+    )
+    qtbot.addWidget(window)
+
+    window.intake_page.process_image_bytes(b"image-bytes", "剪贴板截图")
+
+    assert captured_payloads == [window.settings_page.to_payload()]
+    assert window.intake_page.order_card_widget.order_id_value.text() == "6952003434324366473"

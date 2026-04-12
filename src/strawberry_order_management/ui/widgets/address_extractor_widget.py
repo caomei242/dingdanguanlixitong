@@ -35,6 +35,15 @@ class AddressExtractorWidget(QWidget):
 
         self.extract_button.clicked.connect(self._extract)
 
+    def load_from_order(self, order) -> None:
+        payload = extract_address_payload(
+            f"{order.recipient_name}[{order.code}]"
+            f"{order.phone_number}{''.join(str(order.address).split())}[{order.code}]"
+        )
+        self.output_one.setPlainText(payload.cleaned_text)
+        self.output_two.setPlainText(payload.delivery_note)
+        self.status_label.setText("已同步订单地址结果")
+
     def _extract(self) -> None:
         try:
             payload = extract_address_payload(self.input_edit.toPlainText())

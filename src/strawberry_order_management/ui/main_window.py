@@ -11,6 +11,9 @@ from PySide6.QtWidgets import (
     QMainWindow,
 )
 
+from strawberry_order_management.services.helper_client import HelperClient
+from strawberry_order_management.services.ocr_client import OCRClient
+from strawberry_order_management.services.pipeline import OrderPipeline
 from strawberry_order_management.ui.pages.history_page import HistoryPage
 from strawberry_order_management.ui.pages.intake_page import IntakePage
 from strawberry_order_management.ui.pages.settings_page import SettingsPage
@@ -18,18 +21,24 @@ from strawberry_order_management.ui.theme import apply_theme
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, on_settings_save=None, config_store=None) -> None:
+    def __init__(
+        self,
+        on_settings_save=None,
+        config_store=None,
+        order_pipeline_factory=None,
+    ) -> None:
         super().__init__()
         self.setWindowTitle("草莓订单管理系统")
         self._on_settings_save = on_settings_save
         self._config_store = config_store
+        self._order_pipeline_factory = order_pipeline_factory or self._build_order_pipeline
 
         self.nav = QListWidget()
         self.nav.addItems(["订单录入", "历史", "设置"])
         self.nav.setFixedWidth(180)
 
         self.stack = QStackedWidget()
-        self.intake_page = IntakePage()
+        self.intake_page = IntakePage(on_process_image=self._extract_order_from_image)
         self.history_page = HistoryPage()
         self.settings_page = SettingsPage()
         self.stack.addWidget(self.intake_page)
@@ -77,3 +86,26 @@ class MainWindow(QMainWindow):
             self._config_store.save(payload)
         if self._on_settings_save is not None:
             self._on_settings_save(payload)
+
+    def _extract_order_from_image(self, image_bytes: bytes):
+        payload = self.settings_page.to_payload()
+        required_keys = {
+            "ocr_base_url": "OCR API Base URL",
+            "ocr_api_key": "OCR API Key",
+            "helper_base_url": "辅助提取 API Base URL",
+            "helper_api_key": "辅助提取 API Key",
+        }
+        missing = [label for key, label in required_keys.items() if not payload.get(key)]
+        if missing:
+            raise ValueError(f"请先在设置页填写：{'、'.join(missing)}")
+
+        pipeline = self._order_pipeline_factory(payload)
+        return pipeline.extract_order(image_bytes)
+
+    @staticmethod
+    def _build_order_pipeline(payload: dict) -> OrderPipeline:
+        return OrderPipeline(
+            OCRClient(payload["ocr_base_url"], payload["ocr_api_key"]),
+            HelperClient(payload["helper_base_url"], payload["helper_api_key"]),
+            None,
+        )

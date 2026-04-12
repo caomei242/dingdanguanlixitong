@@ -18,3 +18,16 @@ def test_rejects_mismatched_prefix_suffix_codes():
         assert "编号不一致" in str(exc)
     else:
         raise AssertionError("expected ValueError")
+
+
+def test_extracts_address_from_name_phone_code_address_format():
+    payload = extract_address_payload(
+        "郑翔，15795949269-6026，广西壮族自治区北海市海城区 高德街道 北海大道5号北海恒大雅苑2栋2单元1901"
+    )
+
+    assert (
+        payload.cleaned_text
+        == "郑翔15795949269广西壮族自治区北海市海城区高德街道北海大道5号北海恒大雅苑2栋2单元1901"
+    )
+    assert payload.delivery_note == "请电话送货上门谢谢【6026】"
+    assert payload.code == "6026"

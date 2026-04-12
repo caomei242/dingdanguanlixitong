@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
+    QCheckBox,
     QFormLayout,
     QFrame,
     QLabel,
@@ -19,6 +20,8 @@ class SettingsPage(QWidget):
         super().__init__()
         self.setObjectName("SettingsPage")
 
+        self.ocr_use_mcp_checkbox = QCheckBox("启用 MiniMax MCP OCR")
+        self.ocr_mcp_command_edit = QLineEdit()
         self.ocr_base_url_edit = QLineEdit()
         self.ocr_api_key_edit = QLineEdit()
         self.helper_base_url_edit = QLineEdit()
@@ -28,6 +31,7 @@ class SettingsPage(QWidget):
         self.feishu_table_id_edit = QLineEdit()
         self.feishu_table_name_edit = QLineEdit()
         self.save_button = QPushButton("保存/应用")
+        self.ocr_mcp_command_edit.setText("uvx minimax-coding-plan-mcp -y")
 
         header = QVBoxLayout()
         title = QLabel("设置")
@@ -38,6 +42,8 @@ class SettingsPage(QWidget):
         header.addWidget(subtitle)
 
         form = QFormLayout()
+        form.addRow("使用 MCP OCR", self.ocr_use_mcp_checkbox)
+        form.addRow("MCP 命令", self.ocr_mcp_command_edit)
         form.addRow("OCR API Base URL", self.ocr_base_url_edit)
         form.addRow("OCR API Key", self.ocr_api_key_edit)
         form.addRow("辅助提取 API Base URL", self.helper_base_url_edit)
@@ -61,6 +67,8 @@ class SettingsPage(QWidget):
 
     def to_payload(self) -> dict[str, str]:
         return {
+            "ocr_use_mcp": self.ocr_use_mcp_checkbox.isChecked(),
+            "ocr_mcp_command": self.ocr_mcp_command_edit.text().strip(),
             "ocr_base_url": self.ocr_base_url_edit.text().strip(),
             "ocr_api_key": self.ocr_api_key_edit.text().strip(),
             "helper_base_url": self.helper_base_url_edit.text().strip(),
@@ -72,6 +80,11 @@ class SettingsPage(QWidget):
         }
 
     def load_payload(self, payload: dict) -> None:
+        self.ocr_use_mcp_checkbox.setChecked(bool(payload.get("ocr_use_mcp")))
+        self.ocr_mcp_command_edit.setText(
+            self._clean_text(payload.get("ocr_mcp_command"))
+            or "uvx minimax-coding-plan-mcp -y"
+        )
         self.ocr_base_url_edit.setText(self._clean_text(payload.get("ocr_base_url")))
         self.ocr_api_key_edit.setText(self._clean_text(payload.get("ocr_api_key")))
         self.helper_base_url_edit.setText(self._clean_text(payload.get("helper_base_url")))

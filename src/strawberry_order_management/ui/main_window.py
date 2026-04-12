@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
 )
 
 from strawberry_order_management.services.helper_client import HelperClient
+from strawberry_order_management.services.mcp_ocr_client import McpOCRClient
 from strawberry_order_management.services.ocr_client import OCRClient
 from strawberry_order_management.services.pipeline import OrderPipeline
 from strawberry_order_management.ui.pages.history_page import HistoryPage
@@ -90,11 +91,15 @@ class MainWindow(QMainWindow):
     def _extract_order_from_image(self, image_bytes: bytes):
         payload = self.settings_page.to_payload()
         required_keys = {
-            "ocr_base_url": "OCR API Base URL",
             "ocr_api_key": "OCR API Key",
             "helper_base_url": "辅助提取 API Base URL",
             "helper_api_key": "辅助提取 API Key",
         }
+        if payload.get("ocr_use_mcp"):
+            required_keys["ocr_mcp_command"] = "MCP 命令"
+            required_keys["ocr_base_url"] = "OCR API Base URL"
+        else:
+            required_keys["ocr_base_url"] = "OCR API Base URL"
         missing = [label for key, label in required_keys.items() if not payload.get(key)]
         if missing:
             raise ValueError(f"请先在设置页填写：{'、'.join(missing)}")
@@ -104,8 +109,16 @@ class MainWindow(QMainWindow):
 
     @staticmethod
     def _build_order_pipeline(payload: dict) -> OrderPipeline:
+        if payload.get("ocr_use_mcp"):
+            ocr_client = McpOCRClient(
+                payload["ocr_mcp_command"],
+                payload["ocr_api_key"],
+                payload["ocr_base_url"],
+            )
+        else:
+            ocr_client = OCRClient(payload["ocr_base_url"], payload["ocr_api_key"])
         return OrderPipeline(
-            OCRClient(payload["ocr_base_url"], payload["ocr_api_key"]),
+            ocr_client,
             HelperClient(payload["helper_base_url"], payload["helper_api_key"]),
             None,
         )

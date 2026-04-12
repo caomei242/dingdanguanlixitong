@@ -8,6 +8,8 @@ def test_settings_page_collects_api_configuration(qtbot):
     page = SettingsPage()
     qtbot.addWidget(page)
 
+    page.ocr_use_mcp_checkbox.setChecked(True)
+    page.ocr_mcp_command_edit.setText("uvx minimax-coding-plan-mcp -y")
     page.ocr_base_url_edit.setText("https://ocr.example.com")
     page.ocr_api_key_edit.setText("ocr-key")
     page.helper_base_url_edit.setText("https://helper.example.com")
@@ -19,6 +21,8 @@ def test_settings_page_collects_api_configuration(qtbot):
 
     payload = page.to_payload()
 
+    assert payload["ocr_use_mcp"] is True
+    assert payload["ocr_mcp_command"] == "uvx minimax-coding-plan-mcp -y"
     assert payload["ocr_base_url"] == "https://ocr.example.com"
     assert payload["ocr_api_key"] == "ocr-key"
     assert payload["helper_base_url"] == "https://helper.example.com"
@@ -34,6 +38,8 @@ def test_settings_page_load_payload_and_save_requested(qtbot):
     qtbot.addWidget(page)
 
     payload = {
+        "ocr_use_mcp": True,
+        "ocr_mcp_command": " uvx minimax-coding-plan-mcp -y ",
         "ocr_base_url": " https://ocr.example.com ",
         "ocr_api_key": " ocr-key ",
         "helper_base_url": " https://helper.example.com ",
@@ -50,6 +56,8 @@ def test_settings_page_load_payload_and_save_requested(qtbot):
     page.load_payload(payload)
     page.save_button.click()
 
+    assert page.ocr_use_mcp_checkbox.isChecked() is True
+    assert page.ocr_mcp_command_edit.text() == "uvx minimax-coding-plan-mcp -y"
     assert page.ocr_base_url_edit.text() == "https://ocr.example.com"
     assert page.ocr_api_key_edit.text() == "ocr-key"
     assert page.helper_base_url_edit.text() == "https://helper.example.com"
@@ -199,6 +207,8 @@ def test_main_window_uses_current_settings_to_process_images(qtbot):
     window = MainWindow(
         config_store=MemoryConfigStore(
             {
+                "ocr_use_mcp": True,
+                "ocr_mcp_command": "uvx minimax-coding-plan-mcp -y",
                 "ocr_base_url": "https://api.minimaxi.com/v1",
                 "ocr_api_key": "ocr-secret",
                 "helper_base_url": "https://api.minimaxi.com/v1",
@@ -213,3 +223,48 @@ def test_main_window_uses_current_settings_to_process_images(qtbot):
 
     assert captured_payloads == [window.settings_page.to_payload()]
     assert window.intake_page.order_card_widget.order_id_value.text() == "6952003434324366473"
+
+
+def test_main_window_uses_default_mcp_command_when_enabled(qtbot):
+    captured_payloads = []
+
+    def pipeline_factory(payload):
+        captured_payloads.append(payload)
+
+        class StubPipeline:
+            def extract_order(self, image_bytes):
+                return ParsedOrder(
+                    order_id="6952003434324366473",
+                    placed_at="2026-04-11 20:57:15",
+                    order_status="已发货",
+                    product_name="澳大利亚进口婴儿水",
+                    quantity="1",
+                    order_amount="405.00",
+                    income_amount="162.00",
+                    recipient_name="何女士",
+                    phone_number="15781304332",
+                    code="3612",
+                    address="四川省成都市金牛区营门口街道友谊花园9-2304",
+                    delivery_note="请电话送货上门谢谢【3612】",
+                )
+
+        return StubPipeline()
+
+    window = MainWindow(
+        config_store=MemoryConfigStore(
+            {
+                "ocr_use_mcp": True,
+                "ocr_mcp_command": "",
+                "ocr_base_url": "https://api.minimaxi.com/v1",
+                "ocr_api_key": "ocr-secret",
+                "helper_base_url": "https://api.minimaxi.com/v1",
+                "helper_api_key": "helper-secret",
+            }
+        ),
+        order_pipeline_factory=pipeline_factory,
+    )
+    qtbot.addWidget(window)
+
+    window.intake_page.process_image_bytes(b"image-bytes", "剪贴板截图")
+
+    assert captured_payloads[0]["ocr_mcp_command"] == "uvx minimax-coding-plan-mcp -y"

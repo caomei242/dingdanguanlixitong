@@ -45,6 +45,19 @@ class HttpErrorResponse:
         raise ValueError("bad json")
 
 
+class JsonHttpErrorResponse:
+    def __init__(self, status_code: int, payload: dict):
+        self.status_code = status_code
+        self.payload = payload
+        self.text = str(payload)
+
+    def raise_for_status(self) -> None:
+        raise requests.HTTPError(f"{self.status_code} Client Error", response=self)
+
+    def json(self) -> dict:
+        return self.payload
+
+
 def test_build_feishu_payload_uses_income_amount_for_income_column():
     order = ParsedOrder(
         order_id="6952003434324366473",
@@ -474,6 +487,30 @@ def test_feishu_client_rejects_wiki_url_without_table_id():
     with pytest.raises(ValueError, match="链接里缺少 Table ID"):
         client.resolve_bitable_from_wiki_url(
             "https://my.feishu.cn/wiki/QTXMwCDpQi9n6VkfDxJc5mNTnjh"
+        )
+
+
+def test_feishu_client_surfaces_json_message_on_wiki_resolution_http_error(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    def fake_get(url, headers=None, params=None, timeout=None):
+        return JsonHttpErrorResponse(
+            400,
+            {
+                "code": 99991672,
+                "msg": "No wiki permission",
+                "error": {"log_id": "123"},
+            },
+        )
+
+    monkeypatch.setattr("strawberry_order_management.services.feishu_client.requests.get", fake_get)
+
+    client = FeishuClient("app", "secret", "app_token", "tbl_1")
+
+    with pytest.raises(ValueError, match="No wiki permission"):
+        client.resolve_bitable_from_wiki_url(
+            "https://my.feishu.cn/wiki/QTXMwCDpQi9n6VkfDxJc5mNTnjh?table=tblWZDrx4gqXpc5M",
+            access_token="tenant_token_123",
         )
 
 

@@ -80,18 +80,7 @@ class FeishuClient:
             json=json_body,
             timeout=30,
         )
-        response.raise_for_status()
-        try:
-            payload = response.json()
-        except ValueError as exc:
-            raise ValueError(f"{error_prefix}：接口响应不是合法 JSON") from exc
-        if not isinstance(payload, dict):
-            raise ValueError(f"{error_prefix}：接口响应格式不正确")
-        code = payload.get("code", 0)
-        if code not in (0, None):
-            message = str(payload.get("msg", "")).strip() or "未知错误"
-            raise ValueError(f"{error_prefix}：{message}")
-        return payload
+        return FeishuClient._parse_response_payload(response, error_prefix)
 
     @staticmethod
     def _get_json(url: str, headers: dict, params: dict, error_prefix: str) -> dict:
@@ -101,15 +90,21 @@ class FeishuClient:
             params=params,
             timeout=30,
         )
-        response.raise_for_status()
+        return FeishuClient._parse_response_payload(response, error_prefix)
+
+    @staticmethod
+    def _parse_response_payload(response, error_prefix: str) -> dict:
         try:
             payload = response.json()
         except ValueError as exc:
+            response.raise_for_status()
             raise ValueError(f"{error_prefix}：接口响应不是合法 JSON") from exc
         if not isinstance(payload, dict):
+            response.raise_for_status()
             raise ValueError(f"{error_prefix}：接口响应格式不正确")
         code = payload.get("code", 0)
         if code not in (0, None):
             message = str(payload.get("msg", "")).strip() or "未知错误"
             raise ValueError(f"{error_prefix}：{message}")
+        response.raise_for_status()
         return payload

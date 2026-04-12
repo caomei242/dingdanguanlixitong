@@ -4,6 +4,7 @@ from pathlib import Path
 
 import base64
 import pytest
+import requests
 
 from strawberry_order_management.models import ParsedOrder
 from strawberry_order_management.services.feishu_client import FeishuClient
@@ -27,6 +28,18 @@ class FakeResponse:
 class BadJsonResponse:
     def raise_for_status(self) -> None:
         pass
+
+    def json(self) -> dict:
+        raise ValueError("bad json")
+
+
+class HttpErrorResponse:
+    def __init__(self, status_code: int, text: str):
+        self.status_code = status_code
+        self.text = text
+
+    def raise_for_status(self) -> None:
+        raise requests.HTTPError(f"{self.status_code} Server Error", response=self)
 
     def json(self) -> dict:
         raise ValueError("bad json")
@@ -183,6 +196,31 @@ def test_ocr_client_raises_readable_error_when_minimax_choices_missing(
         client.extract_text(b"image-bytes")
 
 
+def test_ocr_client_raises_friendly_error_when_minimax_plan_lacks_ocr_model(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    def fake_post(url, headers=None, json=None, timeout=None):
+        return HttpErrorResponse(
+            500,
+            (
+                '{"type":"error","error":{"type":"server_error","message":'
+                '"your current token plan not support model, MiniMax-Text-01 (2061)"}}'
+            ),
+        )
+
+    monkeypatch.setattr(
+        "strawberry_order_management.services.ocr_client.requests.post", fake_post
+    )
+
+    client = OCRClient("https://api.minimaxi.com/v1", "secret")
+
+    with pytest.raises(
+        ValueError,
+        match="当前 MiniMax 套餐不支持截图 OCR 模型",
+    ):
+        client.extract_text(b"image-bytes")
+
+
 def test_helper_client_posts_text_and_returns_text(monkeypatch: pytest.MonkeyPatch):
     captured: dict[str, object] = {}
 
@@ -256,6 +294,35 @@ def test_helper_client_raises_readable_error_on_invalid_json(monkeypatch: pytest
 
     with pytest.raises(ValueError, match="Helper API response is not valid JSON"):
         client.enrich_text("raw text")
+
+
+def test_helper_client_strips_thinking_content_from_minimax_response(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    def fake_post(url, headers=None, json=None, timeout=None):
+        return FakeResponse(
+            {
+                "choices": [
+                    {
+                        "message": {
+                            "content": (
+                                "<think>internal reasoning</think>\n\n"
+                                "订单编号 1\n"
+                                "下单时间 2026-04-11 20:57:15"
+                            )
+                        }
+                    }
+                ]
+            }
+        )
+
+    monkeypatch.setattr(
+        "strawberry_order_management.services.helper_client.requests.post", fake_post
+    )
+
+    client = HelperClient("https://api.minimaxi.com/v1", "secret")
+
+    assert client.enrich_text("ocr raw text") == "订单编号 1\n下单时间 2026-04-11 20:57:15"
 
 
 def test_helper_client_raises_readable_error_when_text_missing(monkeypatch: pytest.MonkeyPatch):

@@ -1,6 +1,11 @@
 from __future__ import annotations
 
+import re
+
 import requests
+
+
+_THINK_PATTERN = re.compile(r"<think>.*?</think>\s*", re.S)
 
 
 class HelperClient:
@@ -76,4 +81,8 @@ class HelperClient:
         if not isinstance(message, dict) or "content" not in message:
             raise ValueError("MiniMax response missing message content")
 
-        return message["content"]
+        return self._clean_minimax_content(message["content"])
+
+    @staticmethod
+    def _clean_minimax_content(content) -> str:
+        return _THINK_PATTERN.sub("", str(content)).strip()

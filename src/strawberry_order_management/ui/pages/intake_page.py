@@ -3,7 +3,15 @@ from __future__ import annotations
 from typing import Callable
 
 from PySide6.QtCore import QObject, QThread, Signal
-from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QComboBox,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QScrollArea,
+    QVBoxLayout,
+    QWidget,
+)
 
 from strawberry_order_management.ui.widgets.address_extractor_widget import (
     AddressExtractorWidget,
@@ -81,9 +89,17 @@ class IntakePage(QWidget):
         right_column = QVBoxLayout()
         right_column.addWidget(self.address_widget)
 
-        layout = QHBoxLayout(self)
-        layout.addLayout(left_column, 3)
-        layout.addLayout(right_column, 2)
+        content = QWidget()
+        content_layout = QHBoxLayout(content)
+        content_layout.addLayout(left_column, 3)
+        content_layout.addLayout(right_column, 2)
+
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setWidget(content)
+
+        layout = QVBoxLayout(self)
+        layout.addWidget(scroll_area)
         self.submit_button.clicked.connect(self._handle_submit)
         self.save_history_button.clicked.connect(self._handle_save_history)
         self.capture_widget.image_ready.connect(self.process_image_bytes)
@@ -140,6 +156,10 @@ class IntakePage(QWidget):
             "shop_name": self.shop_selector.currentText().strip(),
             "order": self.order_card_widget.to_order(),
         }
+
+    def set_submit_in_progress(self, in_progress: bool) -> None:
+        self.submit_button.setEnabled(not in_progress)
+        self.submit_button.setText("写入中..." if in_progress else "确认写入飞书")
 
     def _run_sync(self, image_bytes: bytes) -> None:
         try:

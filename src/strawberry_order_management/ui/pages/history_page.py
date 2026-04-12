@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PySide6.QtWidgets import QFrame, QLabel, QListWidget, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QFrame, QLabel, QListWidget, QScrollArea, QVBoxLayout, QWidget
 
 
 class HistoryPage(QWidget):
@@ -25,11 +25,19 @@ class HistoryPage(QWidget):
         card_layout.addWidget(self.summary_label)
         card_layout.addWidget(self.list_widget)
 
+        content = QWidget()
+        content_layout = QVBoxLayout(content)
+        content_layout.addWidget(title)
+        content_layout.addWidget(subtitle)
+        content_layout.addWidget(card)
+        content_layout.addStretch(1)
+
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setWidget(content)
+
         root = QVBoxLayout(self)
-        root.addWidget(title)
-        root.addWidget(subtitle)
-        root.addWidget(card)
-        root.addStretch(1)
+        root.addWidget(scroll_area)
 
     def load_rows(self, rows: list[dict]) -> None:
         self.list_widget.clear()

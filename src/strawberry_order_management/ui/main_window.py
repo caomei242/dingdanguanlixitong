@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from PySide6.QtCore import QObject, QThread, Signal
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -25,6 +26,24 @@ from strawberry_order_management.ui.pages.settings_page import SettingsPage
 from strawberry_order_management.ui.theme import apply_theme
 
 
+class _SubmitWorker(QObject):
+    finished = Signal(object)
+    failed = Signal(object)
+
+    def __init__(self, callback, task: dict):
+        super().__init__()
+        self._callback = callback
+        self._task = task
+
+    def run(self) -> None:
+        try:
+            result = self._callback(self._task)
+        except Exception as exc:
+            self.failed.emit({"message": str(exc), "payload": self._task["payload"]})
+            return
+        self.finished.emit(result)
+
+
 class MainWindow(QMainWindow):
     def __init__(
         self,
@@ -39,6 +58,8 @@ class MainWindow(QMainWindow):
         self._config_store = config_store
         self._history_store = history_store
         self._order_pipeline_factory = order_pipeline_factory or self._build_order_pipeline
+        self._submit_thread = None
+        self._submit_worker = None
 
         self.nav = QListWidget()
         self.nav.addItems(["订单录入", "历史", "设置"])
@@ -109,15 +130,15 @@ class MainWindow(QMainWindow):
 
     def _handle_submit_request(self, payload: dict) -> None:
         try:
-            self._submit_to_feishu(payload)
+            task = self._build_feishu_submission_task(payload)
         except Exception as exc:
             message = str(exc)
             self.intake_page.capture_widget.status_label.setText(message)
             self._append_history(payload, "写入失败", message)
             return
-        shop_name = payload.get("shop_name") or "-"
-        self.intake_page.capture_widget.status_label.setText(f"已写入飞书：{shop_name}")
-        self._append_history(payload, "已写入飞书")
+        self.intake_page.capture_widget.status_label.setText("写入飞书中...")
+        self.intake_page.set_submit_in_progress(True)
+        self._start_submit_job(task)
 
     def _append_history(self, payload: dict, status: str, message: str = "") -> None:
         if self._history_store is None:
@@ -166,7 +187,7 @@ class MainWindow(QMainWindow):
         pipeline = self._order_pipeline_factory(payload)
         return pipeline.extract_order(image_bytes)
 
-    def _submit_to_feishu(self, payload: dict) -> dict:
+    def _build_feishu_submission_task(self, payload: dict) -> dict:
         settings_payload = self.settings_page.to_payload()
         shop_name = str(payload.get("shop_name", "")).strip()
         if not shop_name:
@@ -192,17 +213,15 @@ class MainWindow(QMainWindow):
         if missing_shop:
             raise ValueError(f"店铺“{shop_name}”缺少：{'、'.join(missing_shop)}")
 
-        client = FeishuClient(
-            str(settings_payload["feishu_app_id"]).strip(),
-            str(settings_payload["feishu_app_secret"]).strip(),
-            str(shop["app_token"]).strip(),
-            str(shop["table_id"]).strip(),
-        )
-        access_token = client.get_tenant_access_token()
-        return client.create_record(
-            access_token,
-            build_feishu_payload(payload["order"]),
-        )
+        return {
+            "payload": payload,
+            "shop_name": shop_name,
+            "app_id": str(settings_payload["feishu_app_id"]).strip(),
+            "app_secret": str(settings_payload["feishu_app_secret"]).strip(),
+            "app_token": str(shop["app_token"]).strip(),
+            "table_id": str(shop["table_id"]).strip(),
+            "fields": build_feishu_payload(payload["order"]),
+        }
 
     @staticmethod
     def _find_shop(settings_payload: dict, shop_name: str) -> dict | None:
@@ -213,6 +232,55 @@ class MainWindow(QMainWindow):
             if name == shop_name:
                 return shop
         return None
+
+    def _start_submit_job(self, task: dict) -> None:
+        self._submit_thread = QThread(self)
+        self._submit_worker = _SubmitWorker(self._perform_feishu_submission, task)
+        self._submit_worker.moveToThread(self._submit_thread)
+        self._submit_thread.started.connect(self._submit_worker.run)
+        self._submit_worker.finished.connect(self._handle_submit_success)
+        self._submit_worker.failed.connect(self._handle_submit_failure)
+        self._submit_worker.finished.connect(self._submit_thread.quit)
+        self._submit_worker.failed.connect(self._submit_thread.quit)
+        self._submit_thread.finished.connect(self._submit_worker.deleteLater)
+        self._submit_thread.finished.connect(self._submit_thread.deleteLater)
+        self._submit_thread.finished.connect(self._clear_submit_refs)
+        self._submit_thread.start()
+
+    @staticmethod
+    def _perform_feishu_submission(task: dict) -> dict:
+        client = FeishuClient(
+            task["app_id"],
+            task["app_secret"],
+            task["app_token"],
+            task["table_id"],
+        )
+        access_token = client.get_tenant_access_token()
+        response = client.create_record(access_token, task["fields"])
+        return {
+            "payload": task["payload"],
+            "shop_name": task["shop_name"],
+            "response": response,
+        }
+
+    def _handle_submit_success(self, result: dict) -> None:
+        payload = result["payload"]
+        shop_name = result["shop_name"]
+        self.intake_page.set_submit_in_progress(False)
+        self.intake_page.capture_widget.status_label.setText(f"已写入飞书：{shop_name}")
+        self._append_history(payload, "已写入飞书")
+
+    def _handle_submit_failure(self, failure: dict) -> None:
+        message = str(failure.get("message", "")).strip() or "飞书写入失败"
+        payload = failure.get("payload")
+        self.intake_page.set_submit_in_progress(False)
+        self.intake_page.capture_widget.status_label.setText(message)
+        if payload is not None:
+            self._append_history(payload, "写入失败", message)
+
+    def _clear_submit_refs(self) -> None:
+        self._submit_thread = None
+        self._submit_worker = None
 
     @staticmethod
     def _build_order_pipeline(payload: dict) -> OrderPipeline:

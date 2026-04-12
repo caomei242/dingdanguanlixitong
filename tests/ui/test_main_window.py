@@ -1,3 +1,5 @@
+import time
+
 from strawberry_order_management.config import ConfigStore
 from strawberry_order_management.history import HistoryStore
 from strawberry_order_management.models import ParsedOrder
@@ -70,6 +72,11 @@ def test_main_window_submits_order_to_selected_shop_sheet(qtbot, tmp_path, monke
 
     window.intake_page.submit_button.click()
 
+    qtbot.waitUntil(
+        lambda: window.intake_page.capture_widget.status_label.text() == "已写入飞书：草莓店",
+        timeout=3000,
+    )
+
     assert captured["init"] == (
         "cli_app_123",
         "secret_456",
@@ -110,6 +117,49 @@ def test_main_window_records_failure_when_feishu_submit_errors(qtbot, tmp_path, 
 
     window.intake_page.submit_button.click()
 
+    qtbot.waitUntil(
+        lambda: window.intake_page.capture_widget.status_label.text() == "飞书写入失败：无权限编辑该表",
+        timeout=3000,
+    )
+
     assert history_store.list_items()[0]["status"] == "写入失败"
     assert history_store.list_items()[0]["shop_name"] == "草莓店"
     assert window.intake_page.capture_widget.status_label.text() == "飞书写入失败：无权限编辑该表"
+
+
+def test_main_window_submits_to_feishu_in_background(qtbot, tmp_path, monkeypatch):
+    config_store = ConfigStore(tmp_path / "config.json")
+    history_store = HistoryStore(tmp_path / "history.json")
+    config_store.save(_settings_payload())
+
+    class SlowFeishuClient:
+        def __init__(self, app_id: str, app_secret: str, table_app_token: str, table_id: str):
+            pass
+
+        def get_tenant_access_token(self) -> str:
+            time.sleep(0.05)
+            return "tenant_token_123"
+
+        def create_record(self, access_token: str, fields: dict) -> dict:
+            time.sleep(0.05)
+            return {"data": {"record_id": "rec_123"}}
+
+    monkeypatch.setattr("strawberry_order_management.ui.main_window.FeishuClient", SlowFeishuClient)
+
+    window = MainWindow(config_store=config_store, history_store=history_store)
+    qtbot.addWidget(window)
+
+    window.intake_page.show_order(_sample_order())
+    window.intake_page.shop_selector.setCurrentText("草莓店")
+
+    window.intake_page.submit_button.click()
+
+    assert window.intake_page.capture_widget.status_label.text() == "写入飞书中..."
+    assert window.nav.isEnabled() is True
+    assert window.intake_page.address_widget.isEnabled() is True
+
+    qtbot.waitUntil(
+        lambda: window.intake_page.capture_widget.status_label.text() == "已写入飞书：草莓店",
+        timeout=3000,
+    )
+    assert history_store.list_items()[0]["status"] == "已写入飞书"

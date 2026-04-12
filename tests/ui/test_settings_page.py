@@ -1,3 +1,5 @@
+from PySide6.QtWidgets import QScrollArea
+
 from strawberry_order_management.ui.main_window import MainWindow
 from strawberry_order_management.ui.pages.history_page import HistoryPage
 from strawberry_order_management.ui.pages.settings_page import SettingsPage
@@ -133,6 +135,26 @@ def test_history_page_renders_none_as_dash(qtbot):
 
     assert page.list_widget.count() == 1
     assert page.list_widget.item(0).text() == "- · - · - · -"
+
+
+def test_history_page_wraps_content_in_scroll_area(qtbot):
+    page = HistoryPage()
+    qtbot.addWidget(page)
+
+    scroll_area = page.findChild(QScrollArea)
+
+    assert scroll_area is not None
+    assert scroll_area.widgetResizable() is True
+
+
+def test_settings_page_wraps_content_in_scroll_area(qtbot):
+    page = SettingsPage()
+    qtbot.addWidget(page)
+
+    scroll_area = page.findChild(QScrollArea)
+
+    assert scroll_area is not None
+    assert scroll_area.widgetResizable() is True
 
 
 def test_main_window_navigates_between_three_pages(qtbot):

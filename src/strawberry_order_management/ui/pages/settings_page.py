@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
+    QScrollArea,
     QVBoxLayout,
     QWidget,
 )
@@ -81,10 +82,18 @@ class SettingsPage(QWidget):
         card_layout.addLayout(shop_form)
         card_layout.addWidget(self.save_button)
 
+        content = QWidget()
+        content_layout = QVBoxLayout(content)
+        content_layout.addLayout(header)
+        content_layout.addWidget(card)
+        content_layout.addStretch(1)
+
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setWidget(content)
+
         root = QVBoxLayout(self)
-        root.addLayout(header)
-        root.addWidget(card)
-        root.addStretch(1)
+        root.addWidget(scroll_area)
         self.save_button.clicked.connect(self._emit_save_requested)
         self.add_shop_button.clicked.connect(self._handle_add_shop)
         self.save_shop_button.clicked.connect(self._handle_save_shop)

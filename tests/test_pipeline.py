@@ -78,7 +78,7 @@ def test_build_feishu_payload_uses_income_amount_for_income_column():
 
     assert payload["备注"] == "请电话送货上门谢谢【3612】"
     assert payload["收入"] == "162.00"
-    assert payload["价格"] == "405.00"
+    assert "价格" not in payload
     assert payload["发货地址"] == "何女士 15781304332-3612 四川省成都市金牛区营门口街道友谊花园9-2304"
 
 

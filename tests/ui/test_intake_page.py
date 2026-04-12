@@ -3,7 +3,7 @@ import time
 from PySide6.QtGui import QColor, QGuiApplication, QImage
 from PySide6.QtWidgets import QFrame, QScrollArea
 
-from strawberry_order_management.models import ParsedOrder
+from strawberry_order_management.models import ParsedOrder, ProcurementItem
 from strawberry_order_management import app as app_module
 from strawberry_order_management.ui.pages.intake_page import IntakePage
 from strawberry_order_management.ui.widgets.address_extractor_widget import (
@@ -200,3 +200,78 @@ def test_intake_page_wraps_content_in_scroll_area(qtbot):
     assert scroll_area.widgetResizable() is True
     assert scroll_area.frameShape() == QFrame.Shape.NoFrame
     assert scroll_area.widget().objectName() == "PageContent"
+
+
+def test_order_card_autofills_procurement_cost_from_selected_preset(qtbot):
+    page = IntakePage(use_background_thread=False)
+    qtbot.addWidget(page)
+
+    page.set_product_presets([{"name": "澳洲婴儿水", "default_cost": "18.50"}])
+    page.show_order(
+        ParsedOrder(
+            order_id="6952003434324366473",
+            placed_at="2026-04-11 20:57:15",
+            order_status="已发货",
+            product_name="澳大利亚进口婴儿水",
+            quantity="1",
+            order_amount="405.00",
+            income_amount="162.00",
+            recipient_name="何女士",
+            phone_number="15781304332",
+            code="3612",
+            address="四川省成都市金牛区营门口街道友谊花园9-2304",
+            delivery_note="请电话送货上门谢谢【3612】",
+            procurement_items=(
+                ProcurementItem("", "1", ""),
+                ProcurementItem("", "1", ""),
+                ProcurementItem("", "1", ""),
+            ),
+        )
+    )
+
+    page.order_card_widget.procurement_product_1_combo.setCurrentText("澳洲婴儿水")
+
+    assert page.order_card_widget.procurement_quantity_1_edit.text() == "1"
+    assert page.order_card_widget.procurement_cost_1_edit.text() == "18.50"
+
+
+def test_intake_page_emits_procurement_slots_with_order_payload(qtbot):
+    submitted_orders = []
+    page = IntakePage(on_submit=submitted_orders.append, use_background_thread=False)
+    qtbot.addWidget(page)
+
+    page.set_product_presets([{"name": "澳洲婴儿水", "default_cost": "18.50"}])
+    page.shop_selector.addItems(["草莓店"])
+    page.shop_selector.setCurrentText("草莓店")
+    page.show_order(
+        ParsedOrder(
+            order_id="6952003434324366473",
+            placed_at="2026-04-11 20:57:15",
+            order_status="已发货",
+            product_name="澳大利亚进口婴儿水",
+            quantity="1",
+            order_amount="405.00",
+            income_amount="162.00",
+            recipient_name="何女士",
+            phone_number="15781304332",
+            code="3612",
+            address="四川省成都市金牛区营门口街道友谊花园9-2304",
+            delivery_note="请电话送货上门谢谢【3612】",
+            procurement_items=(
+                ProcurementItem("", "1", ""),
+                ProcurementItem("", "1", ""),
+                ProcurementItem("", "1", ""),
+            ),
+        )
+    )
+
+    page.order_card_widget.procurement_product_1_combo.setCurrentText("澳洲婴儿水")
+    page.order_card_widget.procurement_quantity_1_edit.setText("2")
+    page.order_card_widget.procurement_cost_1_edit.setText("19.00")
+    page.submit_button.click()
+
+    assert submitted_orders[0]["order"].procurement_items[0] == ProcurementItem(
+        "澳洲婴儿水",
+        "2",
+        "19.00",
+    )

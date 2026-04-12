@@ -6,6 +6,135 @@ from strawberry_order_management.ui.pages.settings_page import SettingsPage
 from strawberry_order_management.models import ParsedOrder
 
 
+def test_settings_page_load_payload_preserves_global_product_library_and_shop_field_mapping(qtbot):
+    page = SettingsPage()
+    qtbot.addWidget(page)
+
+    page.load_payload(
+        {
+            "global_product_library": [
+                {"name": "澳大利亚进口婴儿水", "default_cost": "12.50"},
+                {"name": "草莓", "default_cost": "8.20"},
+            ],
+            "shops": [
+                {
+                    "name": "草莓店",
+                    "wiki_url": "https://my.feishu.cn/wiki/QTXMwCDpQi9n6VkfDxJc5mNTnjh?table=tbl_xxx",
+                    "app_token": "app_token_1",
+                    "table_id": "tbl_xxx",
+                    "table_name": "草莓订单表",
+                    "field_mapping": {
+                        "备注": "备注列",
+                        "订单日期": "订单日期列",
+                        "下单时间": "下单时间列",
+                        "订单状态": "订单状态列",
+                        "收入": "收入列",
+                        "发货地址": "发货地址列",
+                        "价格": "价格列",
+                        "采购商品1": "采购商品1列",
+                        "采购商品2": "采购商品2列",
+                        "采购商品3": "采购商品3列",
+                        "采购数量1": "采购数量1列",
+                        "采购数量2": "采购数量2列",
+                        "采购数量3": "采购数量3列",
+                        "采购成本1": "采购成本1列",
+                        "采购成本2": "采购成本2列",
+                        "采购成本3": "采购成本3列",
+                    },
+                }
+            ],
+            "selected_shop_name": "草莓店",
+        }
+    )
+
+    assert page.product_selector.count() == 2
+    assert page.product_name_edit.text() == "澳大利亚进口婴儿水"
+    assert page.product_default_cost_edit.text() == "12.50"
+    assert page.shop_selector.currentText() == "草莓店"
+    assert page.shop_mapping_edits["remark"].text() == "备注列"
+    assert page.shop_mapping_edits["order_date"].text() == "订单日期列"
+    assert page.shop_mapping_edits["order_time"].text() == "下单时间列"
+    assert page.shop_mapping_edits["order_status"].text() == "订单状态列"
+    assert page.shop_mapping_edits["income"].text() == "收入列"
+    assert page.shop_mapping_edits["shipping_address"].text() == "发货地址列"
+    assert page.shop_mapping_edits["price"].text() == "价格列"
+    assert page.shop_mapping_edits["purchase_item_1"].text() == "采购商品1列"
+    assert page.shop_mapping_edits["purchase_item_2"].text() == "采购商品2列"
+    assert page.shop_mapping_edits["purchase_item_3"].text() == "采购商品3列"
+    assert page.shop_mapping_edits["purchase_quantity_1"].text() == "采购数量1列"
+    assert page.shop_mapping_edits["purchase_quantity_2"].text() == "采购数量2列"
+    assert page.shop_mapping_edits["purchase_quantity_3"].text() == "采购数量3列"
+    assert page.shop_mapping_edits["purchase_cost_1"].text() == "采购成本1列"
+    assert page.shop_mapping_edits["purchase_cost_2"].text() == "采购成本2列"
+    assert page.shop_mapping_edits["purchase_cost_3"].text() == "采购成本3列"
+
+
+def test_settings_page_to_payload_persists_global_product_library_and_shop_field_mapping(qtbot):
+    page = SettingsPage()
+    qtbot.addWidget(page)
+
+    page.product_name_edit.setText("澳大利亚进口婴儿水")
+    page.product_default_cost_edit.setText("12.50")
+    page.save_product_button.click()
+    page.product_name_edit.setText("草莓")
+    page.product_default_cost_edit.setText("8.20")
+    page.save_product_button.click()
+
+    page.shop_name_edit.setText("草莓店")
+    page.shop_table_name_edit.setText("草莓订单表")
+    page.shop_mapping_edits["remark"].setText("备注列")
+    page.shop_mapping_edits["order_date"].setText("订单日期列")
+    page.shop_mapping_edits["order_time"].setText("下单时间列")
+    page.shop_mapping_edits["order_status"].setText("订单状态列")
+    page.shop_mapping_edits["income"].setText("收入列")
+    page.shop_mapping_edits["shipping_address"].setText("发货地址列")
+    page.shop_mapping_edits["price"].setText("价格列")
+    page.shop_mapping_edits["purchase_item_1"].setText("采购商品1列")
+    page.shop_mapping_edits["purchase_item_2"].setText("采购商品2列")
+    page.shop_mapping_edits["purchase_item_3"].setText("采购商品3列")
+    page.shop_mapping_edits["purchase_quantity_1"].setText("采购数量1列")
+    page.shop_mapping_edits["purchase_quantity_2"].setText("采购数量2列")
+    page.shop_mapping_edits["purchase_quantity_3"].setText("采购数量3列")
+    page.shop_mapping_edits["purchase_cost_1"].setText("采购成本1列")
+    page.shop_mapping_edits["purchase_cost_2"].setText("采购成本2列")
+    page.shop_mapping_edits["purchase_cost_3"].setText("采购成本3列")
+    page.save_shop_button.click()
+
+    payload = page.to_payload()
+
+    assert payload["global_product_library"] == [
+        {"name": "澳大利亚进口婴儿水", "default_cost": "12.50"},
+        {"name": "草莓", "default_cost": "8.20"},
+    ]
+    assert payload["shops"] == [
+        {
+            "name": "草莓店",
+            "wiki_url": "",
+            "app_token": "",
+            "table_id": "",
+            "table_name": "草莓订单表",
+            "field_mapping": {
+                "备注": "备注列",
+                "订单日期": "订单日期列",
+                "下单时间": "下单时间列",
+                "订单状态": "订单状态列",
+                "收入": "收入列",
+                "发货地址": "发货地址列",
+                "价格": "价格列",
+                "采购商品1": "采购商品1列",
+                "采购商品2": "采购商品2列",
+                "采购商品3": "采购商品3列",
+                "采购数量1": "采购数量1列",
+                "采购数量2": "采购数量2列",
+                "采购数量3": "采购数量3列",
+                "采购成本1": "采购成本1列",
+                "采购成本2": "采购成本2列",
+                "采购成本3": "采购成本3列",
+            },
+        }
+    ]
+
+
 def test_settings_page_collects_api_configuration(qtbot):
     page = SettingsPage()
     qtbot.addWidget(page)
@@ -44,6 +173,7 @@ def test_settings_page_collects_api_configuration(qtbot):
             "app_token": "app_token_1",
             "table_id": "tbl_xxx",
             "table_name": "草莓订单表",
+            "field_mapping": {},
         }
     ]
     assert payload["selected_shop_name"] == "草莓店"
@@ -114,6 +244,8 @@ def test_settings_page_resolves_shop_tokens_from_wiki_url(qtbot):
     page.shop_wiki_url_edit.setText(
         "https://my.feishu.cn/wiki/QTXMwCDpQi9n6VkfDxJc5mNTnjh?table=tblWZDrx4gqXpc5M&view=vew5lZdMQj"
     )
+    page.shop_mapping_edits["remark"].setText("备注列")
+    page.shop_mapping_edits["order_date"].setText("订单日期列")
 
     page.save_shop_button.click()
 
@@ -123,6 +255,19 @@ def test_settings_page_resolves_shop_tokens_from_wiki_url(qtbot):
     assert page.shop_app_token_edit.text() == "basc1234567890"
     assert page.shop_table_id_edit.text() == "tblWZDrx4gqXpc5M"
     assert page.status_label.text() == "已从飞书链接解析表格信息"
+    assert page.to_payload()["shops"] == [
+        {
+            "name": "乐宝零食店",
+            "wiki_url": "https://my.feishu.cn/wiki/QTXMwCDpQi9n6VkfDxJc5mNTnjh?table=tblWZDrx4gqXpc5M&view=vew5lZdMQj",
+            "app_token": "basc1234567890",
+            "table_id": "tblWZDrx4gqXpc5M",
+            "table_name": "",
+            "field_mapping": {
+                "备注": "备注列",
+                "订单日期": "订单日期列",
+            },
+        }
+    ]
 
 
 def test_settings_page_shows_error_when_wiki_resolution_fails(qtbot):

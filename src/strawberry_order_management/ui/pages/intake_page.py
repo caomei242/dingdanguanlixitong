@@ -113,6 +113,9 @@ class IntakePage(QWidget):
         self.save_history_button.setEnabled(True)
         self.submit_button.setEnabled(True)
 
+    def set_product_presets(self, product_presets: list[dict[str, str]]) -> None:
+        self.order_card_widget.set_product_presets(product_presets)
+
     def process_image_bytes(self, image_bytes: bytes, source_label: str) -> None:
         if self._on_process_image is None:
             self.capture_widget.status_label.setText("请先在设置页完成 API 配置")

@@ -2,7 +2,7 @@ import time
 
 from strawberry_order_management.config import ConfigStore
 from strawberry_order_management.history import HistoryStore
-from strawberry_order_management.models import ParsedOrder
+from strawberry_order_management.models import ParsedOrder, ProcurementItem
 from strawberry_order_management.ui.main_window import MainWindow
 
 
@@ -20,6 +20,11 @@ def _sample_order() -> ParsedOrder:
         code="3612",
         address="四川省成都市金牛区营门口街道友谊花园9-2304",
         delivery_note="请电话送货上门谢谢【3612】",
+        procurement_items=(
+            ProcurementItem("", "1", ""),
+            ProcurementItem("", "1", ""),
+            ProcurementItem("", "1", ""),
+        ),
     )
 
 
@@ -31,12 +36,31 @@ def _settings_payload() -> dict:
         "helper_api_key": "helper_key",
         "feishu_app_id": "cli_app_123",
         "feishu_app_secret": "secret_456",
+        "product_presets": [{"name": "澳洲婴儿水", "default_cost": "18.50"}],
         "shops": [
             {
                 "name": "草莓店",
                 "app_token": "app_token_strawberry",
                 "table_id": "tbl_strawberry",
                 "table_name": "草莓订单",
+                "field_mapping": {
+                    "备注": "备注",
+                    "订单日期": "订单日期",
+                    "下单时间": "下单时间",
+                    "订单状态": "订单状态",
+                    "收入": "收入金额",
+                    "发货地址": "发货地址",
+                    "价格": "",
+                    "采购商品1": "采购商品1",
+                    "采购数量1": "采购数量1",
+                    "采购成本1": "采购成本1",
+                    "采购商品2": "",
+                    "采购数量2": "",
+                    "采购成本2": "",
+                    "采购商品3": "",
+                    "采购数量3": "",
+                    "采购成本3": "",
+                },
             }
         ],
         "selected_shop_name": "草莓店",
@@ -69,6 +93,9 @@ def test_main_window_submits_order_to_selected_shop_sheet(qtbot, tmp_path, monke
 
     window.intake_page.show_order(_sample_order())
     window.intake_page.shop_selector.setCurrentText("草莓店")
+    window.intake_page.order_card_widget.procurement_product_1_combo.setCurrentText("澳洲婴儿水")
+    window.intake_page.order_card_widget.procurement_quantity_1_edit.setText("2")
+    window.intake_page.order_card_widget.procurement_cost_1_edit.setText("19.00")
 
     window.intake_page.submit_button.click()
 
@@ -85,8 +112,12 @@ def test_main_window_submits_order_to_selected_shop_sheet(qtbot, tmp_path, monke
     )
     assert captured["token_called"] is True
     assert captured["create"][0] == "tenant_token_123"
-    assert captured["create"][1]["收入"] == "162.00"
+    assert captured["create"][1]["收入金额"] == "162.00"
     assert captured["create"][1]["发货地址"].startswith("何女士 15781304332-3612")
+    assert captured["create"][1]["采购商品1"] == "澳洲婴儿水"
+    assert captured["create"][1]["采购数量1"] == "2"
+    assert captured["create"][1]["采购成本1"] == "19.00"
+    assert "价格" not in captured["create"][1]
     assert history_store.list_items()[0]["status"] == "已写入飞书"
     assert history_store.list_items()[0]["shop_name"] == "草莓店"
     assert window.intake_page.capture_widget.status_label.text() == "已写入飞书：草莓店"

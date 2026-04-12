@@ -18,6 +18,42 @@ from PySide6.QtWidgets import (
 
 class SettingsPage(QWidget):
     save_requested = Signal(object)
+    FIELD_MAPPING_KEYS = (
+        "备注",
+        "订单日期",
+        "下单时间",
+        "订单状态",
+        "收入",
+        "发货地址",
+        "价格",
+        "采购商品1",
+        "采购数量1",
+        "采购成本1",
+        "采购商品2",
+        "采购数量2",
+        "采购成本2",
+        "采购商品3",
+        "采购数量3",
+        "采购成本3",
+    )
+    FIELD_MAPPING_ALIASES = {
+        "remark": "备注",
+        "order_date": "订单日期",
+        "order_time": "下单时间",
+        "order_status": "订单状态",
+        "income": "收入",
+        "shipping_address": "发货地址",
+        "price": "价格",
+        "purchase_item_1": "采购商品1",
+        "purchase_quantity_1": "采购数量1",
+        "purchase_cost_1": "采购成本1",
+        "purchase_item_2": "采购商品2",
+        "purchase_quantity_2": "采购数量2",
+        "purchase_cost_2": "采购成本2",
+        "purchase_item_3": "采购商品3",
+        "purchase_quantity_3": "采购数量3",
+        "purchase_cost_3": "采购成本3",
+    }
 
     def __init__(self, on_resolve_shop_link=None) -> None:
         super().__init__()
@@ -31,6 +67,13 @@ class SettingsPage(QWidget):
         self.helper_api_key_edit = QLineEdit()
         self.feishu_app_id_edit = QLineEdit()
         self.feishu_app_secret_edit = QLineEdit()
+        self.product_selector = QComboBox()
+        self.product_name_edit = QLineEdit()
+        self.product_cost_edit = QLineEdit()
+        self.product_default_cost_edit = self.product_cost_edit
+        self.add_product_button = QPushButton("新增商品")
+        self.save_product_button = QPushButton("保存商品")
+        self.remove_product_button = QPushButton("删除商品")
         self.shop_selector = QComboBox()
         self.shop_name_edit = QLineEdit()
         self.shop_wiki_url_edit = QLineEdit()
@@ -45,7 +88,15 @@ class SettingsPage(QWidget):
         self.status_label.setObjectName("MutedText")
         self._on_resolve_shop_link = on_resolve_shop_link
         self.ocr_mcp_command_edit.setText("uvx minimax-coding-plan-mcp -y")
+        self._product_presets: list[dict[str, str]] = []
         self._shops: list[dict[str, str]] = []
+        self.mapping_edits: dict[str, QLineEdit] = {
+            key: QLineEdit() for key in self.FIELD_MAPPING_KEYS
+        }
+        self.shop_mapping_edits: dict[str, QLineEdit] = {
+            alias: self.mapping_edits[key]
+            for alias, key in self.FIELD_MAPPING_ALIASES.items()
+        }
 
         header = QVBoxLayout()
         title = QLabel("设置")
@@ -65,6 +116,16 @@ class SettingsPage(QWidget):
         form.addRow("飞书 App ID", self.feishu_app_id_edit)
         form.addRow("飞书 App Secret", self.feishu_app_secret_edit)
 
+        product_button_row = QHBoxLayout()
+        product_button_row.addWidget(self.add_product_button)
+        product_button_row.addWidget(self.save_product_button)
+        product_button_row.addWidget(self.remove_product_button)
+
+        product_form = QFormLayout()
+        product_form.addRow("已保存商品", self.product_selector)
+        product_form.addRow("商品名称", self.product_name_edit)
+        product_form.addRow("默认成本", self.product_cost_edit)
+
         shop_button_row = QHBoxLayout()
         shop_button_row.addWidget(self.add_shop_button)
         shop_button_row.addWidget(self.save_shop_button)
@@ -77,11 +138,16 @@ class SettingsPage(QWidget):
         shop_form.addRow("飞书 App Token", self.shop_app_token_edit)
         shop_form.addRow("飞书 Table ID", self.shop_table_id_edit)
         shop_form.addRow("表名备注", self.shop_table_name_edit)
+        for key, edit in self.mapping_edits.items():
+            shop_form.addRow(f"{key} 映射", edit)
 
         card = QFrame()
         card.setObjectName("CardFrame")
         card_layout = QVBoxLayout(card)
         card_layout.addLayout(form)
+        card_layout.addWidget(QLabel("全局商品库"))
+        card_layout.addLayout(product_button_row)
+        card_layout.addLayout(product_form)
         card_layout.addWidget(QLabel("店铺与 Sheet 映射"))
         card_layout.addLayout(shop_button_row)
         card_layout.addLayout(shop_form)
@@ -103,9 +169,13 @@ class SettingsPage(QWidget):
         root = QVBoxLayout(self)
         root.addWidget(scroll_area)
         self.save_button.clicked.connect(self._emit_save_requested)
+        self.add_product_button.clicked.connect(self._handle_add_product)
+        self.save_product_button.clicked.connect(self._handle_save_product)
+        self.remove_product_button.clicked.connect(self._handle_remove_product)
         self.add_shop_button.clicked.connect(self._handle_add_shop)
         self.save_shop_button.clicked.connect(self._handle_save_shop)
         self.remove_shop_button.clicked.connect(self._handle_remove_shop)
+        self.product_selector.currentIndexChanged.connect(self._load_selected_product)
         self.shop_selector.currentIndexChanged.connect(self._load_selected_shop)
 
     def to_payload(self) -> dict:
@@ -118,6 +188,8 @@ class SettingsPage(QWidget):
             "helper_api_key": self.helper_api_key_edit.text().strip(),
             "feishu_app_id": self.feishu_app_id_edit.text().strip(),
             "feishu_app_secret": self.feishu_app_secret_edit.text().strip(),
+            "product_presets": [dict(item) for item in self._product_presets],
+            "global_product_library": [dict(item) for item in self._product_presets],
             "shops": [dict(shop) for shop in self._shops],
             "selected_shop_name": self.shop_selector.currentText().strip(),
         }
@@ -134,6 +206,17 @@ class SettingsPage(QWidget):
         self.helper_api_key_edit.setText(self._clean_text(payload.get("helper_api_key")))
         self.feishu_app_id_edit.setText(self._clean_text(payload.get("feishu_app_id")))
         self.feishu_app_secret_edit.setText(self._clean_text(payload.get("feishu_app_secret")))
+        product_presets = payload.get("product_presets")
+        if not product_presets:
+            product_presets = payload.get("global_product_library", [])
+        self._product_presets = [
+            {
+                "name": self._clean_text(item.get("name")),
+                "default_cost": self._clean_text(item.get("default_cost")),
+            }
+            for item in product_presets
+            if isinstance(item, dict) and self._clean_text(item.get("name"))
+        ]
         self._shops = [
             {
                 "name": self._clean_text(shop.get("name")),
@@ -141,14 +224,51 @@ class SettingsPage(QWidget):
                 "app_token": self._clean_text(shop.get("app_token")),
                 "table_id": self._clean_text(shop.get("table_id")),
                 "table_name": self._clean_text(shop.get("table_name")),
+                "field_mapping": self._clean_field_mapping(shop.get("field_mapping")),
             }
             for shop in payload.get("shops", [])
             if isinstance(shop, dict) and self._clean_text(shop.get("name"))
         ]
+        self._refresh_product_selector()
         self._refresh_shop_selector(self._clean_text(payload.get("selected_shop_name")))
 
     def _emit_save_requested(self) -> None:
         self.save_requested.emit(self.to_payload())
+
+    def _handle_add_product(self) -> None:
+        self.product_name_edit.clear()
+        self.product_cost_edit.clear()
+        self.product_name_edit.setFocus()
+        self.status_label.setText("")
+
+    def _handle_save_product(self) -> None:
+        product = {
+            "name": self.product_name_edit.text().strip(),
+            "default_cost": self.product_cost_edit.text().strip(),
+        }
+        if not product["name"]:
+            self.status_label.setText("请先填写商品名称")
+            return
+
+        for index, existing in enumerate(self._product_presets):
+            if existing["name"] == product["name"]:
+                self._product_presets[index] = product
+                break
+        else:
+            self._product_presets.append(product)
+
+        self._refresh_product_selector(product["name"])
+        self.status_label.setText("已保存商品预设")
+
+    def _handle_remove_product(self) -> None:
+        selected_name = self.product_selector.currentText().strip()
+        if not selected_name:
+            return
+        self._product_presets = [
+            product for product in self._product_presets if product["name"] != selected_name
+        ]
+        self._refresh_product_selector()
+        self.status_label.setText("已删除商品预设")
 
     def _handle_add_shop(self) -> None:
         self.shop_name_edit.clear()
@@ -156,6 +276,8 @@ class SettingsPage(QWidget):
         self.shop_app_token_edit.clear()
         self.shop_table_id_edit.clear()
         self.shop_table_name_edit.clear()
+        for edit in self.mapping_edits.values():
+            edit.clear()
         self.shop_name_edit.setFocus()
         self.status_label.setText("")
 
@@ -166,8 +288,10 @@ class SettingsPage(QWidget):
             "app_token": self.shop_app_token_edit.text().strip(),
             "table_id": self.shop_table_id_edit.text().strip(),
             "table_name": self.shop_table_name_edit.text().strip(),
+            "field_mapping": self._current_field_mapping(),
         }
         if not shop["name"]:
+            self.status_label.setText("请先填写店铺名称")
             return
         if shop["wiki_url"] and self._on_resolve_shop_link is not None:
             try:
@@ -210,6 +334,28 @@ class SettingsPage(QWidget):
         self.shop_selector.blockSignals(False)
         self._load_selected_shop()
 
+    def _refresh_product_selector(self, selected_name: str | None = None) -> None:
+        self.product_selector.blockSignals(True)
+        self.product_selector.clear()
+        self.product_selector.addItems([item["name"] for item in self._product_presets])
+        if selected_name:
+            index = self.product_selector.findText(selected_name)
+            if index >= 0:
+                self.product_selector.setCurrentIndex(index)
+        self.product_selector.blockSignals(False)
+        self._load_selected_product()
+
+    def _load_selected_product(self) -> None:
+        selected_name = self.product_selector.currentText().strip()
+        for item in self._product_presets:
+            if item["name"] == selected_name:
+                self.product_name_edit.setText(item["name"])
+                self.product_cost_edit.setText(item["default_cost"])
+                return
+        if not selected_name:
+            self.product_name_edit.clear()
+            self.product_cost_edit.clear()
+
     def _load_selected_shop(self) -> None:
         selected_name = self.shop_selector.currentText().strip()
         for shop in self._shops:
@@ -219,6 +365,7 @@ class SettingsPage(QWidget):
                 self.shop_app_token_edit.setText(shop["app_token"])
                 self.shop_table_id_edit.setText(shop["table_id"])
                 self.shop_table_name_edit.setText(shop["table_name"])
+                self._load_field_mapping(shop.get("field_mapping"))
                 return
         if not selected_name:
             self.shop_name_edit.clear()
@@ -226,6 +373,31 @@ class SettingsPage(QWidget):
             self.shop_app_token_edit.clear()
             self.shop_table_id_edit.clear()
             self.shop_table_name_edit.clear()
+            self._load_field_mapping({})
+
+    def _current_field_mapping(self) -> dict[str, str]:
+        return {
+            key: edit.text().strip()
+            for key, edit in self.mapping_edits.items()
+            if edit.text().strip()
+        }
+
+    def _load_field_mapping(self, mapping: dict | None) -> None:
+        cleaned_mapping = self._clean_field_mapping(mapping)
+        for key, edit in self.mapping_edits.items():
+            edit.setText(cleaned_mapping.get(key, ""))
+
+    @classmethod
+    def _clean_field_mapping(cls, mapping) -> dict[str, str]:
+        if not isinstance(mapping, dict):
+            return {}
+        cleaned: dict[str, str] = {}
+        for key in cls.FIELD_MAPPING_KEYS:
+            cleaned[key] = cls._clean_text(mapping.get(key))
+        for alias, key in cls.FIELD_MAPPING_ALIASES.items():
+            if not cleaned[key]:
+                cleaned[key] = cls._clean_text(mapping.get(alias))
+        return cleaned
 
     @staticmethod
     def _clean_text(value) -> str:

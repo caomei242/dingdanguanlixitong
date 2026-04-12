@@ -157,6 +157,10 @@ class MainWindow(QMainWindow):
         self.history_page.load_rows(self._history_store.list_items())
 
     def _sync_shop_selector(self, payload: dict) -> None:
+        product_presets = payload.get("product_presets")
+        if not product_presets:
+            product_presets = payload.get("global_product_library", [])
+        self.intake_page.set_product_presets(product_presets)
         shop_names = []
         for shop in payload.get("shops", []):
             if isinstance(shop, dict):
@@ -229,7 +233,10 @@ class MainWindow(QMainWindow):
             "app_secret": str(settings_payload["feishu_app_secret"]).strip(),
             "app_token": str(shop["app_token"]).strip(),
             "table_id": str(shop["table_id"]).strip(),
-            "fields": build_feishu_payload(payload["order"]),
+            "fields": build_feishu_payload(
+                payload["order"],
+                shop.get("field_mapping"),
+            ),
         }
 
     @staticmethod

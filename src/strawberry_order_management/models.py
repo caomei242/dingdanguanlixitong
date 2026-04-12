@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass(frozen=True)
@@ -24,6 +24,26 @@ class ParsedOrder:
     code: str
     address: str
     delivery_note: str
+    procurement_items: tuple["ProcurementItem", "ProcurementItem", "ProcurementItem"] = field(
+        default_factory=lambda: (
+            ProcurementItem("", "1", ""),
+            ProcurementItem("", "1", ""),
+            ProcurementItem("", "1", ""),
+        )
+    )
+
+
+@dataclass(frozen=True)
+class ProcurementItem:
+    product_name: str
+    quantity: str
+    cost: str
+
+
+@dataclass(frozen=True)
+class ProductPreset:
+    name: str
+    default_cost: str
 
 
 @dataclass(frozen=True)
@@ -32,3 +52,5 @@ class ShopConfig:
     app_token: str
     table_id: str
     table_name: str
+    wiki_url: str = ""
+    field_mapping: dict[str, str] = field(default_factory=dict)

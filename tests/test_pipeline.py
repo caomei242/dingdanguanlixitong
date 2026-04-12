@@ -371,9 +371,58 @@ def test_feishu_client_posts_fields_and_returns_response(monkeypatch: pytest.Mon
 
     assert result == {"data": {"record_id": "rec_1"}}
     assert captured["url"] == "https://open.feishu.cn/open-apis/bitable/v1/apps/app_token/tables/tbl_1/records"
-    assert captured["headers"] == {"Authorization": "Bearer access_token"}
+    assert captured["headers"] == {
+        "Authorization": "Bearer access_token",
+        "Content-Type": "application/json; charset=utf-8",
+    }
     assert captured["json"] == {"fields": {"备注": "ok"}}
     assert captured["timeout"] == 30
+
+
+def test_feishu_client_fetches_tenant_access_token_from_app_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    captured: dict[str, object] = {}
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        captured["url"] = url
+        captured["headers"] = headers
+        captured["json"] = json
+        captured["timeout"] = timeout
+        return FakeResponse(
+            {
+                "code": 0,
+                "msg": "ok",
+                "tenant_access_token": "tenant_token",
+                "app_access_token": "app_token",
+            }
+        )
+
+    monkeypatch.setattr("strawberry_order_management.services.feishu_client.requests.post", fake_post)
+
+    client = FeishuClient("app", "secret", "app_token", "tbl_1")
+
+    tenant_access_token = client.get_tenant_access_token()
+
+    assert tenant_access_token == "tenant_token"
+    assert captured["url"] == "https://open.feishu.cn/open-apis/auth/v3/app_access_token/internal"
+    assert captured["headers"] == {"Content-Type": "application/json; charset=utf-8"}
+    assert captured["json"] == {"app_id": "app", "app_secret": "secret"}
+    assert captured["timeout"] == 30
+
+
+def test_feishu_client_raises_readable_error_on_business_error(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    def fake_post(url, headers=None, json=None, timeout=None):
+        return FakeResponse({"code": 99991663, "msg": "invalid app credentials"})
+
+    monkeypatch.setattr("strawberry_order_management.services.feishu_client.requests.post", fake_post)
+
+    client = FeishuClient("app", "secret", "app_token", "tbl_1")
+
+    with pytest.raises(ValueError, match="invalid app credentials"):
+        client.get_tenant_access_token()
 
 
 def test_build_feishu_payload_rejects_invalid_placed_at_format():

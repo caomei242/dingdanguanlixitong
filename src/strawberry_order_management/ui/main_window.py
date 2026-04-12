@@ -14,10 +14,11 @@ from PySide6.QtWidgets import (
 )
 
 from strawberry_order_management.history import HistoryStore
+from strawberry_order_management.services.feishu_client import FeishuClient
 from strawberry_order_management.services.helper_client import HelperClient
 from strawberry_order_management.services.mcp_ocr_client import McpOCRClient
 from strawberry_order_management.services.ocr_client import OCRClient
-from strawberry_order_management.services.pipeline import OrderPipeline
+from strawberry_order_management.services.pipeline import OrderPipeline, build_feishu_payload
 from strawberry_order_management.ui.pages.history_page import HistoryPage
 from strawberry_order_management.ui.pages.intake_page import IntakePage
 from strawberry_order_management.ui.pages.settings_page import SettingsPage
@@ -104,11 +105,21 @@ class MainWindow(QMainWindow):
 
     def _handle_save_history_request(self, payload: dict) -> None:
         self._append_history(payload, "仅存历史")
+        self.intake_page.capture_widget.status_label.setText("已保存到历史")
 
     def _handle_submit_request(self, payload: dict) -> None:
-        self._append_history(payload, "待写入飞书")
+        try:
+            self._submit_to_feishu(payload)
+        except Exception as exc:
+            message = str(exc)
+            self.intake_page.capture_widget.status_label.setText(message)
+            self._append_history(payload, "写入失败", message)
+            return
+        shop_name = payload.get("shop_name") or "-"
+        self.intake_page.capture_widget.status_label.setText(f"已写入飞书：{shop_name}")
+        self._append_history(payload, "已写入飞书")
 
-    def _append_history(self, payload: dict, status: str) -> None:
+    def _append_history(self, payload: dict, status: str, message: str = "") -> None:
         if self._history_store is None:
             return
         order = payload["order"]
@@ -118,6 +129,7 @@ class MainWindow(QMainWindow):
             "recipient_name": order.recipient_name,
             "status": status,
             "product_name": order.product_name,
+            "message": message,
             "created_at": datetime.now().isoformat(timespec="seconds"),
         }
         self._history_store.append(row)
@@ -153,6 +165,54 @@ class MainWindow(QMainWindow):
 
         pipeline = self._order_pipeline_factory(payload)
         return pipeline.extract_order(image_bytes)
+
+    def _submit_to_feishu(self, payload: dict) -> dict:
+        settings_payload = self.settings_page.to_payload()
+        shop_name = str(payload.get("shop_name", "")).strip()
+        if not shop_name:
+            raise ValueError("请先选择店铺")
+
+        missing_global = []
+        if not settings_payload.get("feishu_app_id"):
+            missing_global.append("飞书 App ID")
+        if not settings_payload.get("feishu_app_secret"):
+            missing_global.append("飞书 App Secret")
+        if missing_global:
+            raise ValueError(f"请先在设置页填写：{'、'.join(missing_global)}")
+
+        shop = self._find_shop(settings_payload, shop_name)
+        if shop is None:
+            raise ValueError(f"未找到店铺配置：{shop_name}")
+
+        missing_shop = []
+        if not shop.get("app_token"):
+            missing_shop.append("App Token")
+        if not shop.get("table_id"):
+            missing_shop.append("Table ID")
+        if missing_shop:
+            raise ValueError(f"店铺“{shop_name}”缺少：{'、'.join(missing_shop)}")
+
+        client = FeishuClient(
+            str(settings_payload["feishu_app_id"]).strip(),
+            str(settings_payload["feishu_app_secret"]).strip(),
+            str(shop["app_token"]).strip(),
+            str(shop["table_id"]).strip(),
+        )
+        access_token = client.get_tenant_access_token()
+        return client.create_record(
+            access_token,
+            build_feishu_payload(payload["order"]),
+        )
+
+    @staticmethod
+    def _find_shop(settings_payload: dict, shop_name: str) -> dict | None:
+        for shop in settings_payload.get("shops", []):
+            if not isinstance(shop, dict):
+                continue
+            name = str(shop.get("name", "")).strip()
+            if name == shop_name:
+                return shop
+        return None
 
     @staticmethod
     def _build_order_pipeline(payload: dict) -> OrderPipeline:

@@ -125,6 +125,24 @@ def test_settings_page_resolves_shop_tokens_from_wiki_url(qtbot):
     assert page.status_label.text() == "已从飞书链接解析表格信息"
 
 
+def test_settings_page_shows_error_when_wiki_resolution_fails(qtbot):
+    def resolver(wiki_url: str):
+        raise ValueError("请先填写飞书 App ID 和 App Secret")
+
+    page = SettingsPage(on_resolve_shop_link=resolver)
+    qtbot.addWidget(page)
+
+    page.shop_name_edit.setText("乐宝零食店")
+    page.shop_wiki_url_edit.setText(
+        "https://my.feishu.cn/wiki/QTXMwCDpQi9n6VkfDxJc5mNTnjh?table=tblWZDrx4gqXpc5M&view=vew5lZdMQj"
+    )
+
+    page.save_shop_button.click()
+
+    assert page.status_label.text() == "请先填写飞书 App ID 和 App Secret"
+    assert page.shop_selector.count() == 0
+
+
 def test_history_page_load_rows_shows_summary_and_items(qtbot):
     page = HistoryPage()
     qtbot.addWidget(page)

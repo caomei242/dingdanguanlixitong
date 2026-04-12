@@ -170,7 +170,11 @@ class SettingsPage(QWidget):
         if not shop["name"]:
             return
         if shop["wiki_url"] and self._on_resolve_shop_link is not None:
-            resolved = self._on_resolve_shop_link(shop["wiki_url"])
+            try:
+                resolved = self._on_resolve_shop_link(shop["wiki_url"])
+            except Exception as exc:
+                self.status_label.setText(str(exc))
+                return
             shop["app_token"] = str(resolved.get("app_token", "")).strip()
             shop["table_id"] = str(resolved.get("table_id", "")).strip()
             self.shop_app_token_edit.setText(shop["app_token"])

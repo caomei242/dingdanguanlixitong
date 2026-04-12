@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import base64
 import pytest
 
 from strawberry_order_management.models import ParsedOrder
@@ -99,6 +100,49 @@ def test_ocr_client_posts_image_bytes_and_returns_text(monkeypatch: pytest.Monke
     assert captured["timeout"] == 30
 
 
+def test_ocr_client_supports_minimax_image_understanding_style_prompt(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    captured: dict[str, object] = {}
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        captured["url"] = url
+        captured["headers"] = headers
+        captured["json"] = json
+        captured["timeout"] = timeout
+        return FakeResponse(
+            {
+                "choices": [
+                    {
+                        "message": {
+                            "content": "订单编号 6952003434324366473\n下单时间 2026-04-11 20:57:15"
+                        }
+                    }
+                ]
+            }
+        )
+
+    monkeypatch.setattr(
+        "strawberry_order_management.services.ocr_client.requests.post", fake_post
+    )
+
+    client = OCRClient("https://api.minimaxi.com/v1", "secret")
+    text = client.extract_text(b"image-bytes")
+
+    expected_base64 = base64.b64encode(b"image-bytes").decode("utf-8")
+    assert text == "订单编号 6952003434324366473\n下单时间 2026-04-11 20:57:15"
+    assert captured["url"] == "https://api.minimaxi.com/v1/chat/completions"
+    assert captured["headers"] == {"Authorization": "Bearer secret"}
+    assert captured["json"]["model"] == "MiniMax-Text-01"
+    assert "订单编号 / 下单时间 / 订单状态 / 商品信息 / 单价/数量 / 商家收入金额 / 收货信息" in captured["json"]["messages"][0]["content"]
+    assert "不要总结、改写、翻译、解释" in captured["json"]["messages"][0]["content"]
+    assert "姓名 [编号] 手机号 地址 [编号]" in captured["json"]["messages"][1]["content"]
+    assert captured["json"]["messages"][1]["content"].endswith(
+        f"[Image base64:{expected_base64}]"
+    )
+    assert captured["timeout"] == 30
+
+
 def test_ocr_client_raises_readable_error_on_invalid_json(monkeypatch: pytest.MonkeyPatch):
     def fake_post(url, headers=None, files=None, timeout=None):
         return BadJsonResponse()
@@ -120,6 +164,22 @@ def test_ocr_client_raises_readable_error_when_text_missing(monkeypatch: pytest.
     client = OCRClient("https://ocr.example.com/", "secret")
 
     with pytest.raises(ValueError, match="OCR API response missing 'text'"):
+        client.extract_text(b"image-bytes")
+
+
+def test_ocr_client_raises_readable_error_when_minimax_choices_missing(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    def fake_post(url, headers=None, json=None, timeout=None):
+        return FakeResponse({"result": "ocr text"})
+
+    monkeypatch.setattr(
+        "strawberry_order_management.services.ocr_client.requests.post", fake_post
+    )
+
+    client = OCRClient("https://api.minimaxi.com/v1", "secret")
+
+    with pytest.raises(ValueError, match="MiniMax OCR response missing choices"):
         client.extract_text(b"image-bytes")
 
 
@@ -178,7 +238,11 @@ def test_helper_client_supports_minimax_openai_compatible_endpoint(
     assert captured["url"] == "https://api.minimaxi.com/v1/chat/completions"
     assert captured["headers"] == {"Authorization": "Bearer secret"}
     assert captured["json"]["model"] == "MiniMax-M2.5"
-    assert captured["json"]["messages"][1]["content"] == "ocr raw text"
+    assert "订单编号" in captured["json"]["messages"][0]["content"]
+    assert "收货信息 姓名 [编号] 手机号 地址 [编号]" in captured["json"]["messages"][0]["content"]
+    assert "不要加 Markdown，不要加 JSON，不要加代码块" in captured["json"]["messages"][0]["content"]
+    assert "字段名后面不要加中文冒号" in captured["json"]["messages"][0]["content"]
+    assert captured["json"]["messages"][1]["content"].endswith("ocr raw text")
     assert captured["timeout"] == 30
 
 

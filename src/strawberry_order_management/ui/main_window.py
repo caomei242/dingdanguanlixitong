@@ -72,7 +72,7 @@ class MainWindow(QMainWindow):
             on_save_history=self._handle_save_history_request,
         )
         self.history_page = HistoryPage()
-        self.settings_page = SettingsPage()
+        self.settings_page = SettingsPage(on_resolve_shop_link=self._resolve_shop_link)
         self.stack.addWidget(self.intake_page)
         self.stack.addWidget(self.history_page)
         self.stack.addWidget(self.settings_page)
@@ -186,6 +186,15 @@ class MainWindow(QMainWindow):
 
         pipeline = self._order_pipeline_factory(payload)
         return pipeline.extract_order(image_bytes)
+
+    def _resolve_shop_link(self, wiki_url: str) -> dict[str, str]:
+        settings_payload = self.settings_page.to_payload()
+        app_id = str(settings_payload.get("feishu_app_id", "")).strip()
+        app_secret = str(settings_payload.get("feishu_app_secret", "")).strip()
+        if not app_id or not app_secret:
+            raise ValueError("请先填写飞书 App ID 和 App Secret")
+        client = FeishuClient(app_id, app_secret, "", "")
+        return client.resolve_bitable_from_wiki_url(wiki_url)
 
     def _build_feishu_submission_task(self, payload: dict) -> dict:
         settings_payload = self.settings_page.to_payload()

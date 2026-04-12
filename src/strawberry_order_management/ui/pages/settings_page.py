@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
 class SettingsPage(QWidget):
     save_requested = Signal(object)
 
-    def __init__(self) -> None:
+    def __init__(self, on_resolve_shop_link=None) -> None:
         super().__init__()
         self.setObjectName("SettingsPage")
 
@@ -33,6 +33,7 @@ class SettingsPage(QWidget):
         self.feishu_app_secret_edit = QLineEdit()
         self.shop_selector = QComboBox()
         self.shop_name_edit = QLineEdit()
+        self.shop_wiki_url_edit = QLineEdit()
         self.shop_app_token_edit = QLineEdit()
         self.shop_table_id_edit = QLineEdit()
         self.shop_table_name_edit = QLineEdit()
@@ -40,6 +41,9 @@ class SettingsPage(QWidget):
         self.save_shop_button = QPushButton("保存店铺")
         self.remove_shop_button = QPushButton("删除店铺")
         self.save_button = QPushButton("保存/应用")
+        self.status_label = QLabel("")
+        self.status_label.setObjectName("MutedText")
+        self._on_resolve_shop_link = on_resolve_shop_link
         self.ocr_mcp_command_edit.setText("uvx minimax-coding-plan-mcp -y")
         self._shops: list[dict[str, str]] = []
 
@@ -69,6 +73,7 @@ class SettingsPage(QWidget):
         shop_form = QFormLayout()
         shop_form.addRow("已保存店铺", self.shop_selector)
         shop_form.addRow("店铺名称", self.shop_name_edit)
+        shop_form.addRow("飞书表链接", self.shop_wiki_url_edit)
         shop_form.addRow("飞书 App Token", self.shop_app_token_edit)
         shop_form.addRow("飞书 Table ID", self.shop_table_id_edit)
         shop_form.addRow("表名备注", self.shop_table_name_edit)
@@ -80,6 +85,7 @@ class SettingsPage(QWidget):
         card_layout.addWidget(QLabel("店铺与 Sheet 映射"))
         card_layout.addLayout(shop_button_row)
         card_layout.addLayout(shop_form)
+        card_layout.addWidget(self.status_label)
         card_layout.addWidget(self.save_button)
 
         content = QWidget()
@@ -131,6 +137,7 @@ class SettingsPage(QWidget):
         self._shops = [
             {
                 "name": self._clean_text(shop.get("name")),
+                "wiki_url": self._clean_text(shop.get("wiki_url")),
                 "app_token": self._clean_text(shop.get("app_token")),
                 "table_id": self._clean_text(shop.get("table_id")),
                 "table_name": self._clean_text(shop.get("table_name")),
@@ -145,20 +152,32 @@ class SettingsPage(QWidget):
 
     def _handle_add_shop(self) -> None:
         self.shop_name_edit.clear()
+        self.shop_wiki_url_edit.clear()
         self.shop_app_token_edit.clear()
         self.shop_table_id_edit.clear()
         self.shop_table_name_edit.clear()
         self.shop_name_edit.setFocus()
+        self.status_label.setText("")
 
     def _handle_save_shop(self) -> None:
         shop = {
             "name": self.shop_name_edit.text().strip(),
+            "wiki_url": self.shop_wiki_url_edit.text().strip(),
             "app_token": self.shop_app_token_edit.text().strip(),
             "table_id": self.shop_table_id_edit.text().strip(),
             "table_name": self.shop_table_name_edit.text().strip(),
         }
         if not shop["name"]:
             return
+        if shop["wiki_url"] and self._on_resolve_shop_link is not None:
+            resolved = self._on_resolve_shop_link(shop["wiki_url"])
+            shop["app_token"] = str(resolved.get("app_token", "")).strip()
+            shop["table_id"] = str(resolved.get("table_id", "")).strip()
+            self.shop_app_token_edit.setText(shop["app_token"])
+            self.shop_table_id_edit.setText(shop["table_id"])
+            self.status_label.setText("已从飞书链接解析表格信息")
+        else:
+            self.status_label.setText("")
 
         for index, existing in enumerate(self._shops):
             if existing["name"] == shop["name"]:
@@ -192,12 +211,14 @@ class SettingsPage(QWidget):
         for shop in self._shops:
             if shop["name"] == selected_name:
                 self.shop_name_edit.setText(shop["name"])
+                self.shop_wiki_url_edit.setText(shop.get("wiki_url", ""))
                 self.shop_app_token_edit.setText(shop["app_token"])
                 self.shop_table_id_edit.setText(shop["table_id"])
                 self.shop_table_name_edit.setText(shop["table_name"])
                 return
         if not selected_name:
             self.shop_name_edit.clear()
+            self.shop_wiki_url_edit.clear()
             self.shop_app_token_edit.clear()
             self.shop_table_id_edit.clear()
             self.shop_table_name_edit.clear()

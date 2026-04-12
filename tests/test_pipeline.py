@@ -425,6 +425,58 @@ def test_feishu_client_raises_readable_error_on_business_error(
         client.get_tenant_access_token()
 
 
+def test_feishu_client_resolves_bitable_tokens_from_wiki_url(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    captured_calls: list[tuple[str, dict | None, dict | None]] = []
+
+    def fake_get(url, headers=None, params=None, timeout=None):
+        captured_calls.append((url, headers, params))
+        return FakeResponse(
+            {
+                "code": 0,
+                "msg": "success",
+                "data": {
+                    "node": {
+                        "obj_type": "bitable",
+                        "obj_token": "basc1234567890",
+                    }
+                },
+            }
+        )
+
+    monkeypatch.setattr("strawberry_order_management.services.feishu_client.requests.get", fake_get)
+
+    client = FeishuClient("app", "secret", "app_token", "tbl_1")
+
+    result = client.resolve_bitable_from_wiki_url(
+        "https://my.feishu.cn/wiki/QTXMwCDpQi9n6VkfDxJc5mNTnjh?table=tblWZDrx4gqXpc5M&view=vew5lZdMQj",
+        access_token="tenant_token_123",
+    )
+
+    assert result == {
+        "app_token": "basc1234567890",
+        "table_id": "tblWZDrx4gqXpc5M",
+        "wiki_url": "https://my.feishu.cn/wiki/QTXMwCDpQi9n6VkfDxJc5mNTnjh?table=tblWZDrx4gqXpc5M&view=vew5lZdMQj",
+    }
+    assert captured_calls == [
+        (
+            "https://open.feishu.cn/open-apis/wiki/v2/spaces/get_node",
+            {"Authorization": "Bearer tenant_token_123"},
+            {"token": "QTXMwCDpQi9n6VkfDxJc5mNTnjh"},
+        )
+    ]
+
+
+def test_feishu_client_rejects_wiki_url_without_table_id():
+    client = FeishuClient("app", "secret", "app_token", "tbl_1")
+
+    with pytest.raises(ValueError, match="链接里缺少 Table ID"):
+        client.resolve_bitable_from_wiki_url(
+            "https://my.feishu.cn/wiki/QTXMwCDpQi9n6VkfDxJc5mNTnjh"
+        )
+
+
 def test_build_feishu_payload_rejects_invalid_placed_at_format():
     order = ParsedOrder(
         order_id="6952003434324366473",

@@ -19,6 +19,9 @@ def test_settings_page_collects_api_configuration(qtbot):
     page.feishu_app_id_edit.setText("cli_xxx")
     page.feishu_app_secret_edit.setText("secret_xxx")
     page.shop_name_edit.setText("草莓店")
+    page.shop_wiki_url_edit.setText(
+        "https://my.feishu.cn/wiki/QTXMwCDpQi9n6VkfDxJc5mNTnjh?table=tbl_xxx"
+    )
     page.shop_app_token_edit.setText("app_token_1")
     page.shop_table_id_edit.setText("tbl_xxx")
     page.shop_table_name_edit.setText("草莓订单表")
@@ -37,6 +40,7 @@ def test_settings_page_collects_api_configuration(qtbot):
     assert payload["shops"] == [
         {
             "name": "草莓店",
+            "wiki_url": "https://my.feishu.cn/wiki/QTXMwCDpQi9n6VkfDxJc5mNTnjh?table=tbl_xxx",
             "app_token": "app_token_1",
             "table_id": "tbl_xxx",
             "table_name": "草莓订单表",
@@ -61,6 +65,7 @@ def test_settings_page_load_payload_and_save_requested(qtbot):
         "shops": [
             {
                 "name": "草莓店",
+                "wiki_url": " https://my.feishu.cn/wiki/QTXMwCDpQi9n6VkfDxJc5mNTnjh?table=tbl_xxx ",
                 "app_token": " app_token_1 ",
                 "table_id": " tbl_xxx ",
                 "table_name": " 草莓订单表 ",
@@ -85,10 +90,39 @@ def test_settings_page_load_payload_and_save_requested(qtbot):
     assert page.feishu_app_secret_edit.text() == "secret_xxx"
     assert page.shop_selector.count() == 1
     assert page.shop_selector.currentText() == "草莓店"
+    assert page.shop_wiki_url_edit.text() == "https://my.feishu.cn/wiki/QTXMwCDpQi9n6VkfDxJc5mNTnjh?table=tbl_xxx"
     assert page.shop_app_token_edit.text() == "app_token_1"
     assert page.shop_table_id_edit.text() == "tbl_xxx"
     assert page.shop_table_name_edit.text() == "草莓订单表"
     assert emitted == [page.to_payload()]
+
+
+def test_settings_page_resolves_shop_tokens_from_wiki_url(qtbot):
+    captured = []
+
+    def resolver(wiki_url: str):
+        captured.append(wiki_url)
+        return {
+            "app_token": "basc1234567890",
+            "table_id": "tblWZDrx4gqXpc5M",
+        }
+
+    page = SettingsPage(on_resolve_shop_link=resolver)
+    qtbot.addWidget(page)
+
+    page.shop_name_edit.setText("乐宝零食店")
+    page.shop_wiki_url_edit.setText(
+        "https://my.feishu.cn/wiki/QTXMwCDpQi9n6VkfDxJc5mNTnjh?table=tblWZDrx4gqXpc5M&view=vew5lZdMQj"
+    )
+
+    page.save_shop_button.click()
+
+    assert captured == [
+        "https://my.feishu.cn/wiki/QTXMwCDpQi9n6VkfDxJc5mNTnjh?table=tblWZDrx4gqXpc5M&view=vew5lZdMQj"
+    ]
+    assert page.shop_app_token_edit.text() == "basc1234567890"
+    assert page.shop_table_id_edit.text() == "tblWZDrx4gqXpc5M"
+    assert page.status_label.text() == "已从飞书链接解析表格信息"
 
 
 def test_history_page_load_rows_shows_summary_and_items(qtbot):

@@ -1,5 +1,7 @@
 from PySide6.QtWidgets import QApplication
 
+from strawberry_order_management.ui.main_window import MainWindow
+
 
 def build_app() -> QApplication:
     app = QApplication.instance()
@@ -7,3 +9,14 @@ def build_app() -> QApplication:
         app = QApplication([])
     app.setApplicationName("草莓订单管理系统")
     return app
+
+
+def main() -> int:
+    app = build_app()
+    window = MainWindow()
+    window.show()
+    return app.exec()
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

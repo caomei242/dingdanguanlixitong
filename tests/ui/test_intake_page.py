@@ -1,4 +1,5 @@
 from strawberry_order_management.models import ParsedOrder
+from strawberry_order_management import app as app_module
 from strawberry_order_management.ui.pages.intake_page import IntakePage
 from strawberry_order_management.ui.widgets.address_extractor_widget import (
     AddressExtractorWidget,
@@ -37,3 +38,22 @@ def test_intake_page_shows_order_card_after_pipeline_result(qtbot):
     assert isinstance(page.address_widget, AddressExtractorWidget)
     assert page.submit_button.text() == "确认写入飞书"
     assert submitted_orders == [order]
+
+
+def test_app_main_creates_and_shows_main_window(monkeypatch):
+    events = {"shown": False, "exec_called": False}
+
+    class FakeWindow:
+        def show(self):
+            events["shown"] = True
+
+    class FakeApp:
+        def exec(self):
+            events["exec_called"] = True
+            return 0
+
+    monkeypatch.setattr(app_module, "build_app", lambda: FakeApp())
+    monkeypatch.setattr(app_module, "MainWindow", FakeWindow)
+
+    assert app_module.main() == 0
+    assert events == {"shown": True, "exec_called": True}

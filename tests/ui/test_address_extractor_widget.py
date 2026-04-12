@@ -1,3 +1,5 @@
+from PySide6.QtGui import QGuiApplication
+
 from strawberry_order_management.ui.widgets.address_extractor_widget import (
     AddressExtractorWidget,
 )
@@ -45,3 +47,24 @@ def test_address_extractor_widget_supports_inline_phone_code_format(qtbot):
     )
     assert widget.output_two.toPlainText() == "请电话送货上门谢谢【6026】"
     assert widget.status_label.text() == "提取成功"
+
+
+def test_address_extractor_widget_copies_each_output(qtbot):
+    widget = AddressExtractorWidget()
+    qtbot.addWidget(widget)
+
+    widget.input_edit.setPlainText(
+        "郑翔，15795949269-6026，广西壮族自治区北海市海城区 高德街道 北海大道5号北海恒大雅苑2栋2单元1901"
+    )
+    widget.extract_button.click()
+
+    widget.copy_output_one_button.click()
+    assert (
+        QGuiApplication.clipboard().text()
+        == "郑翔15795949269广西壮族自治区北海市海城区高德街道北海大道5号北海恒大雅苑2栋2单元1901"
+    )
+    assert widget.status_label.text() == "已复制结果一"
+
+    widget.copy_output_two_button.click()
+    assert QGuiApplication.clipboard().text() == "请电话送货上门谢谢【6026】"
+    assert widget.status_label.text() == "已复制结果二"

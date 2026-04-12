@@ -24,3 +24,7 @@ class ConfigStore:
             json.dumps(payload, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
+
+
+def default_config_path() -> Path:
+    return Path.home() / ".config" / "strawberry-order-management" / "config.json"

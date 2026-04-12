@@ -18,10 +18,11 @@ from strawberry_order_management.ui.theme import apply_theme
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, on_settings_save=None) -> None:
+    def __init__(self, on_settings_save=None, config_store=None) -> None:
         super().__init__()
         self.setWindowTitle("草莓订单管理系统")
         self._on_settings_save = on_settings_save
+        self._config_store = config_store
 
         self.nav = QListWidget()
         self.nav.addItems(["订单录入", "历史", "设置"])
@@ -66,8 +67,13 @@ class MainWindow(QMainWindow):
         self.nav.setCurrentRow(0)
         self.settings_page.save_requested.connect(self._handle_settings_save)
 
+        if self._config_store is not None:
+            self.settings_page.load_payload(self._config_store.load())
+
         apply_theme(self)
 
     def _handle_settings_save(self, payload: dict) -> None:
+        if self._config_store is not None:
+            self._config_store.save(payload)
         if self._on_settings_save is not None:
             self._on_settings_save(payload)

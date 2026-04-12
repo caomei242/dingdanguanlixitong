@@ -144,6 +144,44 @@ def test_helper_client_posts_text_and_returns_text(monkeypatch: pytest.MonkeyPat
     assert captured["timeout"] == 30
 
 
+def test_helper_client_supports_minimax_openai_compatible_endpoint(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    captured: dict[str, object] = {}
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        captured["url"] = url
+        captured["headers"] = headers
+        captured["json"] = json
+        captured["timeout"] = timeout
+        return FakeResponse(
+            {
+                "choices": [
+                    {
+                        "message": {
+                            "content": "订单编号 1\n下单时间 2026-04-11 20:57:15"
+                        }
+                    }
+                ]
+            }
+        )
+
+    monkeypatch.setattr(
+        "strawberry_order_management.services.helper_client.requests.post", fake_post
+    )
+
+    client = HelperClient("https://api.minimaxi.com/v1", "secret")
+
+    text = client.enrich_text("ocr raw text")
+
+    assert text == "订单编号 1\n下单时间 2026-04-11 20:57:15"
+    assert captured["url"] == "https://api.minimaxi.com/v1/chat/completions"
+    assert captured["headers"] == {"Authorization": "Bearer secret"}
+    assert captured["json"]["model"] == "MiniMax-M2.5"
+    assert captured["json"]["messages"][1]["content"] == "ocr raw text"
+    assert captured["timeout"] == 30
+
+
 def test_helper_client_raises_readable_error_on_invalid_json(monkeypatch: pytest.MonkeyPatch):
     def fake_post(url, headers=None, json=None, timeout=None):
         return BadJsonResponse()
@@ -165,6 +203,22 @@ def test_helper_client_raises_readable_error_when_text_missing(monkeypatch: pyte
     client = HelperClient("https://helper.example.com/", "secret")
 
     with pytest.raises(ValueError, match="Helper API response missing 'text'"):
+        client.enrich_text("raw text")
+
+
+def test_helper_client_raises_readable_error_when_minimax_choices_missing(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    def fake_post(url, headers=None, json=None, timeout=None):
+        return FakeResponse({"result": "helper text"})
+
+    monkeypatch.setattr(
+        "strawberry_order_management.services.helper_client.requests.post", fake_post
+    )
+
+    client = HelperClient("https://api.minimaxi.com/v1", "secret")
+
+    with pytest.raises(ValueError, match="MiniMax response missing choices"):
         client.enrich_text("raw text")
 
 

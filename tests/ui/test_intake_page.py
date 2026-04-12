@@ -44,6 +44,9 @@ def test_app_main_creates_and_shows_main_window(monkeypatch):
     events = {"shown": False, "exec_called": False}
 
     class FakeWindow:
+        def __init__(self, *args, **kwargs):
+            pass
+
         def show(self):
             events["shown"] = True
 

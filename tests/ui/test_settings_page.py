@@ -129,3 +129,41 @@ def test_main_window_forwards_settings_save_requests(qtbot):
     window.settings_page.save_button.click()
 
     assert saved == [window.settings_page.to_payload()]
+
+
+class MemoryConfigStore:
+    def __init__(self, initial_payload=None):
+        self.initial_payload = initial_payload or {}
+        self.saved_payloads = []
+
+    def load(self):
+        return self.initial_payload
+
+    def save(self, payload):
+        self.saved_payloads.append(payload)
+
+
+def test_main_window_loads_initial_settings_from_config_store(qtbot):
+    store = MemoryConfigStore(
+        {
+            "helper_base_url": "https://api.minimaxi.com/v1",
+            "helper_api_key": "minimax-secret",
+        }
+    )
+    window = MainWindow(config_store=store)
+    qtbot.addWidget(window)
+
+    assert window.settings_page.helper_base_url_edit.text() == "https://api.minimaxi.com/v1"
+    assert window.settings_page.helper_api_key_edit.text() == "minimax-secret"
+
+
+def test_main_window_saves_settings_into_config_store(qtbot):
+    store = MemoryConfigStore()
+    window = MainWindow(config_store=store)
+    qtbot.addWidget(window)
+
+    window.settings_page.helper_base_url_edit.setText("https://api.minimaxi.com/v1")
+    window.settings_page.helper_api_key_edit.setText("minimax-secret")
+    window.settings_page.save_button.click()
+
+    assert store.saved_payloads == [window.settings_page.to_payload()]

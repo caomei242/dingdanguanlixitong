@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from decimal import Decimal, ROUND_HALF_UP
 from functools import partial
 
 from PySide6.QtCore import Signal
@@ -17,6 +17,11 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from strawberry_order_management.finance import (
+    calculate_platform_fee_amount,
+    format_money,
+    parse_decimal,
+)
 from strawberry_order_management.models import ParsedOrder, ProcurementItem
 
 
@@ -170,12 +175,14 @@ class OrderCardWidget(QWidget):
             combo.setCurrentText(self._to_text(item.product_name))
             quantity_edit.setText(self._to_text(item.quantity) or "1")
             cost_edit.setText(self._to_text(item.cost))
+        should_recalculate = False
         if self._to_text(order.platform_fee_rate).strip():
             self._platform_fee_amount_overridden = False
+            should_recalculate = True
         elif self._to_text(order.platform_fee_amount).strip():
             self._platform_fee_amount_overridden = True
         self._suspend_financial_recalculation = False
-        if not has_prefilled_financials:
+        if should_recalculate or not has_prefilled_financials:
             self._recalculate_financials()
 
     def to_order(self) -> ParsedOrder:
@@ -377,23 +384,21 @@ class OrderCardWidget(QWidget):
     def _recalculate_financials(self) -> None:
         if self._suspend_financial_recalculation:
             return
-        income = self._to_decimal(self.income_amount_edit.text())
-        fee_rate = self._to_decimal(self.platform_fee_rate_edit.text())
-        fee_amount = self._to_decimal(self.platform_fee_amount_edit.text())
+        income = parse_decimal(self.income_amount_edit.text())
+        fee_rate = parse_decimal(self.platform_fee_rate_edit.text())
+        fee_amount = parse_decimal(self.platform_fee_amount_edit.text())
         if not self._platform_fee_amount_overridden:
-            fee_amount = (income * fee_rate / Decimal("100")).quantize(
-                Decimal("0.01"), rounding=ROUND_HALF_UP
-            )
-            self._set_line_edit_text(self.platform_fee_amount_edit, self._format_decimal(fee_amount))
+            fee_amount = parse_decimal(calculate_platform_fee_amount(income, fee_rate))
+            self._set_line_edit_text(self.platform_fee_amount_edit, format_money(fee_amount))
         procurement_total = self._sum_procurement_costs()
         self._set_line_edit_text(
             self.procurement_total_cost_edit,
-            self._format_decimal(procurement_total),
+            format_money(procurement_total),
         )
-        other_cost = self._to_decimal(self.other_cost_edit.text())
+        other_cost = parse_decimal(self.other_cost_edit.text())
         custom_total = sum(
             (
-                self._to_decimal(edit.text())
+                parse_decimal(edit.text())
                 for label, edit in zip(self.custom_cost_label_edits, self.custom_cost_value_edits)
                 if label.text().strip()
             ),
@@ -402,30 +407,16 @@ class OrderCardWidget(QWidget):
         gross_profit = income - fee_amount - procurement_total - other_cost - custom_total
         self._set_line_edit_text(
             self.gross_profit_edit,
-            self._format_decimal(gross_profit),
+            format_money(gross_profit),
         )
 
     def _sum_procurement_costs(self) -> Decimal:
         total = Decimal("0")
         for _, quantity_edit, cost_edit, _ in self.procurement_rows:
-            quantity = self._to_decimal(quantity_edit.text() or "1")
-            cost = self._to_decimal(cost_edit.text())
+            quantity = parse_decimal(quantity_edit.text() or "1")
+            cost = parse_decimal(cost_edit.text())
             total += quantity * cost
         return total.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-
-    @staticmethod
-    def _to_decimal(value: str) -> Decimal:
-        cleaned = str(value or "").strip().replace("%", "").replace(",", "")
-        if not cleaned:
-            return Decimal("0")
-        try:
-            return Decimal(cleaned)
-        except InvalidOperation:
-            return Decimal("0")
-
-    @staticmethod
-    def _format_decimal(value: Decimal) -> str:
-        return str(value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
 
     @staticmethod
     def _set_line_edit_text(widget: QLineEdit, value: str) -> None:

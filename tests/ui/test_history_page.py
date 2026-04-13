@@ -304,6 +304,35 @@ def test_history_page_loads_and_saves_financial_fields(qtbot):
     assert emitted[0][1]["order_snapshot"]["custom_cost_values"] == ["1.00", "", ""]
 
 
+def test_history_page_treats_decimal_fee_rate_as_direct_multiplier(qtbot):
+    page = HistoryPage()
+    qtbot.addWidget(page)
+    rows = [
+        _row(
+            "record-1",
+            "乐宝零食店",
+            "确认写入飞书",
+            "已写入飞书",
+            "6952003434324366473",
+            "何女士",
+            "何女士15781304332四川省成都市",
+            "请电话送货上门谢谢【3612】",
+        )
+    ]
+    rows[0]["order_snapshot"]["platform_fee_rate"] = "0.06"
+    rows[0]["order_snapshot"]["platform_fee_amount"] = "9.72"
+    rows[0]["order_snapshot"]["gross_profit"] = "108.28"
+
+    page.load_rows(rows)
+    emitted = []
+    page.save_requested.connect(lambda record_id, patch: emitted.append((record_id, patch)))
+
+    page.platform_fee_rate_value.setPlainText("0.06")
+    page.save_button.click()
+
+    assert emitted[0][1]["order_snapshot"]["platform_fee_amount"] == "9.72"
+
+
 def test_history_page_directly_edits_fields_and_emits_save_patch(qtbot):
     page = HistoryPage()
     qtbot.addWidget(page)

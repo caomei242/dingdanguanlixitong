@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from decimal import Decimal, ROUND_HALF_UP
 import json
 from typing import Any
 
@@ -17,6 +17,12 @@ from PySide6.QtWidgets import (
     QTextEdit,
     QVBoxLayout,
     QWidget,
+)
+
+from strawberry_order_management.finance import (
+    calculate_platform_fee_amount,
+    format_money,
+    parse_decimal,
 )
 
 
@@ -769,39 +775,26 @@ class HistoryPage(QWidget):
 
     def _recalculate_financial_snapshot(self, order_snapshot: dict[str, Any]) -> dict[str, Any]:
         snapshot = dict(order_snapshot)
-        income = self._to_decimal(snapshot.get("income_amount"))
-        fee_rate = self._to_decimal(snapshot.get("platform_fee_rate"))
-        fee_amount = (income * fee_rate / Decimal("100")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        income = parse_decimal(snapshot.get("income_amount"))
+        fee_amount = parse_decimal(
+            calculate_platform_fee_amount(snapshot.get("income_amount"), snapshot.get("platform_fee_rate"))
+        )
         procurement_total = Decimal("0")
         for item in snapshot.get("procurement_items", []):
             if not isinstance(item, dict):
                 continue
-            procurement_total += self._to_decimal(item.get("quantity") or "1") * self._to_decimal(item.get("cost"))
+            procurement_total += parse_decimal(item.get("quantity") or "1") * parse_decimal(item.get("cost"))
         procurement_total = procurement_total.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-        other_cost = self._to_decimal(snapshot.get("other_cost"))
+        other_cost = parse_decimal(snapshot.get("other_cost"))
         custom_total = Decimal("0")
         for label, value in zip(snapshot.get("custom_cost_labels", []), snapshot.get("custom_cost_values", [])):
             if self._text_value(label):
-                custom_total += self._to_decimal(value)
+                custom_total += parse_decimal(value)
         gross_profit = income - fee_amount - procurement_total - other_cost - custom_total
-        snapshot["platform_fee_amount"] = self._format_decimal(fee_amount)
-        snapshot["procurement_total_cost"] = self._format_decimal(procurement_total)
-        snapshot["gross_profit"] = self._format_decimal(gross_profit)
+        snapshot["platform_fee_amount"] = format_money(fee_amount)
+        snapshot["procurement_total_cost"] = format_money(procurement_total)
+        snapshot["gross_profit"] = format_money(gross_profit)
         return snapshot
-
-    @staticmethod
-    def _to_decimal(value: Any) -> Decimal:
-        cleaned = str(value or "").strip().replace("%", "").replace(",", "")
-        if not cleaned:
-            return Decimal("0")
-        try:
-            return Decimal(cleaned)
-        except InvalidOperation:
-            return Decimal("0")
-
-    @staticmethod
-    def _format_decimal(value: Decimal) -> str:
-        return str(value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
 
     @staticmethod
     def _build_text_value(minimum_height: int = 36, editable: bool = True) -> QTextEdit:

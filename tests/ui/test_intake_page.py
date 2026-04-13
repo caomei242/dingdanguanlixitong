@@ -406,6 +406,44 @@ def test_order_card_computes_fee_total_cost_and_gross_profit(qtbot):
     assert page.order_card_widget.gross_profit_edit.text() == "42.00"
 
 
+def test_order_card_treats_decimal_fee_rate_as_direct_multiplier(qtbot):
+    page = IntakePage(use_background_thread=False)
+    qtbot.addWidget(page)
+
+    page.order_card_widget.income_amount_edit.setText("162.00")
+    page.order_card_widget.platform_fee_rate_edit.setText("0.06")
+
+    assert page.order_card_widget.platform_fee_amount_edit.text() == "9.72"
+    assert page.order_card_widget.gross_profit_edit.text() == "152.28"
+
+
+def test_show_order_recalculates_fee_amount_from_income_and_rate(qtbot):
+    page = IntakePage(use_background_thread=False)
+    qtbot.addWidget(page)
+
+    order = ParsedOrder(
+        order_id="1",
+        placed_at="2026-04-13 21:31:20",
+        order_status="待发货",
+        product_name="商品",
+        quantity="1",
+        order_amount="405.00",
+        income_amount="162.00",
+        recipient_name="团团",
+        phone_number="17804499356",
+        code="8368",
+        address="辽宁省大连市",
+        delivery_note="请电话送货上门谢谢【8368】",
+        platform_fee_rate="0.06",
+        platform_fee_amount="0.10",
+        gross_profit="39.10",
+    )
+
+    page.show_order(order)
+
+    assert page.order_card_widget.platform_fee_amount_edit.text() == "9.72"
+
+
 def test_intake_page_submits_financial_fields_and_custom_costs(qtbot):
     submitted_orders = []
     page = IntakePage(on_submit=submitted_orders.append, use_background_thread=False)

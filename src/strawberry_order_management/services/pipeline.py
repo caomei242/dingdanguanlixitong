@@ -7,13 +7,24 @@ from strawberry_order_management.models import ParsedOrder
 
 
 DEFAULT_FEISHU_FIELD_MAPPING = {
+    "店铺": "",
+    "订单编号": "",
     "备注": "备注",
     "订单日期": "订单日期",
     "下单时间": "下单时间",
     "订单状态": "订单状态",
+    "商品名称": "",
+    "数量": "",
+    "收件人": "",
+    "手机号": "",
+    "编号": "",
     "收入": "收入",
     "发货地址": "发货地址",
     "价格": "",
+    "同步方式": "",
+    "同步状态": "",
+    "同步说明": "",
+    "录入时间": "",
     "采购商品1": "",
     "采购数量1": "",
     "采购成本1": "",
@@ -29,6 +40,11 @@ DEFAULT_FEISHU_FIELD_MAPPING = {
 def build_feishu_payload(
     order: ParsedOrder,
     field_mapping: dict[str, str] | None = None,
+    *,
+    shop_name: str = "",
+    sync_source: str = "",
+    sync_status: str = "",
+    sync_message: str = "",
 ) -> dict[str, str]:
     try:
         placed_at = datetime.strptime(order.placed_at, "%Y-%m-%d %H:%M:%S")
@@ -39,13 +55,24 @@ def build_feishu_payload(
         mapping.update(field_mapping)
 
     source_fields = {
+        "店铺": shop_name,
+        "订单编号": order.order_id,
         "备注": order.delivery_note,
         "订单日期": placed_at.strftime("%Y/%m/%d"),
         "下单时间": placed_at.strftime("%H:%M:%S"),
         "订单状态": order.order_status,
+        "商品名称": order.product_name,
+        "数量": order.quantity,
+        "收件人": order.recipient_name,
+        "手机号": order.phone_number,
+        "编号": order.code,
         "收入": order.income_amount,
         "发货地址": f"{order.recipient_name} {order.phone_number}-{order.code} {order.address}",
         "价格": order.order_amount,
+        "同步方式": sync_source,
+        "同步状态": sync_status,
+        "同步说明": sync_message,
+        "录入时间": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     }
     for index, item in enumerate(order.procurement_items, start=1):
         source_fields[f"采购商品{index}"] = item.product_name
@@ -74,19 +101,23 @@ class OrderPipeline:
         return parse_order_text(helper_text)
 
     def build_feishu_payload(
-        self, order: ParsedOrder, field_mapping: dict[str, str] | None = None
+        self,
+        order: ParsedOrder,
+        field_mapping: dict[str, str] | None = None,
+        **kwargs,
     ) -> dict[str, str]:
-        return build_feishu_payload(order, field_mapping)
+        return build_feishu_payload(order, field_mapping, **kwargs)
 
     def submit_order(
         self,
         access_token: str,
         order: ParsedOrder,
         field_mapping: dict[str, str] | None = None,
+        **kwargs,
     ) -> dict:
         if self.feishu_client is None:
             raise ValueError("missing feishu client")
         return self.feishu_client.create_record(
             access_token,
-            build_feishu_payload(order, field_mapping),
+            build_feishu_payload(order, field_mapping, **kwargs),
         )

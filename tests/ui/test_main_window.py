@@ -59,32 +59,36 @@ def _settings_payload() -> dict:
         "helper_api_key": "helper_key",
         "feishu_app_id": "cli_app_123",
         "feishu_app_secret": "secret_456",
+        "feishu_table_wiki_url": "https://my.feishu.cn/wiki/QTXMwCDpQi9n6VkfDxJc5mNTnjh?table=tbl_total",
+        "feishu_table_app_token": "app_token_total",
+        "feishu_table_id": "tbl_total",
+        "feishu_table_name": "订单总表",
+        "feishu_field_mapping": {
+            "店铺": "店铺",
+            "订单编号": "订单编号",
+            "备注": "备注",
+            "订单日期": "订单日期",
+            "下单时间": "下单时间",
+            "订单状态": "订单状态",
+            "收入": "收入金额",
+            "发货地址": "发货地址",
+            "价格": "",
+            "采购商品1": "采购商品1",
+            "采购数量1": "采购数量1",
+            "采购成本1": "采购成本1",
+            "采购商品2": "",
+            "采购数量2": "",
+            "采购成本2": "",
+            "采购商品3": "",
+            "采购数量3": "",
+            "采购成本3": "",
+        },
         "product_presets": [{"name": "澳洲婴儿水", "default_cost": "18.50"}],
         "shops": [
             {
                 "name": "草莓店",
-                "app_token": "app_token_strawberry",
-                "table_id": "tbl_strawberry",
-                "table_name": "草莓订单",
-                "field_mapping": {
-                    "备注": "备注",
-                    "订单日期": "订单日期",
-                    "下单时间": "下单时间",
-                    "订单状态": "订单状态",
-                    "收入": "收入金额",
-                    "发货地址": "发货地址",
-                    "价格": "",
-                    "采购商品1": "采购商品1",
-                    "采购数量1": "采购数量1",
-                    "采购成本1": "采购成本1",
-                    "采购商品2": "",
-                    "采购数量2": "",
-                    "采购成本2": "",
-                    "采购商品3": "",
-                    "采购数量3": "",
-                    "采购成本3": "",
-                },
-            }
+            },
+            {"name": "乐宝零食店"},
         ],
         "selected_shop_name": "草莓店",
     }
@@ -128,7 +132,7 @@ def _assert_rich_history_snapshot(
     assert address_snapshot["output_two"].strip()
 
 
-def test_main_window_submits_order_to_selected_shop_sheet(qtbot, tmp_path, monkeypatch):
+def test_main_window_submits_order_to_total_table_with_shop_field(qtbot, tmp_path, monkeypatch):
     config_store = ConfigStore(tmp_path / "config.json")
     history_store = HistoryStore(tmp_path / "history.json")
     config_store.save(_settings_payload())
@@ -168,11 +172,13 @@ def test_main_window_submits_order_to_selected_shop_sheet(qtbot, tmp_path, monke
     assert captured["init"] == (
         "cli_app_123",
         "secret_456",
-        "app_token_strawberry",
-        "tbl_strawberry",
+        "app_token_total",
+        "tbl_total",
     )
     assert captured["token_called"] is True
     assert captured["create"][0] == "tenant_token_123"
+    assert captured["create"][1]["店铺"] == "草莓店"
+    assert captured["create"][1]["订单编号"] == "6952003434324366473"
     assert captured["create"][1]["收入金额"] == "162.00"
     assert captured["create"][1]["发货地址"].startswith("何女士 15781304332-3612")
     assert captured["create"][1]["采购商品1"] == "澳洲婴儿水"
@@ -309,7 +315,7 @@ def test_main_window_persists_submit_failure_before_worker_start(qtbot, tmp_path
         start_called["value"] = True
 
     def fake_build_task(payload: dict) -> dict:
-        raise ValueError("店铺“草莓店”缺少：Table ID")
+        raise ValueError("请先在设置页填写：总表 Table ID")
 
     monkeypatch.setattr(window, "_start_submit_job", fake_start_submit_job)
     monkeypatch.setattr(window, "_build_feishu_submission_task", fake_build_task)
@@ -317,12 +323,12 @@ def test_main_window_persists_submit_failure_before_worker_start(qtbot, tmp_path
     window.intake_page.submit_button.click()
 
     assert start_called["value"] is False
-    assert window.intake_page.capture_widget.status_label.text() == "店铺“草莓店”缺少：Table ID"
+    assert window.intake_page.capture_widget.status_label.text() == "请先在设置页填写：总表 Table ID"
     assert len(history_store.list_items()) == 1
     record = history_store.list_items()[0]
     assert record["status"] == "写入失败"
     assert record["sync_source"] == "确认写入飞书"
-    assert record["message"] == "店铺“草莓店”缺少：Table ID"
+    assert record["message"] == "请先在设置页填写：总表 Table ID"
     assert record["order_snapshot"]["order_id"] == _sample_order().order_id
 
 

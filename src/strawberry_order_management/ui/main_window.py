@@ -368,28 +368,40 @@ class MainWindow(QMainWindow):
         if missing_global:
             raise ValueError(f"请先在设置页填写：{'、'.join(missing_global)}")
 
-        shop = self._find_shop(settings_payload, shop_name)
-        if shop is None:
-            raise ValueError(f"未找到店铺配置：{shop_name}")
+        table_app_token = str(
+            settings_payload.get("feishu_table_app_token")
+            or (self._find_shop(settings_payload, shop_name) or {}).get("app_token", "")
+        ).strip()
+        table_id = str(
+            settings_payload.get("feishu_table_id")
+            or (self._find_shop(settings_payload, shop_name) or {}).get("table_id", "")
+        ).strip()
+        field_mapping = settings_payload.get("feishu_field_mapping")
+        if not field_mapping:
+            field_mapping = (self._find_shop(settings_payload, shop_name) or {}).get("field_mapping")
 
-        missing_shop = []
-        if not shop.get("app_token"):
-            missing_shop.append("App Token")
-        if not shop.get("table_id"):
-            missing_shop.append("Table ID")
-        if missing_shop:
-            raise ValueError(f"店铺“{shop_name}”缺少：{'、'.join(missing_shop)}")
+        missing_table = []
+        if not table_app_token:
+            missing_table.append("总表 App Token")
+        if not table_id:
+            missing_table.append("总表 Table ID")
+        if missing_table:
+            raise ValueError(f"请先在设置页填写：{'、'.join(missing_table)}")
 
         return {
             "payload": payload,
             "shop_name": shop_name,
             "app_id": str(settings_payload["feishu_app_id"]).strip(),
             "app_secret": str(settings_payload["feishu_app_secret"]).strip(),
-            "app_token": str(shop["app_token"]).strip(),
-            "table_id": str(shop["table_id"]).strip(),
+            "app_token": table_app_token,
+            "table_id": table_id,
             "fields": build_feishu_payload(
                 payload["order"],
-                shop.get("field_mapping"),
+                field_mapping,
+                shop_name=shop_name,
+                sync_source="确认写入飞书",
+                sync_status="已写入飞书",
+                sync_message="写入成功",
             ),
         }
 

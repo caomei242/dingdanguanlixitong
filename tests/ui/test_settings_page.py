@@ -6,7 +6,7 @@ from strawberry_order_management.ui.pages.settings_page import SettingsPage
 from strawberry_order_management.models import ParsedOrder
 
 
-def test_settings_page_load_payload_preserves_global_product_library_and_shop_field_mapping(qtbot):
+def test_settings_page_load_payload_preserves_global_product_library_and_total_table_mapping(qtbot):
     page = SettingsPage()
     qtbot.addWidget(page)
 
@@ -16,6 +16,15 @@ def test_settings_page_load_payload_preserves_global_product_library_and_shop_fi
                 {"name": "澳大利亚进口婴儿水", "default_cost": "12.50"},
                 {"name": "草莓", "default_cost": "8.20"},
             ],
+            "feishu_table_wiki_url": "https://my.feishu.cn/wiki/QTXMwCDpQi9n6VkfDxJc5mNTnjh?table=tbl_total",
+            "feishu_table_app_token": "app_token_total",
+            "feishu_table_id": "tbl_total",
+            "feishu_table_name": "订单总表",
+            "feishu_field_mapping": {
+                "店铺": "店铺列",
+                "备注": "备注列",
+                "订单日期": "订单日期列",
+            },
             "shops": [
                 {
                     "name": "草莓店",
@@ -51,25 +60,30 @@ def test_settings_page_load_payload_preserves_global_product_library_and_shop_fi
     assert page.product_name_edit.text() == "澳大利亚进口婴儿水"
     assert page.product_default_cost_edit.text() == "12.50"
     assert page.shop_selector.currentText() == "草莓店"
+    assert page.shop_wiki_url_edit.text() == "https://my.feishu.cn/wiki/QTXMwCDpQi9n6VkfDxJc5mNTnjh?table=tbl_total"
+    assert page.shop_app_token_edit.text() == "app_token_total"
+    assert page.shop_table_id_edit.text() == "tbl_total"
+    assert page.shop_table_name_edit.text() == "订单总表"
+    assert page.shop_mapping_edits["shop_name"].text() == "店铺列"
     assert page.shop_mapping_edits["remark"].text() == "备注列"
     assert page.shop_mapping_edits["order_date"].text() == "订单日期列"
-    assert page.shop_mapping_edits["order_time"].text() == "下单时间列"
-    assert page.shop_mapping_edits["order_status"].text() == "订单状态列"
-    assert page.shop_mapping_edits["income"].text() == "收入列"
-    assert page.shop_mapping_edits["shipping_address"].text() == "发货地址列"
-    assert page.shop_mapping_edits["price"].text() == "价格列"
-    assert page.shop_mapping_edits["purchase_item_1"].text() == "采购商品1列"
-    assert page.shop_mapping_edits["purchase_item_2"].text() == "采购商品2列"
-    assert page.shop_mapping_edits["purchase_item_3"].text() == "采购商品3列"
-    assert page.shop_mapping_edits["purchase_quantity_1"].text() == "采购数量1列"
-    assert page.shop_mapping_edits["purchase_quantity_2"].text() == "采购数量2列"
-    assert page.shop_mapping_edits["purchase_quantity_3"].text() == "采购数量3列"
-    assert page.shop_mapping_edits["purchase_cost_1"].text() == "采购成本1列"
-    assert page.shop_mapping_edits["purchase_cost_2"].text() == "采购成本2列"
-    assert page.shop_mapping_edits["purchase_cost_3"].text() == "采购成本3列"
+    assert page.shop_mapping_edits["order_time"].text() == "下单时间"
+    assert page.shop_mapping_edits["order_status"].text() == "订单状态"
+    assert page.shop_mapping_edits["income"].text() == "收入"
+    assert page.shop_mapping_edits["shipping_address"].text() == "发货地址"
+    assert page.shop_mapping_edits["price"].text() == ""
+    assert page.shop_mapping_edits["purchase_item_1"].text() == ""
+    assert page.shop_mapping_edits["purchase_item_2"].text() == ""
+    assert page.shop_mapping_edits["purchase_item_3"].text() == ""
+    assert page.shop_mapping_edits["purchase_quantity_1"].text() == ""
+    assert page.shop_mapping_edits["purchase_quantity_2"].text() == ""
+    assert page.shop_mapping_edits["purchase_quantity_3"].text() == ""
+    assert page.shop_mapping_edits["purchase_cost_1"].text() == ""
+    assert page.shop_mapping_edits["purchase_cost_2"].text() == ""
+    assert page.shop_mapping_edits["purchase_cost_3"].text() == ""
 
 
-def test_settings_page_to_payload_persists_global_product_library_and_shop_field_mapping(qtbot):
+def test_settings_page_to_payload_persists_global_product_library_and_total_table_mapping(qtbot):
     page = SettingsPage()
     qtbot.addWidget(page)
 
@@ -80,8 +94,12 @@ def test_settings_page_to_payload_persists_global_product_library_and_shop_field
     page.product_default_cost_edit.setText("8.20")
     page.save_product_button.click()
 
+    page.shop_wiki_url_edit.setText("https://my.feishu.cn/wiki/QTXMwCDpQi9n6VkfDxJc5mNTnjh?table=tbl_total")
+    page.shop_app_token_edit.setText("app_token_total")
+    page.shop_table_id_edit.setText("tbl_total")
+    page.shop_table_name_edit.setText("订单总表")
+    page.shop_mapping_edits["shop_name"].setText("店铺列")
     page.shop_name_edit.setText("草莓店")
-    page.shop_table_name_edit.setText("草莓订单表")
     page.shop_mapping_edits["remark"].setText("备注列")
     page.shop_mapping_edits["order_date"].setText("订单日期列")
     page.shop_mapping_edits["order_time"].setText("下单时间列")
@@ -106,31 +124,14 @@ def test_settings_page_to_payload_persists_global_product_library_and_shop_field
         {"name": "澳大利亚进口婴儿水", "default_cost": "12.50"},
         {"name": "草莓", "default_cost": "8.20"},
     ]
+    assert payload["feishu_table_wiki_url"] == "https://my.feishu.cn/wiki/QTXMwCDpQi9n6VkfDxJc5mNTnjh?table=tbl_total"
+    assert payload["feishu_table_app_token"] == "app_token_total"
+    assert payload["feishu_table_id"] == "tbl_total"
+    assert payload["feishu_table_name"] == "订单总表"
+    assert payload["feishu_field_mapping"]["店铺"] == "店铺列"
     assert payload["shops"] == [
         {
             "name": "草莓店",
-            "wiki_url": "",
-            "app_token": "",
-            "table_id": "",
-            "table_name": "草莓订单表",
-            "field_mapping": {
-                "备注": "备注列",
-                "订单日期": "订单日期列",
-                "下单时间": "下单时间列",
-                "订单状态": "订单状态列",
-                "收入": "收入列",
-                "发货地址": "发货地址列",
-                "价格": "价格列",
-                "采购商品1": "采购商品1列",
-                "采购商品2": "采购商品2列",
-                "采购商品3": "采购商品3列",
-                "采购数量1": "采购数量1列",
-                "采购数量2": "采购数量2列",
-                "采购数量3": "采购数量3列",
-                "采购成本1": "采购成本1列",
-                "采购成本2": "采购成本2列",
-                "采购成本3": "采购成本3列",
-            },
         }
     ]
 
@@ -147,13 +148,13 @@ def test_settings_page_collects_api_configuration(qtbot):
     page.helper_api_key_edit.setText("helper-key")
     page.feishu_app_id_edit.setText("cli_xxx")
     page.feishu_app_secret_edit.setText("secret_xxx")
-    page.shop_name_edit.setText("草莓店")
     page.shop_wiki_url_edit.setText(
         "https://my.feishu.cn/wiki/QTXMwCDpQi9n6VkfDxJc5mNTnjh?table=tbl_xxx"
     )
     page.shop_app_token_edit.setText("app_token_1")
     page.shop_table_id_edit.setText("tbl_xxx")
-    page.shop_table_name_edit.setText("草莓订单表")
+    page.shop_table_name_edit.setText("订单总表")
+    page.shop_name_edit.setText("草莓店")
     page.save_shop_button.click()
 
     payload = page.to_payload()
@@ -166,21 +167,13 @@ def test_settings_page_collects_api_configuration(qtbot):
     assert payload["helper_api_key"] == "helper-key"
     assert payload["feishu_app_id"] == "cli_xxx"
     assert payload["feishu_app_secret"] == "secret_xxx"
+    assert payload["feishu_table_wiki_url"] == "https://my.feishu.cn/wiki/QTXMwCDpQi9n6VkfDxJc5mNTnjh?table=tbl_xxx"
+    assert payload["feishu_table_app_token"] == "app_token_1"
+    assert payload["feishu_table_id"] == "tbl_xxx"
+    assert payload["feishu_table_name"] == "订单总表"
     assert payload["shops"] == [
         {
             "name": "草莓店",
-            "wiki_url": "https://my.feishu.cn/wiki/QTXMwCDpQi9n6VkfDxJc5mNTnjh?table=tbl_xxx",
-            "app_token": "app_token_1",
-            "table_id": "tbl_xxx",
-            "table_name": "草莓订单表",
-            "field_mapping": {
-                "备注": "备注",
-                "订单日期": "订单日期",
-                "下单时间": "下单时间",
-                "订单状态": "订单状态",
-                "收入": "收入",
-                "发货地址": "发货地址",
-            },
         }
     ]
     assert payload["selected_shop_name"] == "草莓店"
@@ -199,15 +192,11 @@ def test_settings_page_load_payload_and_save_requested(qtbot):
         "helper_api_key": " helper-key ",
         "feishu_app_id": " cli_xxx ",
         "feishu_app_secret": " secret_xxx ",
-        "shops": [
-            {
-                "name": "草莓店",
-                "wiki_url": " https://my.feishu.cn/wiki/QTXMwCDpQi9n6VkfDxJc5mNTnjh?table=tbl_xxx ",
-                "app_token": " app_token_1 ",
-                "table_id": " tbl_xxx ",
-                "table_name": " 草莓订单表 ",
-            }
-        ],
+        "feishu_table_wiki_url": " https://my.feishu.cn/wiki/QTXMwCDpQi9n6VkfDxJc5mNTnjh?table=tbl_xxx ",
+        "feishu_table_app_token": " app_token_1 ",
+        "feishu_table_id": " tbl_xxx ",
+        "feishu_table_name": " 订单总表 ",
+        "shops": [{"name": "草莓店"}],
         "selected_shop_name": "草莓店",
     }
 
@@ -230,11 +219,11 @@ def test_settings_page_load_payload_and_save_requested(qtbot):
     assert page.shop_wiki_url_edit.text() == "https://my.feishu.cn/wiki/QTXMwCDpQi9n6VkfDxJc5mNTnjh?table=tbl_xxx"
     assert page.shop_app_token_edit.text() == "app_token_1"
     assert page.shop_table_id_edit.text() == "tbl_xxx"
-    assert page.shop_table_name_edit.text() == "草莓订单表"
+    assert page.shop_table_name_edit.text() == "订单总表"
     assert emitted == [page.to_payload()]
 
 
-def test_settings_page_resolves_shop_tokens_from_wiki_url(qtbot):
+def test_settings_page_resolves_total_table_tokens_from_wiki_url(qtbot):
     captured = []
 
     def resolver(wiki_url: str):
@@ -247,14 +236,15 @@ def test_settings_page_resolves_shop_tokens_from_wiki_url(qtbot):
     page = SettingsPage(on_resolve_shop_link=resolver)
     qtbot.addWidget(page)
 
-    page.shop_name_edit.setText("乐宝零食店")
     page.shop_wiki_url_edit.setText(
         "https://my.feishu.cn/wiki/QTXMwCDpQi9n6VkfDxJc5mNTnjh?table=tblWZDrx4gqXpc5M&view=vew5lZdMQj"
     )
+    page.shop_name_edit.setText("乐宝零食店")
     page.shop_mapping_edits["remark"].setText("备注列")
     page.shop_mapping_edits["order_date"].setText("订单日期列")
-
     page.save_shop_button.click()
+
+    page.save_button.click()
 
     assert captured == [
         "https://my.feishu.cn/wiki/QTXMwCDpQi9n6VkfDxJc5mNTnjh?table=tblWZDrx4gqXpc5M&view=vew5lZdMQj"
@@ -262,23 +252,9 @@ def test_settings_page_resolves_shop_tokens_from_wiki_url(qtbot):
     assert page.shop_app_token_edit.text() == "basc1234567890"
     assert page.shop_table_id_edit.text() == "tblWZDrx4gqXpc5M"
     assert page.status_label.text() == "已从飞书链接解析表格信息"
-    assert page.to_payload()["shops"] == [
-        {
-            "name": "乐宝零食店",
-            "wiki_url": "https://my.feishu.cn/wiki/QTXMwCDpQi9n6VkfDxJc5mNTnjh?table=tblWZDrx4gqXpc5M&view=vew5lZdMQj",
-            "app_token": "basc1234567890",
-            "table_id": "tblWZDrx4gqXpc5M",
-            "table_name": "",
-            "field_mapping": {
-                "备注": "备注列",
-                "订单日期": "订单日期列",
-                "下单时间": "下单时间",
-                "订单状态": "订单状态",
-                "收入": "收入",
-                "发货地址": "发货地址",
-            },
-        }
-    ]
+    assert page.to_payload()["feishu_table_app_token"] == "basc1234567890"
+    assert page.to_payload()["feishu_table_id"] == "tblWZDrx4gqXpc5M"
+    assert page.to_payload()["shops"] == [{"name": "乐宝零食店"}]
 
 
 def test_settings_page_shows_error_when_wiki_resolution_fails(qtbot):
@@ -288,12 +264,12 @@ def test_settings_page_shows_error_when_wiki_resolution_fails(qtbot):
     page = SettingsPage(on_resolve_shop_link=resolver)
     qtbot.addWidget(page)
 
-    page.shop_name_edit.setText("乐宝零食店")
     page.shop_wiki_url_edit.setText(
         "https://my.feishu.cn/wiki/QTXMwCDpQi9n6VkfDxJc5mNTnjh?table=tblWZDrx4gqXpc5M&view=vew5lZdMQj"
     )
+    page.shop_name_edit.setText("乐宝零食店")
 
-    page.save_shop_button.click()
+    page.save_button.click()
 
     assert page.status_label.text() == "请先填写飞书 App ID 和 App Secret"
     assert page.shop_selector.count() == 0
@@ -390,6 +366,7 @@ def test_settings_page_prefills_recommended_mapping_for_new_shop(qtbot):
 
     page._handle_add_shop()
 
+    assert page.shop_mapping_edits["shop_name"].text() == "店铺"
     assert page.shop_mapping_edits["remark"].text() == "备注"
     assert page.shop_mapping_edits["order_date"].text() == "订单日期"
     assert page.shop_mapping_edits["order_time"].text() == "下单时间"

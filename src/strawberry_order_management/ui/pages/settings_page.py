@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
 class SettingsPage(QWidget):
     save_requested = Signal(object)
     RECOMMENDED_FIELD_MAPPING = {
+        "店铺": "店铺",
         "备注": "备注",
         "订单日期": "订单日期",
         "下单时间": "下单时间",
@@ -29,13 +30,24 @@ class SettingsPage(QWidget):
         "发货地址": "发货地址",
     }
     FIELD_MAPPING_KEYS = (
+        "店铺",
+        "订单编号",
         "备注",
         "订单日期",
         "下单时间",
         "订单状态",
+        "商品名称",
+        "数量",
+        "收件人",
+        "手机号",
+        "编号",
         "收入",
         "发货地址",
         "价格",
+        "同步方式",
+        "同步状态",
+        "同步说明",
+        "录入时间",
         "采购商品1",
         "采购数量1",
         "采购成本1",
@@ -47,13 +59,24 @@ class SettingsPage(QWidget):
         "采购成本3",
     )
     FIELD_MAPPING_ALIASES = {
+        "shop_name": "店铺",
+        "order_id": "订单编号",
         "remark": "备注",
         "order_date": "订单日期",
         "order_time": "下单时间",
         "order_status": "订单状态",
+        "product_name": "商品名称",
+        "quantity": "数量",
+        "recipient_name": "收件人",
+        "phone_number": "手机号",
+        "code": "编号",
         "income": "收入",
         "shipping_address": "发货地址",
         "price": "价格",
+        "sync_source": "同步方式",
+        "sync_status": "同步状态",
+        "sync_message": "同步说明",
+        "recorded_at": "录入时间",
         "purchase_item_1": "采购商品1",
         "purchase_quantity_1": "采购数量1",
         "purchase_cost_1": "采购成本1",
@@ -144,10 +167,10 @@ class SettingsPage(QWidget):
         shop_form = QFormLayout()
         shop_form.addRow("已保存店铺", self.shop_selector)
         shop_form.addRow("店铺名称", self.shop_name_edit)
-        shop_form.addRow("飞书表链接", self.shop_wiki_url_edit)
-        shop_form.addRow("飞书 App Token", self.shop_app_token_edit)
-        shop_form.addRow("飞书 Table ID", self.shop_table_id_edit)
-        shop_form.addRow("表名备注", self.shop_table_name_edit)
+        shop_form.addRow("总表链接", self.shop_wiki_url_edit)
+        shop_form.addRow("总表 App Token", self.shop_app_token_edit)
+        shop_form.addRow("总表 Table ID", self.shop_table_id_edit)
+        shop_form.addRow("总表备注", self.shop_table_name_edit)
         mapping_grid = QGridLayout()
         mapping_grid.setHorizontalSpacing(16)
         mapping_grid.setVerticalSpacing(10)
@@ -206,9 +229,14 @@ class SettingsPage(QWidget):
             "helper_api_key": self.helper_api_key_edit.text().strip(),
             "feishu_app_id": self.feishu_app_id_edit.text().strip(),
             "feishu_app_secret": self.feishu_app_secret_edit.text().strip(),
+            "feishu_table_wiki_url": self.shop_wiki_url_edit.text().strip(),
+            "feishu_table_app_token": self.shop_app_token_edit.text().strip(),
+            "feishu_table_id": self.shop_table_id_edit.text().strip(),
+            "feishu_table_name": self.shop_table_name_edit.text().strip(),
+            "feishu_field_mapping": self._current_field_mapping(),
             "product_presets": [dict(item) for item in self._product_presets],
             "global_product_library": [dict(item) for item in self._product_presets],
-            "shops": [dict(shop) for shop in self._shops],
+            "shops": [{"name": shop["name"]} for shop in self._shops],
             "selected_shop_name": self.shop_selector.currentText().strip(),
         }
 
@@ -235,24 +263,49 @@ class SettingsPage(QWidget):
             for item in product_presets
             if isinstance(item, dict) and self._clean_text(item.get("name"))
         ]
+        legacy_shop = next(
+            (
+                shop
+                for shop in payload.get("shops", [])
+                if isinstance(shop, dict) and self._clean_text(shop.get("name"))
+            ),
+            {},
+        )
+        self.shop_wiki_url_edit.setText(
+            self._clean_text(payload.get("feishu_table_wiki_url"))
+            or self._clean_text(legacy_shop.get("wiki_url"))
+        )
+        self.shop_app_token_edit.setText(
+            self._clean_text(payload.get("feishu_table_app_token"))
+            or self._clean_text(legacy_shop.get("app_token"))
+        )
+        self.shop_table_id_edit.setText(
+            self._clean_text(payload.get("feishu_table_id"))
+            or self._clean_text(legacy_shop.get("table_id"))
+        )
+        self.shop_table_name_edit.setText(
+            self._clean_text(payload.get("feishu_table_name"))
+            or self._clean_text(legacy_shop.get("table_name"))
+        )
         self._shops = [
-            {
-                "name": self._clean_text(shop.get("name")),
-                "wiki_url": self._clean_text(shop.get("wiki_url")),
-                "app_token": self._clean_text(shop.get("app_token")),
-                "table_id": self._clean_text(shop.get("table_id")),
-                "table_name": self._clean_text(shop.get("table_name")),
-                "field_mapping": self._mapping_with_recommended_defaults(
-                    self._clean_field_mapping(shop.get("field_mapping"))
-                ),
-            }
+            {"name": self._clean_text(shop.get("name"))}
             for shop in payload.get("shops", [])
             if isinstance(shop, dict) and self._clean_text(shop.get("name"))
         ]
+        self._load_field_mapping(payload.get("feishu_field_mapping") or legacy_shop.get("field_mapping"))
         self._refresh_product_selector()
         self._refresh_shop_selector(self._clean_text(payload.get("selected_shop_name")))
 
     def _emit_save_requested(self) -> None:
+        if self.shop_wiki_url_edit.text().strip() and self._on_resolve_shop_link is not None:
+            try:
+                resolved = self._on_resolve_shop_link(self.shop_wiki_url_edit.text().strip())
+            except Exception as exc:
+                self.status_label.setText(str(exc))
+                return
+            self.shop_app_token_edit.setText(str(resolved.get("app_token", "")).strip())
+            self.shop_table_id_edit.setText(str(resolved.get("table_id", "")).strip())
+            self.status_label.setText("已从飞书链接解析表格信息")
         self.save_requested.emit(self.to_payload())
 
     def _handle_add_product(self) -> None:
@@ -282,48 +335,23 @@ class SettingsPage(QWidget):
 
     def _handle_add_shop(self) -> None:
         self.shop_name_edit.clear()
-        self.shop_wiki_url_edit.clear()
-        self.shop_app_token_edit.clear()
-        self.shop_table_id_edit.clear()
-        self.shop_table_name_edit.clear()
-        self._load_field_mapping({})
         self.shop_name_edit.setFocus()
         self.status_label.setText("")
 
     def _handle_save_shop(self) -> None:
-        shop = {
-            "name": self.shop_name_edit.text().strip(),
-            "wiki_url": self.shop_wiki_url_edit.text().strip(),
-            "app_token": self.shop_app_token_edit.text().strip(),
-            "table_id": self.shop_table_id_edit.text().strip(),
-            "table_name": self.shop_table_name_edit.text().strip(),
-            "field_mapping": self._current_field_mapping(),
-        }
-        if not shop["name"]:
+        shop_name = self.shop_name_edit.text().strip()
+        if not shop_name:
             self.status_label.setText("请先填写店铺名称")
             return
-        if shop["wiki_url"] and self._on_resolve_shop_link is not None:
-            try:
-                resolved = self._on_resolve_shop_link(shop["wiki_url"])
-            except Exception as exc:
-                self.status_label.setText(str(exc))
-                return
-            shop["app_token"] = str(resolved.get("app_token", "")).strip()
-            shop["table_id"] = str(resolved.get("table_id", "")).strip()
-            self.shop_app_token_edit.setText(shop["app_token"])
-            self.shop_table_id_edit.setText(shop["table_id"])
-            self.status_label.setText("已从飞书链接解析表格信息")
-        else:
-            self.status_label.setText("")
-
         for index, existing in enumerate(self._shops):
-            if existing["name"] == shop["name"]:
-                self._shops[index] = shop
+            if existing["name"] == shop_name:
+                self._shops[index] = {"name": shop_name}
                 break
         else:
-            self._shops.append(shop)
+            self._shops.append({"name": shop_name})
 
-        self._refresh_shop_selector(shop["name"])
+        self._refresh_shop_selector(shop_name)
+        self.status_label.setText("已保存店铺")
 
     def _handle_remove_shop(self) -> None:
         selected_name = self.shop_selector.currentText().strip()
@@ -391,19 +419,9 @@ class SettingsPage(QWidget):
         for shop in self._shops:
             if shop["name"] == selected_name:
                 self.shop_name_edit.setText(shop["name"])
-                self.shop_wiki_url_edit.setText(shop.get("wiki_url", ""))
-                self.shop_app_token_edit.setText(shop["app_token"])
-                self.shop_table_id_edit.setText(shop["table_id"])
-                self.shop_table_name_edit.setText(shop["table_name"])
-                self._load_field_mapping(shop.get("field_mapping"))
                 return
         if not selected_name:
             self.shop_name_edit.clear()
-            self.shop_wiki_url_edit.clear()
-            self.shop_app_token_edit.clear()
-            self.shop_table_id_edit.clear()
-            self.shop_table_name_edit.clear()
-            self._load_field_mapping({})
 
     @staticmethod
     def _build_tab_card(title: str, *layouts) -> QWidget:
@@ -438,8 +456,10 @@ class SettingsPage(QWidget):
     @classmethod
     def _mapping_with_recommended_defaults(cls, mapping: dict[str, str]) -> dict[str, str]:
         merged = dict(mapping)
-        if not any(merged.values()):
-            merged.update(cls.RECOMMENDED_FIELD_MAPPING)
+        for key, value in cls.RECOMMENDED_FIELD_MAPPING.items():
+            merged.setdefault(key, value)
+            if not merged[key]:
+                merged[key] = value
         return merged
 
     @classmethod

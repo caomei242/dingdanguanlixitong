@@ -85,6 +85,7 @@ class MainWindow(QMainWindow):
         self.stack.addWidget(self.history_page)
         self.stack.addWidget(self.settings_page)
         self.intake_page.product_library_requested.connect(self._handle_product_library_request)
+        self.history_page.save_requested.connect(self._handle_history_save_request)
         self.history_page.delete_requested.connect(self._handle_history_delete_request)
         self.history_page.resubmit_requested.connect(self._handle_history_resubmit_request)
 
@@ -229,6 +230,11 @@ class MainWindow(QMainWindow):
         if self._history_store is None:
             return
         self.history_page.load_rows(self._history_store.list_items())
+
+    def _handle_history_save_request(self, record_id: str, patch: dict) -> None:
+        if self._history_store is None:
+            return
+        self._update_history_snapshot(record_id, patch)
 
     def _handle_history_delete_request(self, record_id: str) -> None:
         if self._history_store is None:

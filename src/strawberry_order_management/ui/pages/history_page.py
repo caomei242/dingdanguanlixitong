@@ -1,24 +1,42 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
+    QFormLayout,
     QFrame,
     QHBoxLayout,
     QLabel,
     QListWidget,
     QPushButton,
     QScrollArea,
-    QFormLayout,
     QTextEdit,
     QVBoxLayout,
     QWidget,
 )
 
 
+_ORDER_SNAPSHOT_KEYS = (
+    "order_id",
+    "placed_at",
+    "order_status",
+    "product_name",
+    "quantity",
+    "order_amount",
+    "income_amount",
+    "recipient_name",
+    "phone_number",
+    "code",
+    "address",
+    "delivery_note",
+)
+
+
 class HistoryPage(QWidget):
     edit_requested = Signal(str)
+    save_requested = Signal(str, object)
     delete_requested = Signal(str)
     resubmit_requested = Signal(str)
 
@@ -26,10 +44,11 @@ class HistoryPage(QWidget):
         super().__init__()
         self.setObjectName("HistoryPage")
         self._rows: list[dict[str, Any]] = []
+        self.is_editing = False
 
         title = QLabel("历史工作台")
         title.setObjectName("SectionTitle")
-        subtitle = QLabel("左侧浏览历史记录，右侧查看详情并执行后续操作")
+        subtitle = QLabel("左侧浏览历史记录，右侧查看完整订单快照、同步信息并支持原地编辑")
         subtitle.setObjectName("MutedText")
 
         self.summary_label = QLabel("暂无记录")
@@ -47,45 +66,111 @@ class HistoryPage(QWidget):
 
         self.detail_title_label = QLabel("请选择一条历史记录")
         self.detail_title_label.setObjectName("HistoryDetailTitle")
-        self.detail_subtitle_label = QLabel("详情会显示店铺、来源、状态和地址快照")
+        self.detail_subtitle_label = QLabel("详情会显示订单快照、地址提取结果和同步轨迹")
         self.detail_subtitle_label.setObjectName("HistoryDetailMeta")
 
-        self.order_id_value = QTextEdit()
-        self.recipient_name_value = QTextEdit()
-        self.address_output_one = QTextEdit()
-        self.address_output_two = QTextEdit()
+        self.order_id_value = self._build_text_value()
+        self.placed_at_value = self._build_text_value()
+        self.order_status_value = self._build_text_value()
+        self.product_name_value = self._build_text_value()
+        self.quantity_value = self._build_text_value()
+        self.order_amount_value = self._build_text_value()
+        self.income_amount_value = self._build_text_value()
+        self.recipient_name_value = self._build_text_value()
+        self.phone_number_value = self._build_text_value()
+        self.code_value = self._build_text_value()
+        self.address_value = self._build_text_value(minimum_height=72)
+        self.delivery_note_value = self._build_text_value(minimum_height=72)
 
-        for widget in (
-            self.order_id_value,
-            self.recipient_name_value,
-            self.address_output_one,
-            self.address_output_two,
-        ):
-            widget.setReadOnly(True)
-            widget.setObjectName("HistoryDetailValue")
-            widget.setMinimumHeight(64)
+        order_form = QFormLayout()
+        order_form.setLabelAlignment(Qt.AlignmentFlag.AlignTop)
+        order_form.setFormAlignment(Qt.AlignmentFlag.AlignTop)
+        order_form.addRow("订单编号", self.order_id_value)
+        order_form.addRow("下单时间", self.placed_at_value)
+        order_form.addRow("订单状态", self.order_status_value)
+        order_form.addRow("商品名称", self.product_name_value)
+        order_form.addRow("数量", self.quantity_value)
+        order_form.addRow("订单金额", self.order_amount_value)
+        order_form.addRow("收入", self.income_amount_value)
+        order_form.addRow("收件人", self.recipient_name_value)
+        order_form.addRow("手机号", self.phone_number_value)
+        order_form.addRow("编号", self.code_value)
+        order_form.addRow("收货地址", self.address_value)
+        order_form.addRow("自动备注", self.delivery_note_value)
 
-        detail_form = QFormLayout()
-        detail_form.setLabelAlignment(Qt.AlignmentFlag.AlignTop)
-        detail_form.setFormAlignment(Qt.AlignmentFlag.AlignTop)
-        detail_form.addRow("订单编号", self.order_id_value)
-        detail_form.addRow("收件人", self.recipient_name_value)
-        detail_form.addRow("地址输出 1", self.address_output_one)
-        detail_form.addRow("地址输出 2", self.address_output_two)
+        order_section = self._build_section("订单基础信息", order_form)
+
+        self.procurement_product_1_value = self._build_text_value()
+        self.procurement_quantity_1_value = self._build_text_value()
+        self.procurement_cost_1_value = self._build_text_value()
+        self.procurement_product_2_value = self._build_text_value()
+        self.procurement_quantity_2_value = self._build_text_value()
+        self.procurement_cost_2_value = self._build_text_value()
+        self.procurement_product_3_value = self._build_text_value()
+        self.procurement_quantity_3_value = self._build_text_value()
+        self.procurement_cost_3_value = self._build_text_value()
+
+        procurement_form = QFormLayout()
+        procurement_form.setLabelAlignment(Qt.AlignmentFlag.AlignTop)
+        procurement_form.setFormAlignment(Qt.AlignmentFlag.AlignTop)
+        procurement_form.addRow("采购 1 商品", self.procurement_product_1_value)
+        procurement_form.addRow("采购 1 数量", self.procurement_quantity_1_value)
+        procurement_form.addRow("采购 1 成本", self.procurement_cost_1_value)
+        procurement_form.addRow("采购 2 商品", self.procurement_product_2_value)
+        procurement_form.addRow("采购 2 数量", self.procurement_quantity_2_value)
+        procurement_form.addRow("采购 2 成本", self.procurement_cost_2_value)
+        procurement_form.addRow("采购 3 商品", self.procurement_product_3_value)
+        procurement_form.addRow("采购 3 数量", self.procurement_quantity_3_value)
+        procurement_form.addRow("采购 3 成本", self.procurement_cost_3_value)
+
+        procurement_section = self._build_section("采购信息", procurement_form)
+
+        self.address_output_one = self._build_text_value(minimum_height=72, editable=False)
+        self.address_output_two = self._build_text_value(minimum_height=72, editable=False)
+
+        address_form = QFormLayout()
+        address_form.setLabelAlignment(Qt.AlignmentFlag.AlignTop)
+        address_form.setFormAlignment(Qt.AlignmentFlag.AlignTop)
+        address_form.addRow("结果一", self.address_output_one)
+        address_form.addRow("结果二", self.address_output_two)
+
+        address_section = self._build_section("地址提取结果", address_form)
+
+        self.sync_source_value = self._build_text_value(editable=False)
+        self.status_value = self._build_text_value(editable=False)
+        self.sync_message_value = self._build_text_value(minimum_height=96, editable=False)
+
+        sync_form = QFormLayout()
+        sync_form.setLabelAlignment(Qt.AlignmentFlag.AlignTop)
+        sync_form.setFormAlignment(Qt.AlignmentFlag.AlignTop)
+        sync_form.addRow("同步方式", self.sync_source_value)
+        sync_form.addRow("当前状态", self.status_value)
+        sync_form.addRow("最后状态说明", self.sync_message_value)
+
+        sync_section = self._build_section("同步信息", sync_form)
 
         self.edit_button = QPushButton("编辑")
         self.edit_button.setObjectName("SecondaryActionButton")
+        self.save_button = QPushButton("保存修改")
+        self.save_button.setObjectName("SecondaryActionButton")
+        self.cancel_button = QPushButton("取消编辑")
+        self.cancel_button.setObjectName("SecondaryActionButton")
         self.delete_button = QPushButton("删除")
         self.delete_button.setObjectName("DangerActionButton")
-        self.resubmit_button = QPushButton("重新提交")
+        self.resubmit_button = QPushButton("重新写入飞书")
         self.resubmit_button.setObjectName("SecondaryActionButton")
 
-        self.edit_button.clicked.connect(self._emit_edit_requested)
+        self.edit_button.clicked.connect(self._enter_edit_mode)
+        self.save_button.clicked.connect(self._emit_save_requested)
+        self.cancel_button.clicked.connect(self._cancel_editing)
         self.delete_button.clicked.connect(self._emit_delete_requested)
         self.resubmit_button.clicked.connect(self._emit_resubmit_requested)
 
         action_row = QHBoxLayout()
         action_row.addWidget(self.edit_button)
+        action_row.addWidget(self.save_button)
+        action_row.addWidget(self.cancel_button)
+        action_row.addStretch(1)
         action_row.addWidget(self.delete_button)
         action_row.addWidget(self.resubmit_button)
 
@@ -93,7 +178,10 @@ class HistoryPage(QWidget):
         detail_body_layout = QVBoxLayout(detail_body)
         detail_body_layout.addWidget(self.detail_title_label)
         detail_body_layout.addWidget(self.detail_subtitle_label)
-        detail_body_layout.addLayout(detail_form)
+        detail_body_layout.addWidget(order_section)
+        detail_body_layout.addWidget(procurement_section)
+        detail_body_layout.addWidget(address_section)
+        detail_body_layout.addWidget(sync_section)
         detail_body_layout.addLayout(action_row)
         detail_body_layout.addStretch(1)
 
@@ -118,10 +206,36 @@ class HistoryPage(QWidget):
         root.addWidget(subtitle)
         root.addWidget(scroll_area)
 
+        self._editable_widgets = [
+            self.order_id_value,
+            self.placed_at_value,
+            self.order_status_value,
+            self.product_name_value,
+            self.quantity_value,
+            self.order_amount_value,
+            self.income_amount_value,
+            self.recipient_name_value,
+            self.phone_number_value,
+            self.code_value,
+            self.address_value,
+            self.delivery_note_value,
+            self.procurement_product_1_value,
+            self.procurement_quantity_1_value,
+            self.procurement_cost_1_value,
+            self.procurement_product_2_value,
+            self.procurement_quantity_2_value,
+            self.procurement_cost_2_value,
+            self.procurement_product_3_value,
+            self.procurement_quantity_3_value,
+            self.procurement_cost_3_value,
+        ]
+
+        self._set_widgets_read_only(True)
         self._update_action_state()
 
     def load_rows(self, rows: list[dict[str, Any]]) -> None:
         previous_record_id, previous_index = self._current_selection()
+        self.is_editing = False
         self._rows = [self._normalize_row(row) for row in rows]
         self.list_widget.blockSignals(True)
         self.list_widget.clear()
@@ -147,18 +261,66 @@ class HistoryPage(QWidget):
 
     def _build_row_text(self, row: dict[str, Any]) -> str:
         shop_name = self._display_value(row.get("shop_name"))
-        recipient_name = self._row_value(row, "recipient_name")
-        if recipient_name == "-":
+        recipient_name = self._text_value((row.get("order_snapshot") or {}).get("recipient_name"))
+        if not recipient_name:
             recipient_name = self._display_value(row.get("sync_source"))
         status = self._display_value(row.get("status"))
-        order_id = self._row_value(row, "order_id")
+        order_id = self._text_value((row.get("order_snapshot") or {}).get("order_id")) or "-"
         return f"{shop_name} · {recipient_name} · {status} · {order_id}"
 
     def _handle_current_item_changed(self, current, previous) -> None:
         del current, previous
-        row_index = self.list_widget.currentRow()
-        self._show_row(row_index)
+        if self.is_editing:
+            self.is_editing = False
+        self._show_row(self.list_widget.currentRow())
         self._update_action_state()
+
+    def _enter_edit_mode(self) -> None:
+        row = self._current_row()
+        if row is None:
+            return
+        self.is_editing = True
+        self._show_row(self.list_widget.currentRow())
+        self._update_action_state()
+        record_id = self._text_value(row.get("record_id"))
+        if record_id:
+            self.edit_requested.emit(record_id)
+
+    def _cancel_editing(self) -> None:
+        if not self.is_editing:
+            return
+        self.is_editing = False
+        self._show_row(self.list_widget.currentRow())
+        self._update_action_state()
+
+    def _emit_save_requested(self) -> None:
+        row = self._current_row()
+        if row is None:
+            return
+        record_id = self._text_value(row.get("record_id"))
+        if not record_id:
+            return
+        patch = {"order_snapshot": self._build_order_snapshot_from_inputs(row.get("order_snapshot") or {})}
+        self._merge_patch(row, patch)
+        self.is_editing = False
+        self._show_row(self.list_widget.currentRow())
+        self._update_action_state()
+        self.save_requested.emit(record_id, patch)
+
+    def _emit_delete_requested(self) -> None:
+        self._emit_action(self.delete_requested)
+
+    def _emit_resubmit_requested(self) -> None:
+        self._emit_action(self.resubmit_requested)
+
+    def _emit_action(self, signal: Signal) -> None:
+        row = self._current_row()
+        if row is None:
+            return
+        record_id = self._text_value(row.get("record_id"))
+        if not record_id:
+            return
+        signal.emit(record_id)
 
     def _show_row(self, row_index: int) -> None:
         if row_index < 0 or row_index >= len(self._rows):
@@ -173,18 +335,123 @@ class HistoryPage(QWidget):
         self.detail_subtitle_label.setText(
             f"{self._display_value(row.get('sync_source'))} · {self._display_value(row.get('status'))}"
         )
-        self.order_id_value.setPlainText(self._display_value(order_snapshot.get("order_id")))
-        self.recipient_name_value.setPlainText(self._display_value(order_snapshot.get("recipient_name")))
-        self.address_output_one.setPlainText(self._display_value(address_snapshot.get("output_one")))
-        self.address_output_two.setPlainText(self._display_value(address_snapshot.get("output_two")))
+
+        self.order_id_value.setPlainText(self._text_value(order_snapshot.get("order_id")))
+        self.placed_at_value.setPlainText(self._text_value(order_snapshot.get("placed_at")))
+        self.order_status_value.setPlainText(self._text_value(order_snapshot.get("order_status")))
+        self.product_name_value.setPlainText(self._text_value(order_snapshot.get("product_name")))
+        self.quantity_value.setPlainText(self._text_value(order_snapshot.get("quantity")))
+        self.order_amount_value.setPlainText(self._text_value(order_snapshot.get("order_amount")))
+        self.income_amount_value.setPlainText(self._text_value(order_snapshot.get("income_amount")))
+        self.recipient_name_value.setPlainText(self._text_value(order_snapshot.get("recipient_name")))
+        self.phone_number_value.setPlainText(self._text_value(order_snapshot.get("phone_number")))
+        self.code_value.setPlainText(self._text_value(order_snapshot.get("code")))
+        self.address_value.setPlainText(self._text_value(order_snapshot.get("address")))
+        self.delivery_note_value.setPlainText(self._text_value(order_snapshot.get("delivery_note")))
+
+        procurement_items = order_snapshot.get("procurement_items") or []
+        procurement_widgets = [
+            (
+                self.procurement_product_1_value,
+                self.procurement_quantity_1_value,
+                self.procurement_cost_1_value,
+            ),
+            (
+                self.procurement_product_2_value,
+                self.procurement_quantity_2_value,
+                self.procurement_cost_2_value,
+            ),
+            (
+                self.procurement_product_3_value,
+                self.procurement_quantity_3_value,
+                self.procurement_cost_3_value,
+            ),
+        ]
+        for index, widgets in enumerate(procurement_widgets):
+            item = procurement_items[index] if index < len(procurement_items) else {}
+            if not isinstance(item, dict):
+                item = {}
+            widgets[0].setPlainText(self._text_value(item.get("product_name")))
+            widgets[1].setPlainText(self._text_value(item.get("quantity")) or "1")
+            widgets[2].setPlainText(self._text_value(item.get("cost")))
+
+        self.address_output_one.setPlainText(self._text_value(address_snapshot.get("output_one")))
+        self.address_output_two.setPlainText(self._text_value(address_snapshot.get("output_two")))
+        self.sync_source_value.setPlainText(self._display_value(row.get("sync_source")))
+        self.status_value.setPlainText(self._display_value(row.get("status")))
+        self.sync_message_value.setPlainText(self._build_sync_message(row))
+        self._set_widgets_read_only(not self.is_editing)
 
     def _show_empty_detail(self) -> None:
         self.detail_title_label.setText("请选择一条历史记录")
-        self.detail_subtitle_label.setText("详情会显示店铺、来源、状态和地址快照")
-        self.order_id_value.setPlainText("")
-        self.recipient_name_value.setPlainText("")
-        self.address_output_one.setPlainText("")
-        self.address_output_two.setPlainText("")
+        self.detail_subtitle_label.setText("详情会显示订单快照、地址提取结果和同步轨迹")
+        for widget in (
+            self.order_id_value,
+            self.placed_at_value,
+            self.order_status_value,
+            self.product_name_value,
+            self.quantity_value,
+            self.order_amount_value,
+            self.income_amount_value,
+            self.recipient_name_value,
+            self.phone_number_value,
+            self.code_value,
+            self.address_value,
+            self.delivery_note_value,
+            self.procurement_product_1_value,
+            self.procurement_quantity_1_value,
+            self.procurement_cost_1_value,
+            self.procurement_product_2_value,
+            self.procurement_quantity_2_value,
+            self.procurement_cost_2_value,
+            self.procurement_product_3_value,
+            self.procurement_quantity_3_value,
+            self.procurement_cost_3_value,
+            self.address_output_one,
+            self.address_output_two,
+            self.sync_source_value,
+            self.status_value,
+            self.sync_message_value,
+        ):
+            widget.setPlainText("")
+        self._set_widgets_read_only(True)
+
+    def _build_order_snapshot_from_inputs(self, current_snapshot: dict[str, Any]) -> dict[str, Any]:
+        order_snapshot = dict(current_snapshot)
+        order_snapshot.update(
+            {
+                "order_id": self._text_value(self.order_id_value.toPlainText()),
+                "placed_at": self._text_value(self.placed_at_value.toPlainText()),
+                "order_status": self._text_value(self.order_status_value.toPlainText()),
+                "product_name": self._text_value(self.product_name_value.toPlainText()),
+                "quantity": self._text_value(self.quantity_value.toPlainText()),
+                "order_amount": self._text_value(self.order_amount_value.toPlainText()),
+                "income_amount": self._text_value(self.income_amount_value.toPlainText()),
+                "recipient_name": self._text_value(self.recipient_name_value.toPlainText()),
+                "phone_number": self._text_value(self.phone_number_value.toPlainText()),
+                "code": self._text_value(self.code_value.toPlainText()),
+                "address": self._text_value(self.address_value.toPlainText()),
+                "delivery_note": self._text_value(self.delivery_note_value.toPlainText()),
+                "procurement_items": [
+                {
+                    "product_name": self._text_value(self.procurement_product_1_value.toPlainText()),
+                    "quantity": self._text_value(self.procurement_quantity_1_value.toPlainText()) or "1",
+                    "cost": self._text_value(self.procurement_cost_1_value.toPlainText()),
+                },
+                {
+                    "product_name": self._text_value(self.procurement_product_2_value.toPlainText()),
+                    "quantity": self._text_value(self.procurement_quantity_2_value.toPlainText()) or "1",
+                    "cost": self._text_value(self.procurement_cost_2_value.toPlainText()),
+                },
+                {
+                    "product_name": self._text_value(self.procurement_product_3_value.toPlainText()),
+                    "quantity": self._text_value(self.procurement_quantity_3_value.toPlainText()) or "1",
+                    "cost": self._text_value(self.procurement_cost_3_value.toPlainText()),
+                },
+                ],
+            }
+        )
+        return order_snapshot
 
     def _normalize_row(self, row: dict[str, Any]) -> dict[str, Any]:
         normalized = dict(row)
@@ -192,7 +459,7 @@ class HistoryPage(QWidget):
         order_snapshot = normalized.get("order_snapshot")
         if not isinstance(order_snapshot, dict):
             order_snapshot = {
-                key: normalized[key]
+                key: normalized.get(key)
                 for key in (
                     "order_id",
                     "placed_at",
@@ -207,32 +474,66 @@ class HistoryPage(QWidget):
                     "address",
                     "delivery_note",
                 )
-                if normalized.get(key) is not None
             }
-        normalized["order_snapshot"] = dict(order_snapshot)
+        else:
+            order_snapshot = dict(order_snapshot)
+
+        for key in _ORDER_SNAPSHOT_KEYS:
+            order_snapshot[key] = self._text_value(order_snapshot.get(key))
+
+        procurement_items = order_snapshot.get("procurement_items")
+        normalized_items = []
+        if isinstance(procurement_items, list):
+            source_items = procurement_items
+        else:
+            source_items = []
+        for index in range(3):
+            item = source_items[index] if index < len(source_items) and isinstance(source_items[index], dict) else {}
+            normalized_items.append(
+                {
+                    "product_name": self._text_value(item.get("product_name")),
+                    "quantity": self._text_value(item.get("quantity")) or "1",
+                    "cost": self._text_value(item.get("cost")),
+                }
+            )
+        order_snapshot["procurement_items"] = normalized_items
 
         address_snapshot = normalized.get("address_snapshot")
         if not isinstance(address_snapshot, dict):
             address_snapshot = {
-                key: normalized[key]
-                for key in ("output_one", "output_two", "output_three", "address")
-                if normalized.get(key) is not None
+                "output_one": normalized.get("output_one", ""),
+                "output_two": normalized.get("output_two", ""),
             }
-        address_snapshot = dict(address_snapshot)
-        address_snapshot.setdefault("output_one", "")
-        address_snapshot.setdefault("output_two", "")
-        normalized["address_snapshot"] = address_snapshot
+        else:
+            address_snapshot = dict(address_snapshot)
+        address_snapshot["output_one"] = self._text_value(address_snapshot.get("output_one"))
+        address_snapshot["output_two"] = self._text_value(address_snapshot.get("output_two"))
 
+        normalized["order_snapshot"] = order_snapshot
+        normalized["address_snapshot"] = address_snapshot
         normalized["sync_source"] = self._display_value(normalized.get("sync_source"))
+        normalized["status"] = self._display_value(normalized.get("status"))
+        normalized["message"] = self._text_value(normalized.get("message"))
         return normalized
 
-    def _row_value(self, row: dict[str, Any], key: str) -> str:
-        value = row.get(key)
-        if value is None:
-            order_snapshot = row.get("order_snapshot")
-            if isinstance(order_snapshot, dict):
-                value = order_snapshot.get(key)
-        return self._display_value(value)
+    def _merge_patch(self, row: dict[str, Any], patch: dict[str, Any]) -> None:
+        for key, value in patch.items():
+            row[key] = value
+
+    def _build_sync_message(self, row: dict[str, Any]) -> str:
+        parts: list[str] = []
+        message = self._text_value(row.get("message"))
+        if message:
+            parts.append(message)
+        feishu_result = row.get("feishu_result")
+        if feishu_result not in (None, ""):
+            if isinstance(feishu_result, (dict, list)):
+                parts.append(json.dumps(feishu_result, ensure_ascii=False, indent=2))
+            else:
+                parts.append(str(feishu_result))
+        if parts:
+            return "\n\n".join(parts)
+        return self._display_value(row.get("status"))
 
     def _current_row(self) -> dict[str, Any] | None:
         index = self.list_widget.currentRow()
@@ -245,53 +546,60 @@ class HistoryPage(QWidget):
     def _current_selection(self) -> tuple[str | None, int | None]:
         index = self.list_widget.currentRow()
         if 0 <= index < len(self._rows):
-            record_id = self._display_value(self._rows[index].get("record_id"))
-            if record_id != "-":
+            record_id = self._text_value(self._rows[index].get("record_id"))
+            if record_id:
                 return record_id, index
         return None, None
 
-    def _restore_selection(
-        self,
-        previous_record_id: str | None,
-        previous_index: int | None,
-    ) -> int | None:
+    def _restore_selection(self, previous_record_id: str | None, previous_index: int | None) -> int | None:
         if not self._rows:
             return None
         if previous_record_id:
             for index, row in enumerate(self._rows):
-                if self._display_value(row.get("record_id")) == previous_record_id:
+                if self._text_value(row.get("record_id")) == previous_record_id:
                     return index
         if previous_index is not None:
             return min(previous_index, len(self._rows) - 1)
         return 0
 
-    def _emit_edit_requested(self) -> None:
-        self._emit_action(self.edit_requested)
-
-    def _emit_delete_requested(self) -> None:
-        self._emit_action(self.delete_requested)
-
-    def _emit_resubmit_requested(self) -> None:
-        self._emit_action(self.resubmit_requested)
-
-    def _emit_action(self, signal: Signal) -> None:
-        row = self._current_row()
-        if not row:
-            return
-        record_id = self._display_value(row.get("record_id"))
-        if record_id == "-":
-            return
-        signal.emit(record_id)
+    def _set_widgets_read_only(self, read_only: bool) -> None:
+        for widget in self._editable_widgets:
+            widget.setReadOnly(read_only)
 
     def _update_action_state(self) -> None:
-        has_row = self._current_row() is not None and self.list_widget.currentRow() >= 0
-        self.edit_button.setEnabled(has_row)
-        self.delete_button.setEnabled(has_row)
-        self.resubmit_button.setEnabled(has_row)
+        has_row = self._current_row() is not None
+        self.list_widget.setEnabled(has_row and not self.is_editing)
+        self.edit_button.setEnabled(has_row and not self.is_editing)
+        self.save_button.setEnabled(has_row and self.is_editing)
+        self.cancel_button.setEnabled(has_row and self.is_editing)
+        self.delete_button.setEnabled(has_row and not self.is_editing)
+        self.resubmit_button.setEnabled(has_row and not self.is_editing)
+
+    @staticmethod
+    def _build_text_value(minimum_height: int = 44, editable: bool = True) -> QTextEdit:
+        widget = QTextEdit()
+        widget.setAcceptRichText(False)
+        widget.setMinimumHeight(minimum_height)
+        widget.setObjectName("HistoryDetailValue")
+        widget.setReadOnly(not editable)
+        return widget
+
+    @staticmethod
+    def _build_section(title: str, form_layout: QFormLayout) -> QFrame:
+        frame = QFrame()
+        frame.setObjectName("CardFrame")
+        layout = QVBoxLayout(frame)
+        header = QLabel(title)
+        header.setObjectName("SectionTitle")
+        layout.addWidget(header)
+        layout.addLayout(form_layout)
+        return frame
+
+    @staticmethod
+    def _text_value(value: Any) -> str:
+        return str(value or "").strip()
 
     @staticmethod
     def _display_value(value: Any) -> str:
-        if value is None:
-            return "-"
-        text = str(value).strip()
-        return text if text else "-"
+        text = str(value or "").strip()
+        return text or "-"

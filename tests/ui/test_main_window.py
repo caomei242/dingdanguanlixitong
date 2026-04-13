@@ -394,6 +394,60 @@ def test_main_window_deletes_selected_history_row_and_reloads_page(qtbot, tmp_pa
     assert window.history_page.order_id_value.toPlainText() == _sample_order().order_id
 
 
+def test_main_window_saves_history_edit_in_place_and_keeps_selection(qtbot, tmp_path):
+    config_store = ConfigStore(tmp_path / "config.json")
+    history_store = HistoryStore(tmp_path / "history.json")
+    config_store.save(_settings_payload())
+
+    window = MainWindow(config_store=config_store, history_store=history_store)
+    qtbot.addWidget(window)
+
+    first_row = history_store.append(
+        window._build_history_snapshot(
+            {"shop_name": "草莓店", "order": _sample_order()},
+            "确认写入飞书",
+            "已写入飞书",
+            "写入成功",
+            {"data": {"record_id": "rec_1"}},
+        )
+    )
+    history_store.append(
+        window._build_history_snapshot(
+            {"shop_name": "草莓店", "order": _alternate_order()},
+            "仅存历史",
+            "仅存历史",
+            "",
+        )
+    )
+    window.history_page.load_rows(history_store.list_items())
+    window.history_page.list_widget.setCurrentRow(1)
+
+    window.history_page.edit_button.click()
+    window.history_page.recipient_name_value.setPlainText("改后收件人")
+    window.history_page.phone_number_value.setPlainText("18800001111")
+    window.history_page.address_value.setPlainText("上海市徐汇区漕河泾")
+    window.history_page.product_name_value.setPlainText("改后商品")
+    window.history_page.procurement_product_1_value.setPlainText("改后采购")
+    window.history_page.procurement_quantity_1_value.setPlainText("5")
+    window.history_page.procurement_cost_1_value.setPlainText("23.60")
+    window.history_page.save_button.click()
+
+    target_row = history_store.get(first_row["record_id"])
+    assert target_row["order_snapshot"]["recipient_name"] == "改后收件人"
+    assert target_row["order_snapshot"]["phone_number"] == "18800001111"
+    assert target_row["order_snapshot"]["address"] == "上海市徐汇区漕河泾"
+    assert target_row["order_snapshot"]["product_name"] == "改后商品"
+    assert target_row["order_snapshot"]["procurement_items"][0] == {
+        "product_name": "改后采购",
+        "quantity": "5",
+        "cost": "23.60",
+    }
+    assert window.history_page.list_widget.currentRow() == 1
+    assert window.history_page.detail_title_label.text() == "草莓店"
+    assert window.history_page.recipient_name_value.toPlainText() == "改后收件人"
+    assert window.history_page.product_name_value.toPlainText() == "改后商品"
+
+
 def test_main_window_resubmits_selected_history_row_in_place(qtbot, tmp_path, monkeypatch):
     config_store = ConfigStore(tmp_path / "config.json")
     history_store = HistoryStore(tmp_path / "history.json")
@@ -463,6 +517,76 @@ def test_main_window_resubmits_selected_history_row_in_place(qtbot, tmp_path, mo
     assert rows[1]["message"] == "写入成功"
     assert rows[1]["feishu_result"] == {"data": {"record_id": "rec_resubmit"}}
     assert config_store.load()["product_presets"] == initial_product_presets
+
+
+def test_main_window_resubmits_history_using_edited_snapshot(qtbot, tmp_path, monkeypatch):
+    config_store = ConfigStore(tmp_path / "config.json")
+    history_store = HistoryStore(tmp_path / "history.json")
+    config_store.save(_settings_payload())
+
+    captured: dict[str, object] = {}
+
+    class FakeFeishuClient:
+        def __init__(self, app_id: str, app_secret: str, table_app_token: str, table_id: str):
+            pass
+
+        def get_tenant_access_token(self) -> str:
+            return "tenant_token_123"
+
+        def create_record(self, access_token: str, fields: dict) -> dict:
+            captured["access_token"] = access_token
+            captured["fields"] = fields
+            return {"data": {"record_id": "rec_resubmit_edited"}}
+
+    monkeypatch.setattr("strawberry_order_management.ui.main_window.FeishuClient", FakeFeishuClient)
+
+    window = MainWindow(config_store=config_store, history_store=history_store)
+    qtbot.addWidget(window)
+
+    selected_row = history_store.append(
+        window._build_history_snapshot(
+            {"shop_name": "草莓店", "order": _alternate_order()},
+            "确认写入飞书",
+            "已写入飞书",
+            "写入成功",
+            {"data": {"record_id": "rec_1"}},
+        )
+    )
+    window.history_page.load_rows(history_store.list_items())
+    window.history_page.list_widget.setCurrentRow(0)
+
+    window.history_page.edit_button.click()
+    window.history_page.recipient_name_value.setPlainText("改后王先生")
+    window.history_page.phone_number_value.setPlainText("18800002222")
+    window.history_page.code_value.setPlainText("9900")
+    window.history_page.address_value.setPlainText("上海市闵行区万源路")
+    window.history_page.delivery_note_value.setPlainText("改后备注")
+    window.history_page.income_amount_value.setPlainText("55.00")
+    window.history_page.procurement_product_1_value.setPlainText("改后蓝莓")
+    window.history_page.procurement_quantity_1_value.setPlainText("4")
+    window.history_page.procurement_cost_1_value.setPlainText("13.20")
+    window.history_page.save_button.click()
+
+    window.history_page.resubmit_button.click()
+
+    qtbot.waitUntil(
+        lambda: window.intake_page.capture_widget.status_label.text() == "已写入飞书：草莓店",
+        timeout=3000,
+    )
+    qtbot.waitUntil(lambda: window._submit_thread is None, timeout=3000)
+
+    assert captured["access_token"] == "tenant_token_123"
+    assert captured["fields"]["备注"] == "改后备注"
+    assert captured["fields"]["收入金额"] == "55.00"
+    assert captured["fields"]["发货地址"] == "改后王先生 18800002222-9900 上海市闵行区万源路"
+    assert captured["fields"]["采购商品1"] == "改后蓝莓"
+    assert captured["fields"]["采购数量1"] == "4"
+    assert captured["fields"]["采购成本1"] == "13.20"
+
+    updated_row = history_store.get(selected_row["record_id"])
+    assert updated_row["order_snapshot"]["delivery_note"] == "改后备注"
+    assert updated_row["order_snapshot"]["income_amount"] == "55.00"
+    assert updated_row["feishu_result"] == {"data": {"record_id": "rec_resubmit_edited"}}
 
 
 def test_main_window_can_save_manual_product_into_global_library(qtbot, tmp_path):

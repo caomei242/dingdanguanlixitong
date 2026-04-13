@@ -43,6 +43,7 @@ class _ImageWorker(QObject):
 class IntakePage(QWidget):
     submit_requested = Signal(object)
     save_history_requested = Signal(object)
+    product_library_requested = Signal(str, str)
 
     def __init__(
         self,
@@ -105,6 +106,7 @@ class IntakePage(QWidget):
         self.submit_button.clicked.connect(self._handle_submit)
         self.save_history_button.clicked.connect(self._handle_save_history)
         self.capture_widget.image_ready.connect(self.process_image_bytes)
+        self.order_card_widget.product_library_requested.connect(self.product_library_requested.emit)
 
     def show_order(self, order) -> None:
         self._current_order = order

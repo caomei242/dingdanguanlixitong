@@ -2,12 +2,14 @@ from __future__ import annotations
 
 from functools import partial
 
+from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QComboBox,
     QFormLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QPushButton,
     QTextEdit,
     QWidget,
 )
@@ -16,6 +18,8 @@ from strawberry_order_management.models import ParsedOrder, ProcurementItem
 
 
 class OrderCardWidget(QWidget):
+    product_library_requested = Signal(str, str)
+
     def __init__(self) -> None:
         super().__init__()
         self._product_presets: list[dict[str, str]] = []
@@ -31,15 +35,15 @@ class OrderCardWidget(QWidget):
         self.code_edit = self._build_line_edit()
         self.address_edit = self._build_text_edit("HighlightedValueEdit")
         self.delivery_note_edit = self._build_text_edit()
-        self.procurement_rows: list[tuple[QComboBox, QLineEdit, QLineEdit]] = []
+        self.procurement_rows: list[tuple[QComboBox, QLineEdit, QLineEdit, QPushButton]] = []
 
-        self.procurement_product_1_combo, self.procurement_quantity_1_edit, self.procurement_cost_1_edit = (
+        self.procurement_product_1_combo, self.procurement_quantity_1_edit, self.procurement_cost_1_edit, self.procurement_save_1_button = (
             self._build_procurement_row(0)
         )
-        self.procurement_product_2_combo, self.procurement_quantity_2_edit, self.procurement_cost_2_edit = (
+        self.procurement_product_2_combo, self.procurement_quantity_2_edit, self.procurement_cost_2_edit, self.procurement_save_2_button = (
             self._build_procurement_row(1)
         )
-        self.procurement_product_3_combo, self.procurement_quantity_3_edit, self.procurement_cost_3_edit = (
+        self.procurement_product_3_combo, self.procurement_quantity_3_edit, self.procurement_cost_3_edit, self.procurement_save_3_button = (
             self._build_procurement_row(2)
         )
 
@@ -69,7 +73,7 @@ class OrderCardWidget(QWidget):
             for item in product_presets
             if self._to_text(item.get("name")).strip()
         ]
-        for index, (combo, _, _) in enumerate(self.procurement_rows):
+        for index, (combo, _, _, _) in enumerate(self.procurement_rows):
             current = combo.currentText().strip()
             combo.blockSignals(True)
             combo.clear()
@@ -93,7 +97,7 @@ class OrderCardWidget(QWidget):
         self.address_edit.setPlainText(self._to_text(order.address))
         self.delivery_note_edit.setPlainText(self._to_text(order.delivery_note))
         procurement_items = tuple(order.procurement_items) or ()
-        for index, (combo, quantity_edit, cost_edit) in enumerate(self.procurement_rows):
+        for index, (combo, quantity_edit, cost_edit, _) in enumerate(self.procurement_rows):
             item = procurement_items[index] if index < len(procurement_items) else ProcurementItem("", "1", "")
             combo.setCurrentText(self._to_text(item.product_name))
             quantity_edit.setText(self._to_text(item.quantity) or "1")
@@ -119,11 +123,19 @@ class OrderCardWidget(QWidget):
                     quantity_edit.text().strip() or "1",
                     cost_edit.text().strip(),
                 )
-                for combo, quantity_edit, cost_edit in self.procurement_rows
+                for combo, quantity_edit, cost_edit, _ in self.procurement_rows
             ),
         )
 
-    def _build_procurement_row(self, index: int) -> tuple[QComboBox, QLineEdit, QLineEdit]:
+    def emit_product_library_request(self, index: int) -> None:
+        combo, _, cost_edit, _ = self.procurement_rows[index]
+        product_name = combo.currentText().strip()
+        cost = cost_edit.text().strip()
+        if not product_name:
+            return
+        self.product_library_requested.emit(product_name, cost)
+
+    def _build_procurement_row(self, index: int) -> tuple[QComboBox, QLineEdit, QLineEdit, QPushButton]:
         product_combo = QComboBox()
         product_combo.setEditable(True)
         product_combo.setObjectName("OrderValueEdit")
@@ -139,25 +151,31 @@ class OrderCardWidget(QWidget):
         cost_edit.setPlaceholderText("成本")
         cost_edit.setMaximumWidth(140)
 
+        save_button = QPushButton("入库")
+        save_button.setObjectName("SecondaryActionButton")
+        save_button.setMaximumWidth(86)
+
         product_combo.currentTextChanged.connect(partial(self._handle_procurement_product_changed, index))
-        self.procurement_rows.append((product_combo, quantity_edit, cost_edit))
-        return product_combo, quantity_edit, cost_edit
+        save_button.clicked.connect(partial(self.emit_product_library_request, index))
+        self.procurement_rows.append((product_combo, quantity_edit, cost_edit, save_button))
+        return product_combo, quantity_edit, cost_edit, save_button
 
     def _procurement_row_widget(self, index: int) -> QWidget:
-        combo, quantity_edit, cost_edit = self.procurement_rows[index]
+        combo, quantity_edit, cost_edit, save_button = self.procurement_rows[index]
         row = QWidget()
         layout = QHBoxLayout(row)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(combo, 3)
         layout.addWidget(quantity_edit, 1)
         layout.addWidget(cost_edit, 1)
+        layout.addWidget(save_button, 0)
         return row
 
     def _handle_procurement_product_changed(self, index: int, _: str) -> None:
         self._apply_preset_to_slot(index)
 
     def _apply_preset_to_slot(self, index: int) -> None:
-        combo, quantity_edit, cost_edit = self.procurement_rows[index]
+        combo, quantity_edit, cost_edit, _ = self.procurement_rows[index]
         selected_name = combo.currentText().strip()
         if not quantity_edit.text().strip():
             quantity_edit.setText("1")

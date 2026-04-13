@@ -6,11 +6,13 @@ from PySide6.QtWidgets import (
     QComboBox,
     QFormLayout,
     QFrame,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QPushButton,
     QScrollArea,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -106,15 +108,15 @@ class SettingsPage(QWidget):
         header.addWidget(title)
         header.addWidget(subtitle)
 
-        form = QFormLayout()
-        form.addRow("使用 MCP OCR", self.ocr_use_mcp_checkbox)
-        form.addRow("MCP 命令", self.ocr_mcp_command_edit)
-        form.addRow("OCR API Base URL", self.ocr_base_url_edit)
-        form.addRow("OCR API Key", self.ocr_api_key_edit)
-        form.addRow("辅助提取 API Base URL", self.helper_base_url_edit)
-        form.addRow("辅助提取 API Key", self.helper_api_key_edit)
-        form.addRow("飞书 App ID", self.feishu_app_id_edit)
-        form.addRow("飞书 App Secret", self.feishu_app_secret_edit)
+        api_form = QFormLayout()
+        api_form.addRow("使用 MCP OCR", self.ocr_use_mcp_checkbox)
+        api_form.addRow("MCP 命令", self.ocr_mcp_command_edit)
+        api_form.addRow("OCR API Base URL", self.ocr_base_url_edit)
+        api_form.addRow("OCR API Key", self.ocr_api_key_edit)
+        api_form.addRow("辅助提取 API Base URL", self.helper_base_url_edit)
+        api_form.addRow("辅助提取 API Key", self.helper_api_key_edit)
+        api_form.addRow("飞书 App ID", self.feishu_app_id_edit)
+        api_form.addRow("飞书 App Secret", self.feishu_app_secret_edit)
 
         product_button_row = QHBoxLayout()
         product_button_row.addWidget(self.add_product_button)
@@ -138,27 +140,34 @@ class SettingsPage(QWidget):
         shop_form.addRow("飞书 App Token", self.shop_app_token_edit)
         shop_form.addRow("飞书 Table ID", self.shop_table_id_edit)
         shop_form.addRow("表名备注", self.shop_table_name_edit)
-        for key, edit in self.mapping_edits.items():
-            shop_form.addRow(f"{key} 映射", edit)
+        mapping_grid = QGridLayout()
+        mapping_grid.setHorizontalSpacing(16)
+        mapping_grid.setVerticalSpacing(10)
+        for index, key in enumerate(self.FIELD_MAPPING_KEYS):
+            row = index // 2
+            column = (index % 2) * 2
+            mapping_grid.addWidget(QLabel(f"{key} 映射"), row, column)
+            mapping_grid.addWidget(self.mapping_edits[key], row, column + 1)
 
-        card = QFrame()
-        card.setObjectName("CardFrame")
-        card_layout = QVBoxLayout(card)
-        card_layout.addLayout(form)
-        card_layout.addWidget(QLabel("全局商品库"))
-        card_layout.addLayout(product_button_row)
-        card_layout.addLayout(product_form)
-        card_layout.addWidget(QLabel("店铺与 Sheet 映射"))
-        card_layout.addLayout(shop_button_row)
-        card_layout.addLayout(shop_form)
-        card_layout.addWidget(self.status_label)
-        card_layout.addWidget(self.save_button)
+        self.tabs = QTabWidget()
+        self.tabs.setObjectName("SettingsTabs")
+        self.tabs.addTab(self._build_tab_card("接口配置", api_form), "接口配置")
+        self.tabs.addTab(
+            self._build_tab_card("全局商品库", product_form, product_button_row),
+            "商品库",
+        )
+        self.tabs.addTab(
+            self._build_tab_card("店铺与 Sheet 映射", shop_form, shop_button_row, mapping_grid),
+            "店铺映射",
+        )
 
         content = QWidget()
         content.setObjectName("PageContent")
         content_layout = QVBoxLayout(content)
         content_layout.addLayout(header)
-        content_layout.addWidget(card)
+        content_layout.addWidget(self.tabs)
+        content_layout.addWidget(self.status_label)
+        content_layout.addWidget(self.save_button)
         content_layout.addStretch(1)
 
         scroll_area = QScrollArea()
@@ -242,22 +251,12 @@ class SettingsPage(QWidget):
         self.status_label.setText("")
 
     def _handle_save_product(self) -> None:
-        product = {
-            "name": self.product_name_edit.text().strip(),
-            "default_cost": self.product_cost_edit.text().strip(),
-        }
-        if not product["name"]:
+        if not self.upsert_product_preset(
+            self.product_name_edit.text().strip(),
+            self.product_cost_edit.text().strip(),
+        ):
             self.status_label.setText("请先填写商品名称")
             return
-
-        for index, existing in enumerate(self._product_presets):
-            if existing["name"] == product["name"]:
-                self._product_presets[index] = product
-                break
-        else:
-            self._product_presets.append(product)
-
-        self._refresh_product_selector(product["name"])
         self.status_label.setText("已保存商品预设")
 
     def _handle_remove_product(self) -> None:
@@ -323,6 +322,27 @@ class SettingsPage(QWidget):
         self._shops = [shop for shop in self._shops if shop["name"] != selected_name]
         self._refresh_shop_selector()
 
+    def upsert_product_preset(self, name: str, default_cost: str) -> bool:
+        product = {
+            "name": name.strip(),
+            "default_cost": default_cost.strip(),
+        }
+        if not product["name"]:
+            return False
+
+        for index, existing in enumerate(self._product_presets):
+            if existing["name"] == product["name"]:
+                if existing == product:
+                    self._refresh_product_selector(product["name"])
+                    return False
+                self._product_presets[index] = product
+                self._refresh_product_selector(product["name"])
+                return True
+        else:
+            self._product_presets.append(product)
+        self._refresh_product_selector(product["name"])
+        return True
+
     def _refresh_shop_selector(self, selected_name: str | None = None) -> None:
         self.shop_selector.blockSignals(True)
         self.shop_selector.clear()
@@ -374,6 +394,24 @@ class SettingsPage(QWidget):
             self.shop_table_id_edit.clear()
             self.shop_table_name_edit.clear()
             self._load_field_mapping({})
+
+    @staticmethod
+    def _build_tab_card(title: str, *layouts) -> QWidget:
+        container = QFrame()
+        container.setObjectName("CardFrame")
+        layout = QVBoxLayout(container)
+        section_title = QLabel(title)
+        section_title.setObjectName("SectionTitle")
+        layout.addWidget(section_title)
+        for child in layouts:
+            if child is None:
+                continue
+            if isinstance(child, QWidget):
+                layout.addWidget(child)
+            else:
+                layout.addLayout(child)
+        layout.addStretch(1)
+        return container
 
     def _current_field_mapping(self) -> dict[str, str]:
         return {

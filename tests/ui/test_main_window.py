@@ -121,6 +121,10 @@ def test_main_window_submits_order_to_selected_shop_sheet(qtbot, tmp_path, monke
     assert history_store.list_items()[0]["status"] == "已写入飞书"
     assert history_store.list_items()[0]["shop_name"] == "草莓店"
     assert window.intake_page.capture_widget.status_label.text() == "已写入飞书：草莓店"
+    assert any(
+        item["name"] == "澳洲婴儿水" and item["default_cost"] == "19.00"
+        for item in config_store.load()["product_presets"]
+    )
 
 
 def test_main_window_records_failure_when_feishu_submit_errors(qtbot, tmp_path, monkeypatch):
@@ -195,3 +199,45 @@ def test_main_window_submits_to_feishu_in_background(qtbot, tmp_path, monkeypatc
     )
     qtbot.waitUntil(lambda: window._submit_thread is None, timeout=3000)
     assert history_store.list_items()[0]["status"] == "已写入飞书"
+
+
+def test_main_window_can_save_manual_product_into_global_library(qtbot, tmp_path):
+    config_store = ConfigStore(tmp_path / "config.json")
+    history_store = HistoryStore(tmp_path / "history.json")
+    config_store.save(_settings_payload())
+
+    window = MainWindow(config_store=config_store, history_store=history_store)
+    qtbot.addWidget(window)
+    window.intake_page.show_order(_sample_order())
+
+    window.intake_page.order_card_widget.procurement_product_1_combo.setEditText("临时采购品")
+    window.intake_page.order_card_widget.procurement_cost_1_edit.setText("11.80")
+    window.intake_page.order_card_widget.procurement_save_1_button.click()
+
+    saved_payload = config_store.load()
+    assert any(
+        item["name"] == "临时采购品" and item["default_cost"] == "11.80"
+        for item in saved_payload["product_presets"]
+    )
+    assert window.intake_page.capture_widget.status_label.text() == "已加入商品库：临时采购品"
+
+
+def test_main_window_auto_persists_manual_products_when_saving_history(qtbot, tmp_path):
+    config_store = ConfigStore(tmp_path / "config.json")
+    history_store = HistoryStore(tmp_path / "history.json")
+    config_store.save(_settings_payload())
+
+    window = MainWindow(config_store=config_store, history_store=history_store)
+    qtbot.addWidget(window)
+
+    window.intake_page.show_order(_sample_order())
+    window.intake_page.shop_selector.setCurrentText("草莓店")
+    window.intake_page.order_card_widget.procurement_product_2_combo.setEditText("补录商品")
+    window.intake_page.order_card_widget.procurement_cost_2_edit.setText("7.50")
+
+    window.intake_page.save_history_button.click()
+
+    assert any(
+        item["name"] == "补录商品" and item["default_cost"] == "7.50"
+        for item in config_store.load()["product_presets"]
+    )

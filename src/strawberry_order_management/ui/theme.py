@@ -75,6 +75,16 @@ QPushButton:disabled {
     color: #f7f9fd;
 }
 
+QPushButton#SecondaryActionButton {
+    background: #eef4ff;
+    color: #3f67d9;
+    border: 1px solid #cddcff;
+}
+
+QPushButton#SecondaryActionButton:hover {
+    background: #e3ecff;
+}
+
 QLineEdit, QTextEdit, QComboBox {
     background: #ffffff;
     border: 1px solid #d9e2f1;
@@ -94,6 +104,28 @@ QComboBox {
 QLabel#SectionTitle {
     font-size: 18px;
     font-weight: 700;
+    color: #1f2b44;
+}
+
+QTabWidget::pane {
+    border: none;
+    background: transparent;
+}
+
+QTabBar::tab {
+    background: #edf2ff;
+    color: #5a6f96;
+    border: 1px solid #d9e2f4;
+    border-bottom: none;
+    padding: 10px 18px;
+    margin-right: 8px;
+    border-top-left-radius: 14px;
+    border-top-right-radius: 14px;
+    font-weight: 600;
+}
+
+QTabBar::tab:selected {
+    background: #ffffff;
     color: #1f2b44;
 }
 

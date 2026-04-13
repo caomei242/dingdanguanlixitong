@@ -76,6 +76,7 @@ class MainWindow(QMainWindow):
         self.stack.addWidget(self.intake_page)
         self.stack.addWidget(self.history_page)
         self.stack.addWidget(self.settings_page)
+        self.intake_page.product_library_requested.connect(self._handle_product_library_request)
 
         brand_title = QLabel("草莓")
         brand_title.setObjectName("BrandTitle")
@@ -118,17 +119,15 @@ class MainWindow(QMainWindow):
         apply_theme(self)
 
     def _handle_settings_save(self, payload: dict) -> None:
-        if self._config_store is not None:
-            self._config_store.save(payload)
-        self._sync_shop_selector(payload)
-        if self._on_settings_save is not None:
-            self._on_settings_save(payload)
+        self._persist_settings_payload(payload)
 
     def _handle_save_history_request(self, payload: dict) -> None:
+        self._sync_products_from_order(payload["order"])
         self._append_history(payload, "仅存历史")
         self.intake_page.capture_widget.status_label.setText("已保存到历史")
 
     def _handle_submit_request(self, payload: dict) -> None:
+        self._sync_products_from_order(payload["order"])
         try:
             task = self._build_feishu_submission_task(payload)
         except Exception as exc:
@@ -171,6 +170,31 @@ class MainWindow(QMainWindow):
             shop_names,
             str(payload.get("selected_shop_name", "")).strip() or None,
         )
+
+    def _handle_product_library_request(self, product_name: str, default_cost: str) -> None:
+        if self.settings_page.upsert_product_preset(product_name, default_cost):
+            payload = self.settings_page.to_payload()
+            self._persist_settings_payload(payload)
+            self.intake_page.set_product_presets(payload.get("product_presets", []))
+            self.intake_page.capture_widget.status_label.setText(f"已加入商品库：{product_name}")
+
+    def _sync_products_from_order(self, order) -> None:
+        changed = False
+        for item in order.procurement_items:
+            if self.settings_page.upsert_product_preset(item.product_name, item.cost):
+                changed = True
+        if not changed:
+            return
+        payload = self.settings_page.to_payload()
+        self._persist_settings_payload(payload)
+        self.intake_page.set_product_presets(payload.get("product_presets", []))
+
+    def _persist_settings_payload(self, payload: dict) -> None:
+        if self._config_store is not None:
+            self._config_store.save(payload)
+        self._sync_shop_selector(payload)
+        if self._on_settings_save is not None:
+            self._on_settings_save(payload)
 
     def _extract_order_from_image(self, image_bytes: bytes):
         payload = self.settings_page.to_payload()

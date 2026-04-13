@@ -1,4 +1,4 @@
-from PySide6.QtWidgets import QFrame, QScrollArea
+from PySide6.QtWidgets import QFrame, QScrollArea, QTabWidget
 
 from strawberry_order_management.ui.main_window import MainWindow
 from strawberry_order_management.ui.pages.history_page import HistoryPage
@@ -356,6 +356,21 @@ def test_settings_page_wraps_content_in_scroll_area(qtbot):
     assert scroll_area.widgetResizable() is True
     assert scroll_area.frameShape() == QFrame.Shape.NoFrame
     assert scroll_area.widget().objectName() == "PageContent"
+
+
+def test_settings_page_groups_forms_into_tabs(qtbot):
+    page = SettingsPage()
+    qtbot.addWidget(page)
+
+    tabs = page.findChild(QTabWidget)
+
+    assert tabs is not None
+    assert tabs.count() == 3
+    assert [tabs.tabText(index) for index in range(tabs.count())] == [
+        "接口配置",
+        "商品库",
+        "店铺映射",
+    ]
 
 
 def test_main_window_navigates_between_three_pages(qtbot):

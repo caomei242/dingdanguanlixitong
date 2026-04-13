@@ -36,6 +36,26 @@ class FeishuClient:
             error_prefix="飞书写入失败",
         )
 
+    def list_field_names(self, access_token: str) -> set[str]:
+        payload = self._get_json(
+            "https://open.feishu.cn/open-apis/bitable/v1/apps/"
+            f"{self.table_app_token}/tables/{self.table_id}/fields",
+            headers={"Authorization": f"Bearer {access_token}"},
+            params={"page_size": 500},
+            error_prefix="飞书字段检测失败",
+        )
+        items = payload.get("data", {}).get("items", [])
+        if not isinstance(items, list):
+            return set()
+        field_names: set[str] = set()
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("field_name", "")).strip()
+            if name:
+                field_names.add(name)
+        return field_names
+
     def resolve_bitable_from_wiki_url(
         self,
         wiki_url: str,

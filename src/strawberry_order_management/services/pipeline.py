@@ -8,6 +8,7 @@ from strawberry_order_management.models import ParsedOrder
 
 DEFAULT_FEISHU_FIELD_MAPPING = {
     "店铺": "",
+    "平台": "平台",
     "订单编号": "",
     "备注": "备注",
     "订单日期": "订单日期",
@@ -56,6 +57,7 @@ def build_feishu_payload(
 
     source_fields = {
         "店铺": shop_name,
+        "平台": order.platform,
         "订单编号": order.order_id,
         "备注": order.delivery_note,
         "订单日期": placed_at.strftime("%Y/%m/%d"),

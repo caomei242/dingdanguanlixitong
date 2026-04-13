@@ -20,6 +20,7 @@ def _row(
         "order_snapshot": {
             "order_id": order_id,
             "placed_at": "2026-04-11 20:57:15",
+            "platform": "抖店",
             "order_status": "已发货",
             "product_name": "澳大利亚进口婴儿水",
             "quantity": "1",
@@ -280,6 +281,7 @@ def test_history_page_directly_edits_fields_and_emits_save_patch(qtbot):
     )
 
     assert page.order_id_value.isReadOnly() is False
+    assert page.platform_value.isReadOnly() is False
     assert page.product_name_value.isReadOnly() is False
     assert page.save_button.isEnabled() is True
 
@@ -299,6 +301,7 @@ def test_history_page_directly_edits_fields_and_emits_save_patch(qtbot):
                 "order_snapshot": {
                     "order_id": "6952003434324366473",
                     "placed_at": "2026-04-11 20:57:15",
+                    "platform": "抖店",
                     "order_status": "已发货",
                     "product_name": "改后商品",
                     "quantity": "1",

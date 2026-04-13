@@ -1,4 +1,5 @@
 import time
+from dataclasses import replace
 
 from PySide6.QtGui import QColor, QGuiApplication, QImage
 from PySide6.QtWidgets import QFrame, QLabel, QScrollArea
@@ -48,6 +49,40 @@ def test_intake_page_shows_order_card_after_pipeline_result(qtbot):
     assert isinstance(page.address_widget, AddressExtractorWidget)
     assert page.submit_button.text() == "确认写入飞书"
     assert submitted_orders == [{"shop_name": "乐宝零食店", "order": order}]
+
+
+def test_intake_page_defaults_platform_to_douyin_and_supports_wechat(qtbot):
+    submitted_orders = []
+    page = IntakePage(on_submit=submitted_orders.append, use_background_thread=False)
+    qtbot.addWidget(page)
+
+    order = ParsedOrder(
+        order_id="1",
+        placed_at="2026-04-11 20:57:15",
+        order_status="已发货",
+        product_name="商品",
+        quantity="1",
+        order_amount="10.00",
+        income_amount="8.00",
+        recipient_name="何女士",
+        phone_number="15781304332",
+        code="3612",
+        address="重庆市",
+        delivery_note="备注",
+    )
+
+    page.show_order(order)
+    page.shop_selector.addItems(["乐宝零食店"])
+    page.shop_selector.setCurrentText("乐宝零食店")
+
+    assert page.platform_selector.currentText() == "抖店"
+
+    page.platform_selector.setCurrentText("微信小店")
+    page.submit_button.click()
+
+    assert submitted_orders == [
+        {"shop_name": "乐宝零食店", "order": replace(order, platform="微信小店")}
+    ]
 
 
 def test_screenshot_input_widget_reads_image_from_clipboard(qtbot):

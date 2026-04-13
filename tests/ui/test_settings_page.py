@@ -65,6 +65,7 @@ def test_settings_page_load_payload_preserves_global_product_library_and_total_t
     assert page.shop_table_id_edit.text() == "tbl_total"
     assert page.shop_table_name_edit.text() == "订单总表"
     assert page.shop_mapping_edits["shop_name"].text() == "店铺列"
+    assert page.shop_mapping_edits["platform"].text() == "平台"
     assert page.shop_mapping_edits["remark"].text() == "备注列"
     assert page.shop_mapping_edits["order_date"].text() == "订单日期列"
     assert page.shop_mapping_edits["order_time"].text() == "下单时间"
@@ -99,6 +100,7 @@ def test_settings_page_to_payload_persists_global_product_library_and_total_tabl
     page.shop_table_id_edit.setText("tbl_total")
     page.shop_table_name_edit.setText("订单总表")
     page.shop_mapping_edits["shop_name"].setText("店铺列")
+    page.shop_mapping_edits["platform"].setText("平台列")
     page.shop_name_edit.setText("乐宝零食店")
     page.shop_mapping_edits["remark"].setText("备注列")
     page.shop_mapping_edits["order_date"].setText("订单日期列")
@@ -129,6 +131,7 @@ def test_settings_page_to_payload_persists_global_product_library_and_total_tabl
     assert payload["feishu_table_id"] == "tbl_total"
     assert payload["feishu_table_name"] == "订单总表"
     assert payload["feishu_field_mapping"]["店铺"] == "店铺列"
+    assert payload["feishu_field_mapping"]["平台"] == "平台列"
     assert [shop["name"] for shop in payload["shops"]] == [
         "乐宝零食店",
         "欢宝零食店",
@@ -381,6 +384,7 @@ def test_settings_page_prefills_recommended_mapping_for_new_shop(qtbot):
     page._handle_add_shop()
 
     assert page.shop_mapping_edits["shop_name"].text() == "店铺"
+    assert page.shop_mapping_edits["platform"].text() == "平台"
     assert page.shop_mapping_edits["order_id"].text() == "订单编号"
     assert page.shop_mapping_edits["remark"].text() == "备注"
     assert page.shop_mapping_edits["order_date"].text() == "订单日期"
@@ -407,6 +411,24 @@ def test_settings_page_prefills_recommended_mapping_for_new_shop(qtbot):
     assert page.shop_mapping_edits["purchase_item_3"].text() == "采购商品3"
     assert page.shop_mapping_edits["purchase_quantity_3"].text() == "采购数量3"
     assert page.shop_mapping_edits["purchase_cost_3"].text() == "采购成本3"
+
+
+def test_settings_page_checks_total_table_fields_and_highlights_missing(qtbot):
+    def inspect_fields(payload: dict):
+        assert payload["feishu_table_app_token"] == "app_token_total"
+        return {"店铺", "订单编号", "收入"}
+
+    page = SettingsPage(on_inspect_table_fields=inspect_fields)
+    qtbot.addWidget(page)
+    page.shop_app_token_edit.setText("app_token_total")
+    page.shop_table_id_edit.setText("tbl_total")
+    page.check_table_fields_button.click()
+
+    assert "总表缺少字段" in page.status_label.text()
+    assert "平台" in page.status_label.text()
+    assert "发货地址" in page.status_label.text()
+    assert "border: 1px solid #ff6b6b" in page.shop_mapping_edits["platform"].styleSheet()
+    assert page.shop_mapping_edits["shop_name"].styleSheet() == ""
 
 
 def test_settings_page_uses_default_shop_presets_and_default_selection(qtbot):

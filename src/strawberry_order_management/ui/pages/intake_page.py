@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Callable
 
 from PySide6.QtCore import QObject, QThread, Signal
@@ -45,6 +46,7 @@ class IntakePage(QWidget):
     submit_requested = Signal(object)
     save_history_requested = Signal(object)
     product_library_requested = Signal(str, str)
+    PLATFORM_OPTIONS = ("抖店", "微信小店")
 
     def __init__(
         self,
@@ -58,6 +60,7 @@ class IntakePage(QWidget):
         self.order_card_widget = OrderCardWidget()
         self.address_widget = AddressExtractorWidget()
         self.shop_selector = QComboBox()
+        self.platform_selector = QComboBox()
         self.save_history_button = QPushButton("仅存历史")
         self.submit_button = QPushButton("确认写入飞书")
         self._on_submit = on_submit
@@ -69,6 +72,8 @@ class IntakePage(QWidget):
         self._thread = None
         self._worker = None
         self.shop_selector.setPlaceholderText("请选择店铺")
+        self.platform_selector.addItems(list(self.PLATFORM_OPTIONS))
+        self.platform_selector.setCurrentText("抖店")
         self.save_history_button.setEnabled(False)
         self.submit_button.setEnabled(False)
 
@@ -82,7 +87,14 @@ class IntakePage(QWidget):
         shop_row.addWidget(shop_label)
         shop_row.addWidget(self.shop_selector, 1)
 
+        platform_row = QHBoxLayout()
+        platform_label = QLabel("平台")
+        platform_label.setObjectName("OrderFieldLabel")
+        platform_row.addWidget(platform_label)
+        platform_row.addWidget(self.platform_selector, 1)
+
         header_row.addLayout(shop_row, 1)
+        header_row.addLayout(platform_row, 1)
         header_row.addStretch(1)
         header_row.addWidget(self.save_history_button)
         header_row.addWidget(self.submit_button)
@@ -129,6 +141,9 @@ class IntakePage(QWidget):
     def show_order(self, order) -> None:
         self._current_order = order
         self.order_card_widget.load_order(order)
+        platform = getattr(order, "platform", "") or "抖店"
+        if self.platform_selector.findText(platform) >= 0:
+            self.platform_selector.setCurrentText(platform)
         self.address_widget.load_from_order(order)
         self.save_history_button.setEnabled(True)
         self.submit_button.setEnabled(True)
@@ -179,7 +194,10 @@ class IntakePage(QWidget):
             return None
         return {
             "shop_name": self.shop_selector.currentText().strip(),
-            "order": self.order_card_widget.to_order(),
+            "order": replace(
+                self.order_card_widget.to_order(),
+                platform=self.platform_selector.currentText().strip() or "抖店",
+            ),
         }
 
     def set_submit_in_progress(self, in_progress: bool) -> None:

@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
 _ORDER_SNAPSHOT_KEYS = (
     "order_id",
     "placed_at",
+    "platform",
     "order_status",
     "product_name",
     "quantity",
@@ -87,6 +88,7 @@ class HistoryPage(QWidget):
 
         self.order_id_value = self._build_text_value(minimum_height=36)
         self.placed_at_value = self._build_text_value(minimum_height=36)
+        self.platform_value = self._build_text_value(minimum_height=36)
         self.order_status_value = self._build_text_value(minimum_height=36)
         self.product_name_value = self._build_text_value(minimum_height=52)
         self.quantity_value = self._build_text_value(minimum_height=36)
@@ -103,6 +105,7 @@ class HistoryPage(QWidget):
         order_form.setFormAlignment(Qt.AlignmentFlag.AlignTop)
         order_form.addRow("订单编号", self.order_id_value)
         order_form.addRow("下单时间", self.placed_at_value)
+        order_form.addRow("平台", self.platform_value)
         order_form.addRow("订单状态", self.order_status_value)
         order_form.addRow("商品名称", self.product_name_value)
         order_form.addRow("数量", self.quantity_value)
@@ -268,6 +271,7 @@ class HistoryPage(QWidget):
         self._editable_widgets = [
             self.order_id_value,
             self.placed_at_value,
+            self.platform_value,
             self.order_status_value,
             self.product_name_value,
             self.quantity_value,
@@ -376,6 +380,7 @@ class HistoryPage(QWidget):
 
         self.order_id_value.setPlainText(self._text_value(order_snapshot.get("order_id")))
         self.placed_at_value.setPlainText(self._text_value(order_snapshot.get("placed_at")))
+        self.platform_value.setPlainText(self._text_value(order_snapshot.get("platform")) or "抖店")
         self.order_status_value.setPlainText(self._text_value(order_snapshot.get("order_status")))
         self.product_name_value.setPlainText(self._text_value(order_snapshot.get("product_name")))
         self.quantity_value.setPlainText(self._text_value(order_snapshot.get("quantity")))
@@ -427,6 +432,7 @@ class HistoryPage(QWidget):
         for widget in (
             self.order_id_value,
             self.placed_at_value,
+            self.platform_value,
             self.order_status_value,
             self.product_name_value,
             self.quantity_value,
@@ -468,6 +474,7 @@ class HistoryPage(QWidget):
             {
                 "order_id": self._text_value(self.order_id_value.toPlainText()),
                 "placed_at": self._text_value(self.placed_at_value.toPlainText()),
+                "platform": self._text_value(self.platform_value.toPlainText()) or "抖店",
                 "order_status": self._text_value(self.order_status_value.toPlainText()),
                 "product_name": self._text_value(self.product_name_value.toPlainText()),
                 "quantity": self._text_value(self.quantity_value.toPlainText()),
@@ -509,6 +516,7 @@ class HistoryPage(QWidget):
                 for key in (
                     "order_id",
                     "placed_at",
+                    "platform",
                     "order_status",
                     "product_name",
                     "quantity",

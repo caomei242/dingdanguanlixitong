@@ -7,7 +7,7 @@ from strawberry_order_management.models import ParsedOrder, ProcurementItem
 from strawberry_order_management.ui.main_window import MainWindow
 
 
-def _sample_order() -> ParsedOrder:
+def _sample_order(platform: str = "抖店") -> ParsedOrder:
     return ParsedOrder(
         order_id="6952003434324366473",
         placed_at="2026-04-11 20:57:15",
@@ -21,6 +21,7 @@ def _sample_order() -> ParsedOrder:
         code="3612",
         address="四川省成都市金牛区营门口街道友谊花园9-2304",
         delivery_note="请电话送货上门谢谢【3612】",
+        platform=platform,
         procurement_items=(
             ProcurementItem("", "1", ""),
             ProcurementItem("", "1", ""),
@@ -29,7 +30,7 @@ def _sample_order() -> ParsedOrder:
     )
 
 
-def _alternate_order() -> ParsedOrder:
+def _alternate_order(platform: str = "抖店") -> ParsedOrder:
     return ParsedOrder(
         order_id="6952003434324366999",
         placed_at="2026-04-12 09:15:00",
@@ -43,6 +44,7 @@ def _alternate_order() -> ParsedOrder:
         code="8899",
         address="广东省深圳市南山区科技园",
         delivery_note="请尽快发货",
+        platform=platform,
         procurement_items=(
             ProcurementItem("蓝莓", "2", "12.50"),
             ProcurementItem("", "1", ""),
@@ -65,6 +67,7 @@ def _settings_payload() -> dict:
         "feishu_table_name": "订单总表",
         "feishu_field_mapping": {
             "店铺": "店铺",
+            "平台": "平台",
             "订单编号": "订单编号",
             "备注": "备注",
             "订单日期": "订单日期",
@@ -111,6 +114,7 @@ def _assert_rich_history_snapshot(
     order_snapshot = record["order_snapshot"]
     assert order_snapshot["order_id"] == order.order_id
     assert order_snapshot["placed_at"] == order.placed_at
+    assert order_snapshot["platform"] == order.platform
     assert order_snapshot["order_status"] == order.order_status
     assert order_snapshot["product_name"] == order.product_name
     assert order_snapshot["quantity"] == order.quantity
@@ -158,6 +162,7 @@ def test_main_window_submits_order_to_total_table_with_shop_field(qtbot, tmp_pat
 
     window.intake_page.show_order(_sample_order())
     window.intake_page.shop_selector.setCurrentText("乐宝零食店")
+    window.intake_page.platform_selector.setCurrentText("微信小店")
     window.intake_page.order_card_widget.procurement_product_1_combo.setCurrentText("澳洲婴儿水")
     window.intake_page.order_card_widget.procurement_quantity_1_edit.setText("2")
     window.intake_page.order_card_widget.procurement_cost_1_edit.setText("19.00")
@@ -178,6 +183,7 @@ def test_main_window_submits_order_to_total_table_with_shop_field(qtbot, tmp_pat
     assert captured["token_called"] is True
     assert captured["create"][0] == "tenant_token_123"
     assert captured["create"][1]["店铺"] == "乐宝零食店"
+    assert captured["create"][1]["平台"] == "微信小店"
     assert captured["create"][1]["订单编号"] == "6952003434324366473"
     assert captured["create"][1]["收入金额"] == "162.00"
     assert captured["create"][1]["发货地址"].startswith("何女士 15781304332-3612")
@@ -189,7 +195,7 @@ def test_main_window_submits_order_to_total_table_with_shop_field(qtbot, tmp_pat
     record = history_store.list_items()[0]
     _assert_rich_history_snapshot(
         record,
-        _sample_order(),
+        _sample_order(platform="微信小店"),
         "确认写入飞书",
         "已写入飞书",
         "写入成功",

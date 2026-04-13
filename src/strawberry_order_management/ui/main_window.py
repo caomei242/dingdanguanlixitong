@@ -80,7 +80,10 @@ class MainWindow(QMainWindow):
             on_save_history=self._handle_save_history_request,
         )
         self.history_page = HistoryPage()
-        self.settings_page = SettingsPage(on_resolve_shop_link=self._resolve_shop_link)
+        self.settings_page = SettingsPage(
+            on_resolve_shop_link=self._resolve_shop_link,
+            on_inspect_table_fields=self._inspect_total_table_fields,
+        )
         self.stack.addWidget(self.intake_page)
         self.stack.addWidget(self.history_page)
         self.stack.addWidget(self.settings_page)
@@ -185,6 +188,7 @@ class MainWindow(QMainWindow):
             "order_snapshot": {
                 "order_id": order.order_id,
                 "placed_at": order.placed_at,
+                "platform": order.platform,
                 "order_status": order.order_status,
                 "product_name": order.product_name,
                 "quantity": order.quantity,
@@ -354,6 +358,26 @@ class MainWindow(QMainWindow):
         client = FeishuClient(app_id, app_secret, "", "")
         return client.resolve_bitable_from_wiki_url(wiki_url)
 
+    def _inspect_total_table_fields(self, settings_payload: dict) -> set[str]:
+        app_id = str(settings_payload.get("feishu_app_id", "")).strip()
+        app_secret = str(settings_payload.get("feishu_app_secret", "")).strip()
+        table_app_token = str(settings_payload.get("feishu_table_app_token", "")).strip()
+        table_id = str(settings_payload.get("feishu_table_id", "")).strip()
+        missing = []
+        if not app_id:
+            missing.append("飞书 App ID")
+        if not app_secret:
+            missing.append("飞书 App Secret")
+        if not table_app_token:
+            missing.append("总表 App Token")
+        if not table_id:
+            missing.append("总表 Table ID")
+        if missing:
+            raise ValueError(f"请先在设置页填写：{'、'.join(missing)}")
+        client = FeishuClient(app_id, app_secret, table_app_token, table_id)
+        access_token = client.get_tenant_access_token()
+        return client.list_field_names(access_token)
+
     def _build_feishu_submission_task(self, payload: dict) -> dict:
         settings_payload = self.settings_page.to_payload()
         shop_name = str(payload.get("shop_name", "")).strip()
@@ -427,6 +451,7 @@ class MainWindow(QMainWindow):
             "order": ParsedOrder(
                 order_id=str(order_snapshot.get("order_id", "")).strip(),
                 placed_at=str(order_snapshot.get("placed_at", "")).strip(),
+                platform=str(order_snapshot.get("platform", "抖店")).strip() or "抖店",
                 order_status=str(order_snapshot.get("order_status", "")).strip(),
                 product_name=str(order_snapshot.get("product_name", "")).strip(),
                 quantity=str(order_snapshot.get("quantity", "")).strip(),

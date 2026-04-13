@@ -24,6 +24,7 @@ class ParsedOrder:
     code: str
     address: str
     delivery_note: str
+    platform: str = "抖店"
     procurement_items: tuple["ProcurementItem", "ProcurementItem", "ProcurementItem"] = field(
         default_factory=lambda: (
             ProcurementItem("", "1", ""),

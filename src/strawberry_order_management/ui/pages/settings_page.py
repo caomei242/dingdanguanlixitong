@@ -31,6 +31,7 @@ class SettingsPage(QWidget):
     DEFAULT_SELECTED_SHOP = "乐宝零食店"
     RECOMMENDED_FIELD_MAPPING = {
         "店铺": "店铺",
+        "平台": "平台",
         "订单编号": "订单编号",
         "备注": "备注",
         "订单日期": "订单日期",
@@ -59,6 +60,7 @@ class SettingsPage(QWidget):
     }
     FIELD_MAPPING_KEYS = (
         "店铺",
+        "平台",
         "订单编号",
         "备注",
         "订单日期",
@@ -88,6 +90,7 @@ class SettingsPage(QWidget):
     )
     FIELD_MAPPING_ALIASES = {
         "shop_name": "店铺",
+        "platform": "平台",
         "order_id": "订单编号",
         "remark": "备注",
         "order_date": "订单日期",
@@ -116,7 +119,7 @@ class SettingsPage(QWidget):
         "purchase_cost_3": "采购成本3",
     }
 
-    def __init__(self, on_resolve_shop_link=None) -> None:
+    def __init__(self, on_resolve_shop_link=None, on_inspect_table_fields=None) -> None:
         super().__init__()
         self.setObjectName("SettingsPage")
 
@@ -143,11 +146,13 @@ class SettingsPage(QWidget):
         self.shop_table_name_edit = QLineEdit()
         self.add_shop_button = QPushButton("新增店铺")
         self.save_shop_button = QPushButton("保存店铺")
+        self.check_table_fields_button = QPushButton("检测总表字段")
         self.remove_shop_button = QPushButton("删除店铺")
         self.save_button = QPushButton("保存/应用")
         self.status_label = QLabel("")
         self.status_label.setObjectName("MutedText")
         self._on_resolve_shop_link = on_resolve_shop_link
+        self._on_inspect_table_fields = on_inspect_table_fields
         self.ocr_mcp_command_edit.setText("uvx minimax-coding-plan-mcp -y")
         self._product_presets: list[dict[str, str]] = []
         self._shops: list[dict[str, str]] = [
@@ -192,6 +197,7 @@ class SettingsPage(QWidget):
         shop_button_row = QHBoxLayout()
         shop_button_row.addWidget(self.add_shop_button)
         shop_button_row.addWidget(self.save_shop_button)
+        shop_button_row.addWidget(self.check_table_fields_button)
         shop_button_row.addWidget(self.remove_shop_button)
 
         shop_form = QFormLayout()
@@ -244,6 +250,7 @@ class SettingsPage(QWidget):
         self.remove_product_button.clicked.connect(self._handle_remove_product)
         self.add_shop_button.clicked.connect(self._handle_add_shop)
         self.save_shop_button.clicked.connect(self._handle_save_shop)
+        self.check_table_fields_button.clicked.connect(self._handle_check_table_fields)
         self.remove_shop_button.clicked.connect(self._handle_remove_shop)
         self.product_selector.currentIndexChanged.connect(self._load_selected_product)
         self.shop_selector.currentIndexChanged.connect(self._load_selected_shop)
@@ -325,6 +332,7 @@ class SettingsPage(QWidget):
         ]
         self._shops = self._normalize_shops(loaded_shops)
         self._load_field_mapping(payload.get("feishu_field_mapping") or legacy_shop.get("field_mapping"))
+        self._clear_missing_field_highlight()
         self._refresh_product_selector()
         self._refresh_shop_selector(
             self._clean_text(payload.get("selected_shop_name")) or self.DEFAULT_SELECTED_SHOP
@@ -395,6 +403,30 @@ class SettingsPage(QWidget):
         self._shops = [shop for shop in self._shops if shop["name"] != selected_name]
         self._shops = self._normalize_shops(self._shops)
         self._refresh_shop_selector()
+
+    def _handle_check_table_fields(self) -> None:
+        self._clear_missing_field_highlight()
+        if self._on_inspect_table_fields is None:
+            self.status_label.setText("当前环境未启用飞书字段检测")
+            return
+        try:
+            field_names = set(self._on_inspect_table_fields(self.to_payload()))
+        except Exception as exc:
+            self.status_label.setText(str(exc))
+            return
+        required_targets = sorted(
+            {
+                edit.text().strip()
+                for edit in self.mapping_edits.values()
+                if edit.text().strip()
+            }
+        )
+        missing_fields = [name for name in required_targets if name not in field_names]
+        self._apply_missing_field_highlight(set(missing_fields))
+        if missing_fields:
+            self.status_label.setText(f"总表缺少字段：{'、'.join(missing_fields)}")
+            return
+        self.status_label.setText("总表字段检测通过")
 
     def upsert_product_preset(self, name: str, default_cost: str) -> bool:
         product = {
@@ -476,6 +508,17 @@ class SettingsPage(QWidget):
                 return
         if not selected_name:
             self.shop_name_edit.clear()
+
+    def _apply_missing_field_highlight(self, missing_fields: set[str]) -> None:
+        for edit in self.mapping_edits.values():
+            target_name = edit.text().strip()
+            if target_name and target_name in missing_fields:
+                edit.setStyleSheet("border: 1px solid #ff6b6b;")
+            else:
+                edit.setStyleSheet("")
+
+    def _clear_missing_field_highlight(self) -> None:
+        self._apply_missing_field_highlight(set())
 
     @staticmethod
     def _build_tab_card(title: str, *layouts) -> QWidget:

@@ -77,6 +77,7 @@ def test_build_feishu_payload_uses_income_amount_for_income_column():
     payload = build_feishu_payload(order)
 
     assert payload["备注"] == "请电话送货上门谢谢【3612】"
+    assert payload["平台"] == "抖店"
     assert payload["收入"] == "162.00"
     assert "价格" not in payload
     assert payload["发货地址"] == "何女士 15781304332-3612 四川省成都市金牛区营门口街道友谊花园9-2304"
@@ -512,6 +513,41 @@ def test_feishu_client_surfaces_json_message_on_wiki_resolution_http_error(
             "https://my.feishu.cn/wiki/QTXMwCDpQi9n6VkfDxJc5mNTnjh?table=tblWZDrx4gqXpc5M",
             access_token="tenant_token_123",
         )
+
+
+def test_feishu_client_lists_table_field_names(monkeypatch: pytest.MonkeyPatch):
+    captured: dict[str, object] = {}
+
+    def fake_get(url, headers=None, params=None, timeout=None):
+        captured["url"] = url
+        captured["headers"] = headers
+        captured["params"] = params
+        captured["timeout"] = timeout
+        return FakeResponse(
+            {
+                "code": 0,
+                "msg": "ok",
+                "data": {
+                    "items": [
+                        {"field_name": "店铺"},
+                        {"field_name": "平台"},
+                        {"field_name": "收入"},
+                    ]
+                },
+            }
+        )
+
+    monkeypatch.setattr("strawberry_order_management.services.feishu_client.requests.get", fake_get)
+
+    client = FeishuClient("app", "secret", "app_token", "tbl_1")
+
+    result = client.list_field_names("tenant_token_123")
+
+    assert result == {"店铺", "平台", "收入"}
+    assert captured["url"] == "https://open.feishu.cn/open-apis/bitable/v1/apps/app_token/tables/tbl_1/fields"
+    assert captured["headers"] == {"Authorization": "Bearer tenant_token_123"}
+    assert captured["params"] == {"page_size": 500}
+    assert captured["timeout"] == 30
 
 
 def test_build_feishu_payload_rejects_invalid_placed_at_format():

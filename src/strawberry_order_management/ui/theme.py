@@ -133,12 +133,6 @@ QLabel#SectionTitle {
     color: #1f2b44;
 }
 
-QLabel#ProcurementSectionTitle {
-    font-size: 18px;
-    font-weight: 700;
-    color: #1f2b44;
-}
-
 QTabWidget::pane {
     border: none;
     background: transparent;

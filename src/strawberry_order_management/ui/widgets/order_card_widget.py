@@ -185,12 +185,6 @@ class OrderCardWidget(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(10)
 
-        self.procurement_section_title = QLabel("采购信息")
-        self.procurement_section_title.setObjectName("ProcurementSectionTitle")
-        procurement_subtitle = QLabel("商品库联动后可以直接带出默认成本。")
-        procurement_subtitle.setObjectName("MutedText")
-        layout.addWidget(self.procurement_section_title)
-        layout.addWidget(procurement_subtitle)
         layout.addWidget(self._build_procurement_row_card("采购1", self._procurement_row_widget(0)))
         layout.addWidget(self._build_procurement_row_card("采购2", self._procurement_row_widget(1)))
         layout.addWidget(self._build_procurement_row_card("采购3", self._procurement_row_widget(2)))
@@ -274,10 +268,7 @@ class OrderCardWidget(QWidget):
         layout.setSpacing(10)
 
         title = QLabel(title_text)
-        title_object_name = "SectionTitle"
-        if title_text == "采购信息":
-            title_object_name = "ProcurementSectionTitle"
-        title.setObjectName(title_object_name)
+        title.setObjectName("SectionTitle")
         layout.addWidget(title)
 
         subtitle = QLabel(subtitle_text)

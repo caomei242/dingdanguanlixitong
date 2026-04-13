@@ -239,16 +239,27 @@ def test_intake_page_groups_order_entry_into_sections(qtbot):
     page = IntakePage(use_background_thread=False)
     qtbot.addWidget(page)
 
-    procurement_title = page.order_card_widget.findChild(QLabel, "ProcurementSectionTitle")
-    order_summary_card = page.order_card_widget.findChild(QFrame, "OrderSummaryCard")
-    purchase_card = page.order_card_widget.findChild(QFrame, "ProcurementSectionCard")
-    support_card = page.findChild(QFrame, "IntakeSupportCard")
+    section_titles = []
+    order_layout = page.order_card_widget.layout()
+    for index in range(order_layout.count() - 1):
+        section_card = order_layout.itemAt(index).widget()
+        if isinstance(section_card, QFrame):
+            section_title = section_card.findChild(QLabel)
+            if section_title is not None:
+                section_titles.append(section_title.text())
 
-    assert procurement_title is not None
-    assert procurement_title.text() == "采购信息"
-    assert order_summary_card is not None
-    assert purchase_card is not None
-    assert support_card is not None
+    procurement_card = None
+    for frame in page.order_card_widget.findChildren(QFrame):
+        labels = [label.text() for label in frame.findChildren(QLabel)]
+        if "采购信息" in labels:
+            procurement_card = frame
+            break
+
+    assert section_titles == ["订单概览", "收件信息", "采购信息"]
+    assert procurement_card is not None
+    assert "采购1" in [label.text() for label in procurement_card.findChildren(QLabel)]
+    assert "采购2" in [label.text() for label in procurement_card.findChildren(QLabel)]
+    assert "采购3" in [label.text() for label in procurement_card.findChildren(QLabel)]
 
 
 def test_intake_page_emits_procurement_slots_with_order_payload(qtbot):

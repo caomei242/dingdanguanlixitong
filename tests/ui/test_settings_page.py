@@ -220,7 +220,7 @@ def test_settings_page_load_payload_and_save_requested(qtbot):
     assert page.helper_api_key_edit.text() == "helper-key"
     assert page.feishu_app_id_edit.text() == "cli_xxx"
     assert page.feishu_app_secret_edit.text() == "secret_xxx"
-    assert page.shop_selector.count() == 1
+    assert page.shop_selector.count() == 6
     assert page.shop_selector.currentText() == "乐宝零食店"
     assert page.shop_wiki_url_edit.text() == "https://my.feishu.cn/wiki/QTXMwCDpQi9n6VkfDxJc5mNTnjh?table=tbl_xxx"
     assert page.shop_app_token_edit.text() == "app_token_1"
@@ -470,6 +470,14 @@ def test_main_window_loads_initial_settings_from_config_store(qtbot):
 
     assert window.settings_page.helper_base_url_edit.text() == "https://api.minimaxi.com/v1"
     assert window.settings_page.helper_api_key_edit.text() == "minimax-secret"
+    assert [window.intake_page.shop_selector.itemText(index) for index in range(window.intake_page.shop_selector.count())] == [
+        "乐宝零食店",
+        "欢宝零食店",
+        "灵宝零食店",
+        "君宝零食店",
+        "珍宝零食店",
+        "悦宝零食店",
+    ]
     assert window.intake_page.shop_selector.currentText() == "乐宝零食店"
 
 

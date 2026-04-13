@@ -304,7 +304,7 @@ class SettingsPage(QWidget):
             for shop in payload.get("shops", [])
             if isinstance(shop, dict) and self._clean_text(shop.get("name"))
         ]
-        self._shops = loaded_shops or [{"name": name} for name in self.DEFAULT_SHOPS]
+        self._shops = self._normalize_shops(loaded_shops)
         self._load_field_mapping(payload.get("feishu_field_mapping") or legacy_shop.get("field_mapping"))
         self._refresh_product_selector()
         self._refresh_shop_selector(
@@ -365,6 +365,7 @@ class SettingsPage(QWidget):
         else:
             self._shops.append({"name": shop_name})
 
+        self._shops = self._normalize_shops(self._shops)
         self._refresh_shop_selector(shop_name)
         self.status_label.setText("已保存店铺")
 
@@ -373,6 +374,7 @@ class SettingsPage(QWidget):
         if not selected_name:
             return
         self._shops = [shop for shop in self._shops if shop["name"] != selected_name]
+        self._shops = self._normalize_shops(self._shops)
         self._refresh_shop_selector()
 
     def upsert_product_preset(self, name: str, default_cost: str) -> bool:
@@ -409,6 +411,21 @@ class SettingsPage(QWidget):
                 self.shop_selector.setCurrentIndex(0)
         self.shop_selector.blockSignals(False)
         self._load_selected_shop()
+
+    @classmethod
+    def _normalize_shops(cls, shops: list[dict[str, str]]) -> list[dict[str, str]]:
+        normalized: list[dict[str, str]] = []
+        seen: set[str] = set()
+        for name in cls.DEFAULT_SHOPS:
+            normalized.append({"name": name})
+            seen.add(name)
+        for shop in shops:
+            name = cls._clean_text(shop.get("name"))
+            if not name or name == "草莓店" or name in seen:
+                continue
+            normalized.append({"name": name})
+            seen.add(name)
+        return normalized
 
     def _refresh_product_selector(self, selected_name: str | None = None) -> None:
         self.product_selector.blockSignals(True)

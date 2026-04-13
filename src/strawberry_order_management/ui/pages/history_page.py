@@ -8,7 +8,6 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QListWidget,
-    QListWidgetItem,
     QPushButton,
     QScrollArea,
     QFormLayout,
@@ -122,35 +121,35 @@ class HistoryPage(QWidget):
         self._update_action_state()
 
     def load_rows(self, rows: list[dict[str, Any]]) -> None:
-        self._rows = list(rows)
+        self._rows = [self._normalize_row(row) for row in rows]
         self.list_widget.blockSignals(True)
         self.list_widget.clear()
-        self.summary_label.setText(f"共 {len(rows)} 条记录")
-        if not rows:
+        self.summary_label.setText(f"共 {len(self._rows)} 条记录")
+        if not self._rows:
             self.list_widget.addItem("暂无历史记录")
             self.list_widget.blockSignals(False)
             self._show_empty_detail()
             self._update_action_state()
             return
 
-        for row in rows:
+        for row in self._rows:
             self.list_widget.addItem(self._build_row_text(row))
 
         self.list_widget.blockSignals(False)
         self.list_widget.setCurrentRow(0)
-        self._show_row(0)
         self._update_action_state()
 
     def _build_row_text(self, row: dict[str, Any]) -> str:
         shop_name = self._display_value(row.get("shop_name"))
-        sync_source = self._display_value(row.get("sync_source"))
+        recipient_name = self._row_value(row, "recipient_name")
+        if recipient_name == "-":
+            recipient_name = self._display_value(row.get("sync_source"))
         status = self._display_value(row.get("status"))
-        order_snapshot = row.get("order_snapshot") or {}
-        order_id = self._display_value(order_snapshot.get("order_id"))
-        return f"{shop_name} · {status} · {sync_source} · {order_id}"
+        order_id = self._row_value(row, "order_id")
+        return f"{shop_name} · {recipient_name} · {status} · {order_id}"
 
     def _handle_current_item_changed(self, current, previous) -> None:
-        del previous
+        del current, previous
         row_index = self.list_widget.currentRow()
         self._show_row(row_index)
         self._update_action_state()
@@ -180,6 +179,54 @@ class HistoryPage(QWidget):
         self.recipient_name_value.setPlainText("")
         self.address_output_one.setPlainText("")
         self.address_output_two.setPlainText("")
+
+    def _normalize_row(self, row: dict[str, Any]) -> dict[str, Any]:
+        normalized = dict(row)
+
+        order_snapshot = normalized.get("order_snapshot")
+        if not isinstance(order_snapshot, dict):
+            order_snapshot = {
+                key: normalized[key]
+                for key in (
+                    "order_id",
+                    "placed_at",
+                    "order_status",
+                    "product_name",
+                    "quantity",
+                    "order_amount",
+                    "income_amount",
+                    "recipient_name",
+                    "phone_number",
+                    "code",
+                    "address",
+                    "delivery_note",
+                )
+                if normalized.get(key) is not None
+            }
+        normalized["order_snapshot"] = dict(order_snapshot)
+
+        address_snapshot = normalized.get("address_snapshot")
+        if not isinstance(address_snapshot, dict):
+            address_snapshot = {
+                key: normalized[key]
+                for key in ("output_one", "output_two", "output_three", "address")
+                if normalized.get(key) is not None
+            }
+        address_snapshot = dict(address_snapshot)
+        address_snapshot.setdefault("output_one", "")
+        address_snapshot.setdefault("output_two", "")
+        normalized["address_snapshot"] = address_snapshot
+
+        normalized["sync_source"] = self._display_value(normalized.get("sync_source"))
+        return normalized
+
+    def _row_value(self, row: dict[str, Any], key: str) -> str:
+        value = row.get(key)
+        if value is None:
+            order_snapshot = row.get("order_snapshot")
+            if isinstance(order_snapshot, dict):
+                value = order_snapshot.get(key)
+        return self._display_value(value)
 
     def _current_row(self) -> dict[str, Any] | None:
         index = self.list_widget.currentRow()

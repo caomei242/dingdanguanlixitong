@@ -418,7 +418,7 @@ def test_main_window_resubmits_selected_history_row_in_place(qtbot, tmp_path, mo
     window = MainWindow(config_store=config_store, history_store=history_store)
     qtbot.addWidget(window)
 
-    saved_row = history_store.append(
+    selected_row = history_store.append(
         window._build_history_snapshot(
             {"shop_name": "草莓店", "order": _sample_order()},
             "确认写入飞书",
@@ -427,10 +427,16 @@ def test_main_window_resubmits_selected_history_row_in_place(qtbot, tmp_path, mo
             {"data": {"record_id": "rec_1"}},
         )
     )
+    other_row = history_store.append(
+        window._build_history_snapshot(
+            {"shop_name": "乐宝零食店", "order": _alternate_order()},
+            "仅存历史",
+            "仅存历史",
+            "",
+        )
+    )
     window.history_page.load_rows(history_store.list_items())
-
-    window.intake_page.show_order(_alternate_order())
-    window.intake_page.shop_selector.setCurrentText("草莓店")
+    window.history_page.list_widget.setCurrentRow(1)
 
     window.history_page.resubmit_button.click()
 
@@ -444,13 +450,17 @@ def test_main_window_resubmits_selected_history_row_in_place(qtbot, tmp_path, mo
     assert captured["fields"]["备注"] == _sample_order().delivery_note
     assert captured["fields"]["发货地址"].startswith("何女士 15781304332-3612")
     assert captured["fields"]["发货地址"] != "王先生 13900001111-8899 广东省深圳市南山区科技园"
+    assert captured["fields"]["收入金额"] == _sample_order().income_amount
 
     rows = history_store.list_items()
-    assert len(rows) == 1
-    assert rows[0]["record_id"] == saved_row["record_id"]
-    assert rows[0]["status"] == "已写入飞书"
-    assert rows[0]["message"] == "写入成功"
-    assert rows[0]["feishu_result"] == {"data": {"record_id": "rec_resubmit"}}
+    assert len(rows) == 2
+    assert rows[0]["record_id"] == other_row["record_id"]
+    assert rows[0]["status"] == "仅存历史"
+    assert rows[0]["message"] == ""
+    assert rows[1]["record_id"] == selected_row["record_id"]
+    assert rows[1]["status"] == "已写入飞书"
+    assert rows[1]["message"] == "写入成功"
+    assert rows[1]["feishu_result"] == {"data": {"record_id": "rec_resubmit"}}
 
 
 def test_main_window_can_save_manual_product_into_global_library(qtbot, tmp_path):

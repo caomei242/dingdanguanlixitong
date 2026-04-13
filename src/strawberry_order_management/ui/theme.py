@@ -27,6 +27,13 @@ QFrame#CardFrame {
     border-radius: 24px;
 }
 
+QFrame#HistoryListCard,
+QFrame#HistoryDetailCard {
+    background: rgba(255, 255, 255, 0.98);
+    border: 1px solid #dbe4f2;
+    border-radius: 22px;
+}
+
 QLabel#BrandTitle {
     color: #ff4b6e;
     font-size: 30px;
@@ -44,6 +51,10 @@ QListWidget {
     border-radius: 18px;
     padding: 8px;
     outline: none;
+}
+
+QListWidget#HistoryList {
+    min-height: 420px;
 }
 
 QListWidget::item {
@@ -83,6 +94,16 @@ QPushButton#SecondaryActionButton {
 
 QPushButton#SecondaryActionButton:hover {
     background: #e3ecff;
+}
+
+QPushButton#DangerActionButton {
+    background: #fff0f2;
+    color: #d6455d;
+    border: 1px solid #f2c3cb;
+}
+
+QPushButton#DangerActionButton:hover {
+    background: #ffe3e8;
 }
 
 QLineEdit, QTextEdit, QComboBox {
@@ -131,6 +152,22 @@ QTabBar::tab:selected {
 
 QLabel#MutedText {
     color: #74829a;
+}
+
+QLabel#HistoryDetailTitle {
+    font-size: 22px;
+    font-weight: 800;
+    color: #1c2740;
+}
+
+QLabel#HistoryDetailMeta {
+    color: #6f7f99;
+}
+
+QTextEdit#HistoryDetailValue {
+    color: #17253d;
+    background: #fcfdff;
+    border: 1px solid #dbe4f4;
 }
 
 QLabel#OrderFieldLabel {

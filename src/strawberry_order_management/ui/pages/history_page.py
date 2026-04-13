@@ -1,16 +1,36 @@
 from __future__ import annotations
 
-from PySide6.QtWidgets import QFrame, QLabel, QListWidget, QScrollArea, QVBoxLayout, QWidget
+from typing import Any
+
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtWidgets import (
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QListWidget,
+    QListWidgetItem,
+    QPushButton,
+    QScrollArea,
+    QFormLayout,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
+)
 
 
 class HistoryPage(QWidget):
+    edit_requested = Signal(str)
+    delete_requested = Signal(str)
+    resubmit_requested = Signal(str)
+
     def __init__(self) -> None:
         super().__init__()
         self.setObjectName("HistoryPage")
+        self._rows: list[dict[str, Any]] = []
 
-        title = QLabel("历史")
+        title = QLabel("历史工作台")
         title.setObjectName("SectionTitle")
-        subtitle = QLabel("查看最近识别、写入和失败记录")
+        subtitle = QLabel("左侧浏览历史记录，右侧查看详情并执行后续操作")
         subtitle.setObjectName("MutedText")
 
         self.summary_label = QLabel("暂无记录")
@@ -18,20 +38,76 @@ class HistoryPage(QWidget):
 
         self.list_widget = QListWidget()
         self.list_widget.setObjectName("HistoryList")
+        self.list_widget.currentItemChanged.connect(self._handle_current_item_changed)
 
-        card = QFrame()
-        card.setObjectName("CardFrame")
-        card_layout = QVBoxLayout(card)
-        card_layout.addWidget(self.summary_label)
-        card_layout.addWidget(self.list_widget)
+        list_card = QFrame()
+        list_card.setObjectName("HistoryListCard")
+        list_card_layout = QVBoxLayout(list_card)
+        list_card_layout.addWidget(self.summary_label)
+        list_card_layout.addWidget(self.list_widget, 1)
+
+        self.detail_title_label = QLabel("请选择一条历史记录")
+        self.detail_title_label.setObjectName("HistoryDetailTitle")
+        self.detail_subtitle_label = QLabel("详情会显示店铺、来源、状态和地址快照")
+        self.detail_subtitle_label.setObjectName("HistoryDetailMeta")
+
+        self.order_id_value = QTextEdit()
+        self.recipient_name_value = QTextEdit()
+        self.address_output_one = QTextEdit()
+        self.address_output_two = QTextEdit()
+
+        for widget in (
+            self.order_id_value,
+            self.recipient_name_value,
+            self.address_output_one,
+            self.address_output_two,
+        ):
+            widget.setReadOnly(True)
+            widget.setObjectName("HistoryDetailValue")
+            widget.setMinimumHeight(64)
+
+        detail_form = QFormLayout()
+        detail_form.setLabelAlignment(Qt.AlignmentFlag.AlignTop)
+        detail_form.setFormAlignment(Qt.AlignmentFlag.AlignTop)
+        detail_form.addRow("订单编号", self.order_id_value)
+        detail_form.addRow("收件人", self.recipient_name_value)
+        detail_form.addRow("地址输出 1", self.address_output_one)
+        detail_form.addRow("地址输出 2", self.address_output_two)
+
+        self.edit_button = QPushButton("编辑")
+        self.edit_button.setObjectName("SecondaryActionButton")
+        self.delete_button = QPushButton("删除")
+        self.delete_button.setObjectName("DangerActionButton")
+        self.resubmit_button = QPushButton("重新提交")
+        self.resubmit_button.setObjectName("SecondaryActionButton")
+
+        self.edit_button.clicked.connect(self._emit_edit_requested)
+        self.delete_button.clicked.connect(self._emit_delete_requested)
+        self.resubmit_button.clicked.connect(self._emit_resubmit_requested)
+
+        action_row = QHBoxLayout()
+        action_row.addWidget(self.edit_button)
+        action_row.addWidget(self.delete_button)
+        action_row.addWidget(self.resubmit_button)
+
+        detail_body = QWidget()
+        detail_body_layout = QVBoxLayout(detail_body)
+        detail_body_layout.addWidget(self.detail_title_label)
+        detail_body_layout.addWidget(self.detail_subtitle_label)
+        detail_body_layout.addLayout(detail_form)
+        detail_body_layout.addLayout(action_row)
+        detail_body_layout.addStretch(1)
+
+        detail_card = QFrame()
+        detail_card.setObjectName("HistoryDetailCard")
+        detail_card_layout = QVBoxLayout(detail_card)
+        detail_card_layout.addWidget(detail_body)
 
         content = QWidget()
         content.setObjectName("PageContent")
-        content_layout = QVBoxLayout(content)
-        content_layout.addWidget(title)
-        content_layout.addWidget(subtitle)
-        content_layout.addWidget(card)
-        content_layout.addStretch(1)
+        content_layout = QHBoxLayout(content)
+        content_layout.addWidget(list_card, 2)
+        content_layout.addWidget(detail_card, 3)
 
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
@@ -39,24 +115,106 @@ class HistoryPage(QWidget):
         scroll_area.setWidget(content)
 
         root = QVBoxLayout(self)
+        root.addWidget(title)
+        root.addWidget(subtitle)
         root.addWidget(scroll_area)
 
-    def load_rows(self, rows: list[dict]) -> None:
+        self._update_action_state()
+
+    def load_rows(self, rows: list[dict[str, Any]]) -> None:
+        self._rows = list(rows)
+        self.list_widget.blockSignals(True)
         self.list_widget.clear()
         self.summary_label.setText(f"共 {len(rows)} 条记录")
         if not rows:
             self.list_widget.addItem("暂无历史记录")
+            self.list_widget.blockSignals(False)
+            self._show_empty_detail()
+            self._update_action_state()
             return
 
         for row in rows:
-            shop_name = self._display_value(row.get("shop_name"))
-            recipient = self._display_value(row.get("recipient_name"))
-            status = self._display_value(row.get("status"))
-            order_id = self._display_value(row.get("order_id"))
-            self.list_widget.addItem(f"{shop_name} · {recipient} · {status} · {order_id}")
+            self.list_widget.addItem(self._build_row_text(row))
+
+        self.list_widget.blockSignals(False)
+        self.list_widget.setCurrentRow(0)
+        self._show_row(0)
+        self._update_action_state()
+
+    def _build_row_text(self, row: dict[str, Any]) -> str:
+        shop_name = self._display_value(row.get("shop_name"))
+        sync_source = self._display_value(row.get("sync_source"))
+        status = self._display_value(row.get("status"))
+        order_snapshot = row.get("order_snapshot") or {}
+        order_id = self._display_value(order_snapshot.get("order_id"))
+        return f"{shop_name} · {status} · {sync_source} · {order_id}"
+
+    def _handle_current_item_changed(self, current, previous) -> None:
+        del previous
+        row_index = self.list_widget.currentRow()
+        self._show_row(row_index)
+        self._update_action_state()
+
+    def _show_row(self, row_index: int) -> None:
+        if row_index < 0 or row_index >= len(self._rows):
+            self._show_empty_detail()
+            return
+
+        row = self._rows[row_index]
+        order_snapshot = row.get("order_snapshot") or {}
+        address_snapshot = row.get("address_snapshot") or {}
+
+        self.detail_title_label.setText(self._display_value(row.get("shop_name")))
+        self.detail_subtitle_label.setText(
+            f"{self._display_value(row.get('sync_source'))} · {self._display_value(row.get('status'))}"
+        )
+        self.order_id_value.setPlainText(self._display_value(order_snapshot.get("order_id")))
+        self.recipient_name_value.setPlainText(self._display_value(order_snapshot.get("recipient_name")))
+        self.address_output_one.setPlainText(self._display_value(address_snapshot.get("output_one")))
+        self.address_output_two.setPlainText(self._display_value(address_snapshot.get("output_two")))
+
+    def _show_empty_detail(self) -> None:
+        self.detail_title_label.setText("请选择一条历史记录")
+        self.detail_subtitle_label.setText("详情会显示店铺、来源、状态和地址快照")
+        self.order_id_value.setPlainText("")
+        self.recipient_name_value.setPlainText("")
+        self.address_output_one.setPlainText("")
+        self.address_output_two.setPlainText("")
+
+    def _current_row(self) -> dict[str, Any] | None:
+        index = self.list_widget.currentRow()
+        if 0 <= index < len(self._rows):
+            return self._rows[index]
+        if self._rows:
+            return self._rows[0]
+        return None
+
+    def _emit_edit_requested(self) -> None:
+        self._emit_action(self.edit_requested)
+
+    def _emit_delete_requested(self) -> None:
+        self._emit_action(self.delete_requested)
+
+    def _emit_resubmit_requested(self) -> None:
+        self._emit_action(self.resubmit_requested)
+
+    def _emit_action(self, signal: Signal) -> None:
+        row = self._current_row()
+        if not row:
+            return
+        record_id = self._display_value(row.get("record_id"))
+        if record_id == "-":
+            return
+        signal.emit(record_id)
+
+    def _update_action_state(self) -> None:
+        has_row = self._current_row() is not None and self.list_widget.currentRow() >= 0
+        self.edit_button.setEnabled(has_row)
+        self.delete_button.setEnabled(has_row)
+        self.resubmit_button.setEnabled(has_row)
 
     @staticmethod
-    def _display_value(value) -> str:
+    def _display_value(value: Any) -> str:
         if value is None:
             return "-"
         text = str(value).strip()

@@ -44,6 +44,14 @@ class SettingsPage(QWidget):
         "编号": "编号",
         "收入": "收入",
         "发货地址": "发货地址",
+        "平台扣点比例": "平台扣点比例",
+        "平台扣点金额": "平台扣点金额",
+        "其他成本": "其他成本",
+        "采购总成本": "采购总成本",
+        "毛利润": "毛利润",
+        "自定义字段1": "自定义字段1",
+        "自定义字段2": "自定义字段2",
+        "自定义字段3": "自定义字段3",
         "同步方式": "同步方式",
         "同步状态": "同步状态",
         "同步说明": "同步说明",
@@ -74,6 +82,14 @@ class SettingsPage(QWidget):
         "收入",
         "发货地址",
         "价格",
+        "平台扣点比例",
+        "平台扣点金额",
+        "其他成本",
+        "采购总成本",
+        "毛利润",
+        "自定义字段1",
+        "自定义字段2",
+        "自定义字段3",
         "同步方式",
         "同步状态",
         "同步说明",
@@ -104,6 +120,14 @@ class SettingsPage(QWidget):
         "income": "收入",
         "shipping_address": "发货地址",
         "price": "价格",
+        "platform_fee_rate": "平台扣点比例",
+        "platform_fee_amount": "平台扣点金额",
+        "other_cost": "其他成本",
+        "procurement_total_cost": "采购总成本",
+        "gross_profit": "毛利润",
+        "custom_cost_1": "自定义字段1",
+        "custom_cost_2": "自定义字段2",
+        "custom_cost_3": "自定义字段3",
         "sync_source": "同步方式",
         "sync_status": "同步状态",
         "sync_message": "同步说明",
@@ -151,6 +175,8 @@ class SettingsPage(QWidget):
         self.save_button = QPushButton("保存/应用")
         self.status_label = QLabel("")
         self.status_label.setObjectName("MutedText")
+        self.custom_cost_label_edits = [QLineEdit() for _ in range(3)]
+        self.show_enabled_only_checkbox = QCheckBox("仅显示启用字段")
         self._on_resolve_shop_link = on_resolve_shop_link
         self._on_inspect_table_fields = on_inspect_table_fields
         self.ocr_mcp_command_edit.setText("uvx minimax-coding-plan-mcp -y")
@@ -161,6 +187,7 @@ class SettingsPage(QWidget):
         self.mapping_edits: dict[str, QLineEdit] = {
             key: QLineEdit() for key in self.FIELD_MAPPING_KEYS
         }
+        self.mapping_row_widgets: dict[str, QWidget] = {}
         self.shop_mapping_edits: dict[str, QLineEdit] = {
             alias: self.mapping_edits[key]
             for alias, key in self.FIELD_MAPPING_ALIASES.items()
@@ -193,6 +220,10 @@ class SettingsPage(QWidget):
         product_form.addRow("已保存商品", self.product_selector)
         product_form.addRow("商品名称", self.product_name_edit)
         product_form.addRow("默认成本", self.product_cost_edit)
+        custom_cost_form = QFormLayout()
+        custom_cost_form.addRow("自定义字段1", self.custom_cost_label_edits[0])
+        custom_cost_form.addRow("自定义字段2", self.custom_cost_label_edits[1])
+        custom_cost_form.addRow("自定义字段3", self.custom_cost_label_edits[2])
 
         shop_button_row = QHBoxLayout()
         shop_button_row.addWidget(self.add_shop_button)
@@ -212,19 +243,26 @@ class SettingsPage(QWidget):
         mapping_grid.setVerticalSpacing(10)
         for index, key in enumerate(self.FIELD_MAPPING_KEYS):
             row = index // 2
-            column = (index % 2) * 2
-            mapping_grid.addWidget(QLabel(f"{key} 映射"), row, column)
-            mapping_grid.addWidget(self.mapping_edits[key], row, column + 1)
+            column = index % 2
+            row_widget = self._build_mapping_row(key, self.mapping_edits[key])
+            self.mapping_row_widgets[key] = row_widget
+            mapping_grid.addWidget(row_widget, row, column)
 
         self.tabs = QTabWidget()
         self.tabs.setObjectName("SettingsTabs")
         self.tabs.addTab(self._build_tab_card("接口配置", api_form), "接口配置")
         self.tabs.addTab(
-            self._build_tab_card("全局商品库", product_form, product_button_row),
+            self._build_tab_card("全局商品库", product_form, custom_cost_form, product_button_row),
             "商品库",
         )
         self.tabs.addTab(
-            self._build_tab_card("店铺与 Sheet 映射", shop_form, shop_button_row, mapping_grid),
+            self._build_tab_card(
+                "店铺与 Sheet 映射",
+                shop_form,
+                self.show_enabled_only_checkbox,
+                shop_button_row,
+                mapping_grid,
+            ),
             "店铺映射",
         )
 
@@ -254,7 +292,10 @@ class SettingsPage(QWidget):
         self.remove_shop_button.clicked.connect(self._handle_remove_shop)
         self.product_selector.currentIndexChanged.connect(self._load_selected_product)
         self.shop_selector.currentIndexChanged.connect(self._load_selected_shop)
-        self._load_field_mapping({})
+        self.show_enabled_only_checkbox.toggled.connect(self._update_mapping_visibility)
+        for edit in self.mapping_edits.values():
+            edit.textChanged.connect(self._update_mapping_visibility)
+        self._load_field_mapping(None, use_defaults=True)
         self._refresh_shop_selector(self.DEFAULT_SELECTED_SHOP)
 
     def to_payload(self) -> dict:
@@ -272,6 +313,8 @@ class SettingsPage(QWidget):
             "feishu_table_id": self.shop_table_id_edit.text().strip(),
             "feishu_table_name": self.shop_table_name_edit.text().strip(),
             "feishu_field_mapping": self._current_field_mapping(),
+            "custom_cost_labels": [edit.text().strip() for edit in self.custom_cost_label_edits],
+            "show_only_enabled_mappings": self.show_enabled_only_checkbox.isChecked(),
             "product_presets": [dict(item) for item in self._product_presets],
             "global_product_library": [dict(item) for item in self._product_presets],
             "shops": [{"name": shop["name"]} for shop in self._shops],
@@ -290,6 +333,11 @@ class SettingsPage(QWidget):
         self.helper_api_key_edit.setText(self._clean_text(payload.get("helper_api_key")))
         self.feishu_app_id_edit.setText(self._clean_text(payload.get("feishu_app_id")))
         self.feishu_app_secret_edit.setText(self._clean_text(payload.get("feishu_app_secret")))
+        custom_cost_labels = payload.get("custom_cost_labels") or ["", "", ""]
+        for index, edit in enumerate(self.custom_cost_label_edits):
+            value = custom_cost_labels[index] if index < len(custom_cost_labels) else ""
+            edit.setText(self._clean_text(value))
+        self.show_enabled_only_checkbox.setChecked(bool(payload.get("show_only_enabled_mappings")))
         product_presets = payload.get("product_presets")
         if not product_presets:
             product_presets = payload.get("global_product_library", [])
@@ -331,7 +379,10 @@ class SettingsPage(QWidget):
             if isinstance(shop, dict) and self._clean_text(shop.get("name"))
         ]
         self._shops = self._normalize_shops(loaded_shops)
-        self._load_field_mapping(payload.get("feishu_field_mapping") or legacy_shop.get("field_mapping"))
+        stored_mapping = payload.get("feishu_field_mapping")
+        if stored_mapping is None:
+            stored_mapping = legacy_shop.get("field_mapping")
+        self._load_field_mapping(stored_mapping, use_defaults=not bool(stored_mapping))
         self._clear_missing_field_highlight()
         self._refresh_product_selector()
         self._refresh_shop_selector(
@@ -377,6 +428,7 @@ class SettingsPage(QWidget):
 
     def _handle_add_shop(self) -> None:
         self.shop_name_edit.clear()
+        self._load_field_mapping(None, use_defaults=True)
         self.shop_name_edit.setFocus()
         self.status_label.setText("")
 
@@ -462,6 +514,7 @@ class SettingsPage(QWidget):
                 self.shop_selector.setCurrentIndex(0)
         self.shop_selector.blockSignals(False)
         self._load_selected_shop()
+        self._update_mapping_visibility()
 
     @classmethod
     def _normalize_shops(cls, shops: list[dict[str, str]]) -> list[dict[str, str]]:
@@ -520,6 +573,24 @@ class SettingsPage(QWidget):
     def _clear_missing_field_highlight(self) -> None:
         self._apply_missing_field_highlight(set())
 
+    def _update_mapping_visibility(self) -> None:
+        enabled_only = self.show_enabled_only_checkbox.isChecked()
+        for key, row_widget in self.mapping_row_widgets.items():
+            has_value = bool(self.mapping_edits[key].text().strip())
+            row_widget.setVisible((not enabled_only) or has_value)
+
+    @staticmethod
+    def _build_mapping_row(key: str, edit: QLineEdit) -> QWidget:
+        row = QWidget()
+        layout = QHBoxLayout(row)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
+        label = QLabel(f"{key} 映射")
+        label.setMinimumWidth(96)
+        layout.addWidget(label)
+        layout.addWidget(edit, 1)
+        return row
+
     @staticmethod
     def _build_tab_card(title: str, *layouts) -> QWidget:
         container = QFrame()
@@ -542,19 +613,24 @@ class SettingsPage(QWidget):
         return {
             key: edit.text().strip()
             for key, edit in self.mapping_edits.items()
-            if edit.text().strip()
         }
 
-    def _load_field_mapping(self, mapping: dict | None) -> None:
-        cleaned_mapping = self._mapping_with_recommended_defaults(self._clean_field_mapping(mapping))
+    def _load_field_mapping(self, mapping: dict | None, *, use_defaults: bool = False) -> None:
+        raw_mapping = mapping if isinstance(mapping, dict) else {}
+        cleaned_mapping = self._clean_field_mapping(mapping)
+        for key, default_value in self.RECOMMENDED_FIELD_MAPPING.items():
+            if key not in raw_mapping and not use_defaults:
+                cleaned_mapping[key] = default_value
+        if use_defaults:
+            cleaned_mapping = self._mapping_with_recommended_defaults(cleaned_mapping)
         for key, edit in self.mapping_edits.items():
             edit.setText(cleaned_mapping.get(key, ""))
+        self._update_mapping_visibility()
 
     @classmethod
     def _mapping_with_recommended_defaults(cls, mapping: dict[str, str]) -> dict[str, str]:
-        merged = dict(mapping)
+        merged = {key: mapping.get(key, "") for key in cls.FIELD_MAPPING_KEYS}
         for key, value in cls.RECOMMENDED_FIELD_MAPPING.items():
-            merged.setdefault(key, value)
             if not merged[key]:
                 merged[key] = value
         return merged

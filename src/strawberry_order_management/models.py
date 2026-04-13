@@ -25,6 +25,13 @@ class ParsedOrder:
     address: str
     delivery_note: str
     platform: str = "抖店"
+    platform_fee_rate: str = ""
+    platform_fee_amount: str = ""
+    other_cost: str = ""
+    procurement_total_cost: str = ""
+    gross_profit: str = ""
+    custom_cost_labels: tuple[str, str, str] = ("", "", "")
+    custom_cost_values: tuple[str, str, str] = ("", "", "")
     procurement_items: tuple["ProcurementItem", "ProcurementItem", "ProcurementItem"] = field(
         default_factory=lambda: (
             ProcurementItem("", "1", ""),

@@ -194,6 +194,13 @@ class MainWindow(QMainWindow):
                 "quantity": order.quantity,
                 "order_amount": order.order_amount,
                 "income_amount": order.income_amount,
+                "platform_fee_rate": order.platform_fee_rate,
+                "platform_fee_amount": order.platform_fee_amount,
+                "other_cost": order.other_cost,
+                "procurement_total_cost": order.procurement_total_cost,
+                "gross_profit": order.gross_profit,
+                "custom_cost_labels": list(order.custom_cost_labels),
+                "custom_cost_values": list(order.custom_cost_values),
                 "recipient_name": order.recipient_name,
                 "phone_number": order.phone_number,
                 "code": order.code,
@@ -294,6 +301,7 @@ class MainWindow(QMainWindow):
         if not product_presets:
             product_presets = payload.get("global_product_library", [])
         self.intake_page.set_product_presets(product_presets)
+        self.intake_page.set_custom_cost_labels(payload.get("custom_cost_labels") or ["", "", ""])
         shop_names = []
         for shop in payload.get("shops", []):
             if isinstance(shop, dict):
@@ -457,6 +465,19 @@ class MainWindow(QMainWindow):
                 quantity=str(order_snapshot.get("quantity", "")).strip(),
                 order_amount=str(order_snapshot.get("order_amount", "")).strip(),
                 income_amount=str(order_snapshot.get("income_amount", "")).strip(),
+                platform_fee_rate=str(order_snapshot.get("platform_fee_rate", "")).strip(),
+                platform_fee_amount=str(order_snapshot.get("platform_fee_amount", "")).strip(),
+                other_cost=str(order_snapshot.get("other_cost", "")).strip(),
+                procurement_total_cost=str(order_snapshot.get("procurement_total_cost", "")).strip(),
+                gross_profit=str(order_snapshot.get("gross_profit", "")).strip(),
+                custom_cost_labels=tuple(
+                    str(item).strip()
+                    for item in list(order_snapshot.get("custom_cost_labels") or ["", "", ""])[:3]
+                ),
+                custom_cost_values=tuple(
+                    str(item).strip()
+                    for item in list(order_snapshot.get("custom_cost_values") or ["", "", ""])[:3]
+                ),
                 recipient_name=str(order_snapshot.get("recipient_name", "")).strip(),
                 phone_number=str(order_snapshot.get("phone_number", "")).strip(),
                 code=str(order_snapshot.get("code", "")).strip(),

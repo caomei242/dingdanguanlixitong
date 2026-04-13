@@ -449,6 +449,30 @@ def test_settings_page_uses_default_shop_presets_and_default_selection(qtbot):
     assert "草莓店" not in [shop["name"] for shop in payload["shops"]]
 
 
+def test_settings_page_persists_custom_cost_labels(qtbot):
+    page = SettingsPage()
+    qtbot.addWidget(page)
+
+    page.custom_cost_label_edits[0].setText("包装费")
+    page.custom_cost_label_edits[1].setText("赠品")
+
+    payload = page.to_payload()
+
+    assert payload["custom_cost_labels"] == ["包装费", "赠品", ""]
+
+
+def test_settings_page_can_filter_to_enabled_mappings(qtbot):
+    page = SettingsPage()
+    qtbot.addWidget(page)
+
+    page.mapping_edits["平台"].setText("平台")
+    page.mapping_edits["订单编号"].clear()
+    page.show_enabled_only_checkbox.setChecked(True)
+
+    assert page.mapping_row_widgets["订单编号"].isHidden()
+    assert not page.mapping_row_widgets["平台"].isHidden()
+
+
 def test_main_window_navigates_between_three_pages(qtbot):
     window = MainWindow()
     qtbot.addWidget(window)

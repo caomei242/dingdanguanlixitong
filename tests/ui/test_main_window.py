@@ -22,6 +22,13 @@ def _sample_order(platform: str = "抖店") -> ParsedOrder:
         address="四川省成都市金牛区营门口街道友谊花园9-2304",
         delivery_note="请电话送货上门谢谢【3612】",
         platform=platform,
+        platform_fee_rate="10",
+        platform_fee_amount="16.20",
+        other_cost="5.00",
+        procurement_total_cost="38.00",
+        gross_profit="101.80",
+        custom_cost_labels=("包装费", "", ""),
+        custom_cost_values=("1.00", "", ""),
         procurement_items=(
             ProcurementItem("", "1", ""),
             ProcurementItem("", "1", ""),
@@ -45,6 +52,13 @@ def _alternate_order(platform: str = "抖店") -> ParsedOrder:
         address="广东省深圳市南山区科技园",
         delivery_note="请尽快发货",
         platform=platform,
+        platform_fee_rate="5",
+        platform_fee_amount="2.20",
+        other_cost="1.00",
+        procurement_total_cost="25.00",
+        gross_profit="15.80",
+        custom_cost_labels=("包装费", "", ""),
+        custom_cost_values=("0.50", "", ""),
         procurement_items=(
             ProcurementItem("蓝莓", "2", "12.50"),
             ProcurementItem("", "1", ""),
@@ -74,6 +88,12 @@ def _settings_payload() -> dict:
             "下单时间": "下单时间",
             "订单状态": "订单状态",
             "收入": "收入金额",
+            "平台扣点比例": "平台扣点比例",
+            "平台扣点金额": "平台扣点金额",
+            "其他成本": "其他成本",
+            "采购总成本": "采购总成本",
+            "毛利润": "毛利润",
+            "自定义字段1": "包装费",
             "发货地址": "发货地址",
             "价格": "",
             "采购商品1": "采购商品1",
@@ -104,6 +124,7 @@ def _assert_rich_history_snapshot(
     expected_status: str,
     expected_message: str,
     expected_procurement_items: Optional[dict[int, tuple[str, str, str]]] = None,
+    expected_financial_snapshot: Optional[dict[str, object]] = None,
 ) -> None:
     assert record["shop_name"] == "乐宝零食店"
     assert record["sync_source"] == expected_sync_source
@@ -120,6 +141,22 @@ def _assert_rich_history_snapshot(
     assert order_snapshot["quantity"] == order.quantity
     assert order_snapshot["order_amount"] == order.order_amount
     assert order_snapshot["income_amount"] == order.income_amount
+    expected_financial_snapshot = expected_financial_snapshot or {
+        "platform_fee_rate": order.platform_fee_rate,
+        "platform_fee_amount": order.platform_fee_amount,
+        "other_cost": order.other_cost,
+        "procurement_total_cost": order.procurement_total_cost,
+        "gross_profit": order.gross_profit,
+        "custom_cost_labels": list(order.custom_cost_labels),
+        "custom_cost_values": list(order.custom_cost_values),
+    }
+    assert order_snapshot["platform_fee_rate"] == expected_financial_snapshot["platform_fee_rate"]
+    assert order_snapshot["platform_fee_amount"] == expected_financial_snapshot["platform_fee_amount"]
+    assert order_snapshot["other_cost"] == expected_financial_snapshot["other_cost"]
+    assert order_snapshot["procurement_total_cost"] == expected_financial_snapshot["procurement_total_cost"]
+    assert order_snapshot["gross_profit"] == expected_financial_snapshot["gross_profit"]
+    assert order_snapshot["custom_cost_labels"] == expected_financial_snapshot["custom_cost_labels"]
+    assert order_snapshot["custom_cost_values"] == expected_financial_snapshot["custom_cost_values"]
     assert order_snapshot["recipient_name"] == order.recipient_name
     assert order_snapshot["phone_number"] == order.phone_number
     assert order_snapshot["code"] == order.code
@@ -186,6 +223,12 @@ def test_main_window_submits_order_to_total_table_with_shop_field(qtbot, tmp_pat
     assert captured["create"][1]["平台"] == "微信小店"
     assert captured["create"][1]["订单编号"] == "6952003434324366473"
     assert captured["create"][1]["收入金额"] == "162.00"
+    assert captured["create"][1]["平台扣点比例"] == "10"
+    assert captured["create"][1]["平台扣点金额"] == "16.20"
+    assert captured["create"][1]["其他成本"] == "5.00"
+    assert captured["create"][1]["采购总成本"] == "38.00"
+    assert captured["create"][1]["毛利润"] == "101.80"
+    assert captured["create"][1]["包装费"] == "1.00"
     assert captured["create"][1]["发货地址"].startswith("何女士 15781304332-3612")
     assert captured["create"][1]["采购商品1"] == "澳洲婴儿水"
     assert captured["create"][1]["采购数量1"] == "2"
@@ -644,6 +687,15 @@ def test_main_window_auto_persists_manual_products_when_saving_history(qtbot, tm
         "仅存历史",
         "",
         {1: ("补录商品", "1", "7.50")},
+        {
+            "platform_fee_rate": "10",
+            "platform_fee_amount": "16.20",
+            "other_cost": "5.00",
+            "procurement_total_cost": "7.50",
+            "gross_profit": "132.30",
+            "custom_cost_labels": ["包装费", "", ""],
+            "custom_cost_values": ["1.00", "", ""],
+        },
     )
     assert record["status"] == "仅存历史"
     assert record["sync_source"] == "仅存历史"

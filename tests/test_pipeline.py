@@ -83,6 +83,53 @@ def test_build_feishu_payload_uses_income_amount_for_income_column():
     assert payload["发货地址"] == "何女士 15781304332-3612 四川省成都市金牛区营门口街道友谊花园9-2304"
 
 
+def test_build_feishu_payload_includes_financial_fields_and_custom_costs():
+    order = ParsedOrder(
+        order_id="1",
+        placed_at="2026-04-13 12:00:00",
+        order_status="已发货",
+        product_name="测试商品",
+        quantity="1",
+        order_amount="100.00",
+        income_amount="80.00",
+        recipient_name="张三",
+        phone_number="13800138000",
+        code="9527",
+        address="上海市浦东新区测试路 1 号",
+        delivery_note="请电话联系",
+        platform="抖店",
+        platform_fee_rate="10",
+        platform_fee_amount="8",
+        other_cost="2",
+        procurement_total_cost="30",
+        gross_profit="36",
+        custom_cost_labels=("包装费", "赠品", ""),
+        custom_cost_values=("1.5", "2.5", ""),
+    )
+
+    payload = build_feishu_payload(
+        order,
+        {
+            "平台扣点比例": "平台扣点比例",
+            "平台扣点金额": "平台扣点金额",
+            "其他成本": "其他成本",
+            "采购总成本": "采购总成本",
+            "毛利润": "毛利润",
+            "自定义字段1": "包装费",
+            "自定义字段2": "赠品",
+        },
+        shop_name="乐宝零食店",
+    )
+
+    assert payload["平台扣点比例"] == "10"
+    assert payload["平台扣点金额"] == "8"
+    assert payload["其他成本"] == "2"
+    assert payload["采购总成本"] == "30"
+    assert payload["毛利润"] == "36"
+    assert payload["包装费"] == "1.5"
+    assert payload["赠品"] == "2.5"
+
+
 def test_order_pipeline_extracts_order_from_ocr_then_helper_text():
     raw_text = Path("tests/fixtures/ocr/jd_order_01.txt").read_text(encoding="utf-8")
     calls: list[str] = []

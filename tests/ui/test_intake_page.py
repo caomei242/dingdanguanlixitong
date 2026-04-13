@@ -48,7 +48,17 @@ def test_intake_page_shows_order_card_after_pipeline_result(qtbot):
     assert page.order_card_widget.delivery_note_edit.toPlainText() == "请电话送货上门谢谢【3612】"
     assert isinstance(page.address_widget, AddressExtractorWidget)
     assert page.submit_button.text() == "确认写入飞书"
-    assert submitted_orders == [{"shop_name": "乐宝零食店", "order": order}]
+    assert submitted_orders == [
+        {
+            "shop_name": "乐宝零食店",
+            "order": replace(
+                order,
+                platform_fee_amount="0.00",
+                procurement_total_cost="0.00",
+                gross_profit="162.00",
+            ),
+        }
+    ]
 
 
 def test_intake_page_defaults_platform_to_douyin_and_supports_wechat(qtbot):
@@ -81,7 +91,16 @@ def test_intake_page_defaults_platform_to_douyin_and_supports_wechat(qtbot):
     page.submit_button.click()
 
     assert submitted_orders == [
-        {"shop_name": "乐宝零食店", "order": replace(order, platform="微信小店")}
+        {
+            "shop_name": "乐宝零食店",
+            "order": replace(
+                order,
+                platform="微信小店",
+                platform_fee_amount="0.00",
+                procurement_total_cost="0.00",
+                gross_profit="8.00",
+            ),
+        }
     ]
 
 
@@ -290,7 +309,7 @@ def test_intake_page_groups_order_entry_into_sections(qtbot):
             procurement_card = frame
             break
 
-    assert section_titles == ["订单概览", "收件信息", "采购信息"]
+    assert section_titles == ["订单概览", "收件信息", "采购信息", "财务信息"]
     assert procurement_card is not None
     assert "采购1" in [label.text() for label in procurement_card.findChildren(QLabel)]
     assert "采购2" in [label.text() for label in procurement_card.findChildren(QLabel)]
@@ -368,3 +387,57 @@ def test_order_card_can_request_saving_manual_product_to_library(qtbot):
     page.order_card_widget.procurement_save_1_button.click()
 
     assert saved_products == [("新商品", "12.60")]
+
+
+def test_order_card_computes_fee_total_cost_and_gross_profit(qtbot):
+    page = IntakePage(use_background_thread=False)
+    qtbot.addWidget(page)
+
+    page.order_card_widget.set_custom_cost_labels(["包装费", "", ""])
+    page.order_card_widget.income_amount_edit.setText("100")
+    page.order_card_widget.platform_fee_rate_edit.setText("10")
+    page.order_card_widget.procurement_quantity_1_edit.setText("2")
+    page.order_card_widget.procurement_cost_1_edit.setText("20")
+    page.order_card_widget.other_cost_edit.setText("5")
+    page.order_card_widget.custom_cost_value_edits[0].setText("3")
+
+    assert page.order_card_widget.platform_fee_amount_edit.text() == "10.00"
+    assert page.order_card_widget.procurement_total_cost_edit.text() == "40.00"
+    assert page.order_card_widget.gross_profit_edit.text() == "42.00"
+
+
+def test_intake_page_submits_financial_fields_and_custom_costs(qtbot):
+    submitted_orders = []
+    page = IntakePage(on_submit=submitted_orders.append, use_background_thread=False)
+    qtbot.addWidget(page)
+
+    order = ParsedOrder(
+        order_id="1",
+        placed_at="2026-04-11 20:57:15",
+        order_status="已发货",
+        product_name="商品",
+        quantity="1",
+        order_amount="10.00",
+        income_amount="8.00",
+        recipient_name="何女士",
+        phone_number="15781304332",
+        code="3612",
+        address="重庆市",
+        delivery_note="备注",
+    )
+    page.show_order(order)
+    page.shop_selector.addItems(["乐宝零食店"])
+    page.shop_selector.setCurrentText("乐宝零食店")
+    page.order_card_widget.set_custom_cost_labels(["包装费", "赠品", ""])
+    page.order_card_widget.platform_fee_rate_edit.setText("10")
+    page.order_card_widget.other_cost_edit.setText("2")
+    page.order_card_widget.custom_cost_value_edits[0].setText("1.5")
+
+    page.submit_button.click()
+
+    submitted = submitted_orders[0]["order"]
+    assert submitted.platform_fee_rate == "10"
+    assert submitted.platform_fee_amount == "0.80"
+    assert submitted.other_cost == "2"
+    assert submitted.custom_cost_labels == ("包装费", "赠品", "")
+    assert submitted.custom_cost_values == ("1.5", "", "")

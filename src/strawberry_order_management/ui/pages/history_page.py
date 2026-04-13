@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 import json
 from typing import Any
 
@@ -33,6 +34,13 @@ _ORDER_SNAPSHOT_KEYS = (
     "code",
     "address",
     "delivery_note",
+    "platform_fee_rate",
+    "platform_fee_amount",
+    "other_cost",
+    "procurement_total_cost",
+    "gross_profit",
+    "custom_cost_labels",
+    "custom_cost_values",
 )
 
 
@@ -99,6 +107,17 @@ class HistoryPage(QWidget):
         self.code_value = self._build_text_value(minimum_height=36)
         self.address_value = self._build_text_value(minimum_height=56)
         self.delivery_note_value = self._build_text_value(minimum_height=56)
+        self.platform_fee_rate_value = self._build_text_value(minimum_height=36)
+        self.platform_fee_amount_value = self._build_text_value(minimum_height=36)
+        self.other_cost_value = self._build_text_value(minimum_height=36)
+        self.procurement_total_cost_value = self._build_text_value(minimum_height=36)
+        self.gross_profit_value = self._build_text_value(minimum_height=36)
+        self.custom_cost_label_1 = QLabel("")
+        self.custom_cost_label_2 = QLabel("")
+        self.custom_cost_label_3 = QLabel("")
+        self.custom_cost_value_1 = self._build_text_value(minimum_height=36)
+        self.custom_cost_value_2 = self._build_text_value(minimum_height=36)
+        self.custom_cost_value_3 = self._build_text_value(minimum_height=36)
 
         order_form = QFormLayout()
         order_form.setLabelAlignment(Qt.AlignmentFlag.AlignTop)
@@ -143,6 +162,20 @@ class HistoryPage(QWidget):
         procurement_form.addRow("采购 3 成本", self.procurement_cost_3_value)
 
         procurement_section = self._build_section("采购信息", procurement_form)
+
+        finance_form = QFormLayout()
+        finance_form.setLabelAlignment(Qt.AlignmentFlag.AlignTop)
+        finance_form.setFormAlignment(Qt.AlignmentFlag.AlignTop)
+        finance_form.addRow("平台扣点比例", self.platform_fee_rate_value)
+        finance_form.addRow("平台扣点金额", self.platform_fee_amount_value)
+        finance_form.addRow("其他成本", self.other_cost_value)
+        finance_form.addRow("采购总成本", self.procurement_total_cost_value)
+        finance_form.addRow("毛利润", self.gross_profit_value)
+        finance_form.addRow(self.custom_cost_label_1, self.custom_cost_value_1)
+        finance_form.addRow(self.custom_cost_label_2, self.custom_cost_value_2)
+        finance_form.addRow(self.custom_cost_label_3, self.custom_cost_value_3)
+
+        finance_section = self._build_section("财务信息", finance_form)
 
         self.address_output_one = self._build_text_value(minimum_height=56, editable=False)
         self.address_output_two = self._build_text_value(minimum_height=56, editable=False)
@@ -228,8 +261,9 @@ class HistoryPage(QWidget):
         detail_grid.setVerticalSpacing(10)
         detail_grid.addWidget(order_section, 0, 0)
         detail_grid.addWidget(procurement_section, 0, 1)
-        detail_grid.addWidget(address_section, 1, 0)
-        detail_grid.addWidget(sync_section, 1, 1)
+        detail_grid.addWidget(finance_section, 1, 0)
+        detail_grid.addWidget(address_section, 1, 1)
+        detail_grid.addWidget(sync_section, 2, 0, 1, 2)
 
         detail_body_layout.addWidget(self.detail_summary_card)
         detail_body_layout.addLayout(detail_grid)
@@ -282,6 +316,11 @@ class HistoryPage(QWidget):
             self.code_value,
             self.address_value,
             self.delivery_note_value,
+            self.platform_fee_rate_value,
+            self.platform_fee_amount_value,
+            self.other_cost_value,
+            self.procurement_total_cost_value,
+            self.gross_profit_value,
             self.procurement_product_1_value,
             self.procurement_quantity_1_value,
             self.procurement_cost_1_value,
@@ -291,6 +330,9 @@ class HistoryPage(QWidget):
             self.procurement_product_3_value,
             self.procurement_quantity_3_value,
             self.procurement_cost_3_value,
+            self.custom_cost_value_1,
+            self.custom_cost_value_2,
+            self.custom_cost_value_3,
         ]
 
         self._set_widgets_read_only(False)
@@ -391,6 +433,16 @@ class HistoryPage(QWidget):
         self.code_value.setPlainText(self._text_value(order_snapshot.get("code")))
         self.address_value.setPlainText(self._text_value(order_snapshot.get("address")))
         self.delivery_note_value.setPlainText(self._text_value(order_snapshot.get("delivery_note")))
+        self.platform_fee_rate_value.setPlainText(self._text_value(order_snapshot.get("platform_fee_rate")))
+        self.platform_fee_amount_value.setPlainText(self._text_value(order_snapshot.get("platform_fee_amount")))
+        self.other_cost_value.setPlainText(self._text_value(order_snapshot.get("other_cost")))
+        self.procurement_total_cost_value.setPlainText(self._text_value(order_snapshot.get("procurement_total_cost")))
+        self.gross_profit_value.setPlainText(self._text_value(order_snapshot.get("gross_profit")))
+        custom_labels = order_snapshot.get("custom_cost_labels") or ["", "", ""]
+        custom_values = order_snapshot.get("custom_cost_values") or ["", "", ""]
+        self._set_custom_cost_row(self.custom_cost_label_1, self.custom_cost_value_1, custom_labels, custom_values, 0)
+        self._set_custom_cost_row(self.custom_cost_label_2, self.custom_cost_value_2, custom_labels, custom_values, 1)
+        self._set_custom_cost_row(self.custom_cost_label_3, self.custom_cost_value_3, custom_labels, custom_values, 2)
 
         procurement_items = order_snapshot.get("procurement_items") or []
         procurement_widgets = [
@@ -443,6 +495,11 @@ class HistoryPage(QWidget):
             self.code_value,
             self.address_value,
             self.delivery_note_value,
+            self.platform_fee_rate_value,
+            self.platform_fee_amount_value,
+            self.other_cost_value,
+            self.procurement_total_cost_value,
+            self.gross_profit_value,
             self.procurement_product_1_value,
             self.procurement_quantity_1_value,
             self.procurement_cost_1_value,
@@ -452,6 +509,9 @@ class HistoryPage(QWidget):
             self.procurement_product_3_value,
             self.procurement_quantity_3_value,
             self.procurement_cost_3_value,
+            self.custom_cost_value_1,
+            self.custom_cost_value_2,
+            self.custom_cost_value_3,
             self.address_output_one,
             self.address_output_two,
             self.sync_source_value,
@@ -459,6 +519,9 @@ class HistoryPage(QWidget):
             self.sync_message_value,
         ):
             widget.setPlainText("")
+        self.custom_cost_label_1.setText("")
+        self.custom_cost_label_2.setText("")
+        self.custom_cost_label_3.setText("")
         for widget in (
             self.summary_income_value,
             self.summary_order_amount_value,
@@ -485,6 +548,21 @@ class HistoryPage(QWidget):
                 "code": self._text_value(self.code_value.toPlainText()),
                 "address": self._text_value(self.address_value.toPlainText()),
                 "delivery_note": self._text_value(self.delivery_note_value.toPlainText()),
+                "platform_fee_rate": self._text_value(self.platform_fee_rate_value.toPlainText()),
+                "platform_fee_amount": self._text_value(self.platform_fee_amount_value.toPlainText()),
+                "other_cost": self._text_value(self.other_cost_value.toPlainText()),
+                "procurement_total_cost": self._text_value(self.procurement_total_cost_value.toPlainText()),
+                "gross_profit": self._text_value(self.gross_profit_value.toPlainText()),
+                "custom_cost_labels": [
+                    self._text_value(self.custom_cost_label_1.text()),
+                    self._text_value(self.custom_cost_label_2.text()),
+                    self._text_value(self.custom_cost_label_3.text()),
+                ],
+                "custom_cost_values": [
+                    self._text_value(self.custom_cost_value_1.toPlainText()),
+                    self._text_value(self.custom_cost_value_2.toPlainText()),
+                    self._text_value(self.custom_cost_value_3.toPlainText()),
+                ],
                 "procurement_items": [
                 {
                     "product_name": self._text_value(self.procurement_product_1_value.toPlainText()),
@@ -504,6 +582,7 @@ class HistoryPage(QWidget):
                 ],
             }
         )
+        order_snapshot = self._recalculate_financial_snapshot(order_snapshot)
         return order_snapshot
 
     def _normalize_row(self, row: dict[str, Any]) -> dict[str, Any]:
@@ -533,7 +612,23 @@ class HistoryPage(QWidget):
             order_snapshot = dict(order_snapshot)
 
         for key in _ORDER_SNAPSHOT_KEYS:
+            if key in ("custom_cost_labels", "custom_cost_values"):
+                continue
             order_snapshot[key] = self._text_value(order_snapshot.get(key))
+        custom_cost_labels = order_snapshot.get("custom_cost_labels")
+        if not isinstance(custom_cost_labels, list):
+            custom_cost_labels = ["", "", ""]
+        custom_cost_values = order_snapshot.get("custom_cost_values")
+        if not isinstance(custom_cost_values, list):
+            custom_cost_values = ["", "", ""]
+        order_snapshot["custom_cost_labels"] = [
+            self._text_value(custom_cost_labels[index] if index < len(custom_cost_labels) else "")
+            for index in range(3)
+        ]
+        order_snapshot["custom_cost_values"] = [
+            self._text_value(custom_cost_values[index] if index < len(custom_cost_values) else "")
+            for index in range(3)
+        ]
 
         procurement_items = order_snapshot.get("procurement_items")
         normalized_items = []
@@ -656,6 +751,57 @@ class HistoryPage(QWidget):
         self.summary_order_amount_value.setText(self._text_value(order_snapshot.get("order_amount")) or "-")
         self.summary_product_value.setText(self._text_value(order_snapshot.get("product_name")) or "-")
         self.summary_procurement_value.setText(procurement_text)
+
+    def _set_custom_cost_row(
+        self,
+        label_widget: QLabel,
+        value_widget: QTextEdit,
+        labels: list[Any],
+        values: list[Any],
+        index: int,
+    ) -> None:
+        label_text = self._text_value(labels[index] if index < len(labels) else "")
+        value_text = self._text_value(values[index] if index < len(values) else "")
+        label_widget.setText(label_text)
+        value_widget.setPlainText(value_text)
+        label_widget.setVisible(bool(label_text))
+        value_widget.setVisible(bool(label_text))
+
+    def _recalculate_financial_snapshot(self, order_snapshot: dict[str, Any]) -> dict[str, Any]:
+        snapshot = dict(order_snapshot)
+        income = self._to_decimal(snapshot.get("income_amount"))
+        fee_rate = self._to_decimal(snapshot.get("platform_fee_rate"))
+        fee_amount = (income * fee_rate / Decimal("100")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        procurement_total = Decimal("0")
+        for item in snapshot.get("procurement_items", []):
+            if not isinstance(item, dict):
+                continue
+            procurement_total += self._to_decimal(item.get("quantity") or "1") * self._to_decimal(item.get("cost"))
+        procurement_total = procurement_total.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        other_cost = self._to_decimal(snapshot.get("other_cost"))
+        custom_total = Decimal("0")
+        for label, value in zip(snapshot.get("custom_cost_labels", []), snapshot.get("custom_cost_values", [])):
+            if self._text_value(label):
+                custom_total += self._to_decimal(value)
+        gross_profit = income - fee_amount - procurement_total - other_cost - custom_total
+        snapshot["platform_fee_amount"] = self._format_decimal(fee_amount)
+        snapshot["procurement_total_cost"] = self._format_decimal(procurement_total)
+        snapshot["gross_profit"] = self._format_decimal(gross_profit)
+        return snapshot
+
+    @staticmethod
+    def _to_decimal(value: Any) -> Decimal:
+        cleaned = str(value or "").strip().replace("%", "").replace(",", "")
+        if not cleaned:
+            return Decimal("0")
+        try:
+            return Decimal(cleaned)
+        except InvalidOperation:
+            return Decimal("0")
+
+    @staticmethod
+    def _format_decimal(value: Decimal) -> str:
+        return str(value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
 
     @staticmethod
     def _build_text_value(minimum_height: int = 36, editable: bool = True) -> QTextEdit:

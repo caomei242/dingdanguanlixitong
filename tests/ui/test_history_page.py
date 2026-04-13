@@ -31,6 +31,13 @@ def _row(
             "code": "3612",
             "address": "四川省成都市金牛区营门口街道友谊花园9-2304",
             "delivery_note": "请电话送货上门谢谢【3612】",
+            "platform_fee_rate": "10",
+            "platform_fee_amount": "16.20",
+            "other_cost": "5.00",
+            "procurement_total_cost": "38.00",
+            "gross_profit": "101.80",
+            "custom_cost_labels": ["包装费", "", ""],
+            "custom_cost_values": ["1.00", "", ""],
             "procurement_items": [
                 {"product_name": "澳洲婴儿水", "quantity": "2", "cost": "19.00"},
                 {"product_name": "", "quantity": "1", "cost": ""},
@@ -262,6 +269,41 @@ def test_history_page_emits_record_ids_for_actions(qtbot):
     }
 
 
+def test_history_page_loads_and_saves_financial_fields(qtbot):
+    page = HistoryPage()
+    qtbot.addWidget(page)
+    rows = [
+        _row(
+            "record-1",
+            "乐宝零食店",
+            "确认写入飞书",
+            "已写入飞书",
+            "6952003434324366473",
+            "何女士",
+            "何女士15781304332四川省成都市",
+            "请电话送货上门谢谢【3612】",
+        )
+    ]
+
+    page.load_rows(rows)
+    emitted = []
+    page.save_requested.connect(lambda record_id, patch: emitted.append((record_id, patch)))
+
+    assert page.platform_fee_rate_value.toPlainText() == "10"
+    assert page.platform_fee_amount_value.toPlainText() == "16.20"
+    assert page.gross_profit_value.toPlainText() == "101.80"
+    assert page.custom_cost_value_1.toPlainText() == "1.00"
+
+    page.platform_fee_rate_value.setPlainText("12")
+    page.save_button.click()
+
+    assert emitted[0][0] == "record-1"
+    assert emitted[0][1]["order_snapshot"]["platform_fee_rate"] == "12"
+    assert emitted[0][1]["order_snapshot"]["platform_fee_amount"] == "19.44"
+    assert emitted[0][1]["order_snapshot"]["gross_profit"] == "98.56"
+    assert emitted[0][1]["order_snapshot"]["custom_cost_values"] == ["1.00", "", ""]
+
+
 def test_history_page_directly_edits_fields_and_emits_save_patch(qtbot):
     page = HistoryPage()
     qtbot.addWidget(page)
@@ -294,33 +336,18 @@ def test_history_page_directly_edits_fields_and_emits_save_patch(qtbot):
     page.procurement_cost_1_value.setPlainText("21.50")
     page.save_button.click()
 
-    assert emitted == [
-        (
-            "record-1",
-            {
-                "order_snapshot": {
-                    "order_id": "6952003434324366473",
-                    "placed_at": "2026-04-11 20:57:15",
-                    "platform": "抖店",
-                    "order_status": "已发货",
-                    "product_name": "改后商品",
-                    "quantity": "1",
-                    "order_amount": "405.00",
-                    "income_amount": "162.00",
-                    "recipient_name": "何女士",
-                    "phone_number": "15781304332",
-                    "code": "3612",
-                    "address": "四川省成都市金牛区营门口街道友谊花园9-2304",
-                    "delivery_note": "请电话送货上门谢谢【3612】",
-                    "procurement_items": [
-                        {"product_name": "改后采购", "quantity": "3", "cost": "21.50"},
-                        {"product_name": "", "quantity": "1", "cost": ""},
-                        {"product_name": "", "quantity": "1", "cost": ""},
-                    ],
-                }
-            },
-        )
-    ]
+    assert emitted[0][0] == "record-1"
+    snapshot = emitted[0][1]["order_snapshot"]
+    assert snapshot["product_name"] == "改后商品"
+    assert snapshot["procurement_items"][0] == {
+        "product_name": "改后采购",
+        "quantity": "3",
+        "cost": "21.50",
+    }
+    assert snapshot["platform_fee_rate"] == "10"
+    assert snapshot["platform_fee_amount"] == "16.20"
+    assert snapshot["procurement_total_cost"] == "64.50"
+    assert snapshot["gross_profit"] == "75.30"
 
 
 def test_history_page_save_button_stays_near_detail_header(qtbot):

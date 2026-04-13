@@ -250,6 +250,10 @@ def test_main_window_submits_to_feishu_in_background(qtbot, tmp_path, monkeypatc
     window.intake_page.submit_button.click()
 
     assert window.intake_page.capture_widget.status_label.text() == "写入飞书中..."
+    assert len(history_store.list_items()) == 1
+    pending_row = history_store.list_items()[0]
+    assert pending_row["status"] == "写入中"
+    assert pending_row["sync_source"] == "确认写入飞书"
     assert window.nav.isEnabled() is True
     assert window.intake_page.address_widget.isEnabled() is True
 
@@ -259,7 +263,77 @@ def test_main_window_submits_to_feishu_in_background(qtbot, tmp_path, monkeypatc
     )
     qtbot.waitUntil(lambda: window._submit_thread is None, timeout=3000)
     assert len(history_store.list_items()) == 1
-    assert history_store.list_items()[0]["status"] == "已写入飞书"
+    completed_row = history_store.list_items()[0]
+    assert completed_row["record_id"] == pending_row["record_id"]
+    assert completed_row["status"] == "已写入飞书"
+    assert completed_row["message"] == "写入成功"
+    assert completed_row["feishu_result"] == {"data": {"record_id": "rec_123"}}
+
+
+def test_main_window_persists_submit_failure_before_worker_start(qtbot, tmp_path, monkeypatch):
+    config_store = ConfigStore(tmp_path / "config.json")
+    history_store = HistoryStore(tmp_path / "history.json")
+    config_store.save(_settings_payload())
+
+    window = MainWindow(config_store=config_store, history_store=history_store)
+    qtbot.addWidget(window)
+
+    window.intake_page.show_order(_sample_order())
+    window.intake_page.shop_selector.setCurrentText("草莓店")
+
+    start_called = {"value": False}
+
+    def fake_start_submit_job(task: dict) -> None:
+        start_called["value"] = True
+
+    def fake_build_task(payload: dict) -> dict:
+        raise ValueError("店铺“草莓店”缺少：Table ID")
+
+    monkeypatch.setattr(window, "_start_submit_job", fake_start_submit_job)
+    monkeypatch.setattr(window, "_build_feishu_submission_task", fake_build_task)
+
+    window.intake_page.submit_button.click()
+
+    assert start_called["value"] is False
+    assert window.intake_page.capture_widget.status_label.text() == "店铺“草莓店”缺少：Table ID"
+    assert len(history_store.list_items()) == 1
+    record = history_store.list_items()[0]
+    assert record["status"] == "写入失败"
+    assert record["sync_source"] == "确认写入飞书"
+    assert record["message"] == "店铺“草莓店”缺少：Table ID"
+    assert record["order_snapshot"]["order_id"] == _sample_order().order_id
+
+
+def test_main_window_ignores_missing_history_row_during_async_completion(qtbot, tmp_path):
+    config_store = ConfigStore(tmp_path / "config.json")
+    history_store = HistoryStore(tmp_path / "history.json")
+    config_store.save(_settings_payload())
+
+    window = MainWindow(config_store=config_store, history_store=history_store)
+    qtbot.addWidget(window)
+
+    window.intake_page.show_order(_sample_order())
+    window.intake_page.shop_selector.setCurrentText("草莓店")
+
+    snapshot = window._build_history_snapshot(
+        {"shop_name": "草莓店", "order": _sample_order()},
+        "确认写入飞书",
+        "写入中",
+    )
+    saved_row = history_store.append(snapshot)
+    history_store.delete(saved_row["record_id"])
+
+    window._handle_submit_success(
+        {
+            "payload": {"shop_name": "草莓店", "order": _sample_order()},
+            "shop_name": "草莓店",
+            "response": {"data": {"record_id": "rec_123"}},
+            "history_record_id": saved_row["record_id"],
+        }
+    )
+
+    assert history_store.list_items() == []
+    assert window.intake_page.capture_widget.status_label.text() == "已写入飞书：草莓店"
 
 
 def test_main_window_can_save_manual_product_into_global_library(qtbot, tmp_path):

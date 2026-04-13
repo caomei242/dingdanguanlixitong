@@ -215,7 +215,10 @@ class MainWindow(QMainWindow):
     def _update_history_snapshot(self, record_id: str, patch: dict) -> Optional[dict]:
         if self._history_store is None:
             return None
-        row = self._history_store.update(record_id, patch)
+        try:
+            row = self._history_store.update(record_id, patch)
+        except KeyError:
+            return None
         self.history_page.load_rows(self._history_store.list_items())
         return row
 

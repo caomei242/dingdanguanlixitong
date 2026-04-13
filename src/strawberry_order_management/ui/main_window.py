@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
 )
 
 from strawberry_order_management.history import HistoryStore
+from strawberry_order_management.models import ParsedOrder, ProcurementItem
 from strawberry_order_management.services.feishu_client import FeishuClient
 from strawberry_order_management.services.helper_client import HelperClient
 from strawberry_order_management.services.mcp_ocr_client import McpOCRClient
@@ -84,6 +85,8 @@ class MainWindow(QMainWindow):
         self.stack.addWidget(self.history_page)
         self.stack.addWidget(self.settings_page)
         self.intake_page.product_library_requested.connect(self._handle_product_library_request)
+        self.history_page.delete_requested.connect(self._handle_history_delete_request)
+        self.history_page.resubmit_requested.connect(self._handle_history_resubmit_request)
 
         brand_title = QLabel("草莓")
         brand_title.setObjectName("BrandTitle")
@@ -121,7 +124,7 @@ class MainWindow(QMainWindow):
             self.settings_page.load_payload(payload)
             self._sync_shop_selector(payload)
         if self._history_store is not None:
-            self.history_page.load_rows(self._history_store.list_items())
+            self._reload_history_page()
 
         apply_theme(self)
 
@@ -209,7 +212,7 @@ class MainWindow(QMainWindow):
         if self._history_store is None:
             return None
         row = self._history_store.append(snapshot)
-        self.history_page.load_rows(self._history_store.list_items())
+        self._reload_history_page()
         return row
 
     def _update_history_snapshot(self, record_id: str, patch: dict) -> Optional[dict]:
@@ -219,8 +222,59 @@ class MainWindow(QMainWindow):
             row = self._history_store.update(record_id, patch)
         except KeyError:
             return None
-        self.history_page.load_rows(self._history_store.list_items())
+        self._reload_history_page()
         return row
+
+    def _reload_history_page(self) -> None:
+        if self._history_store is None:
+            return
+        self.history_page.load_rows(self._history_store.list_items())
+
+    def _handle_history_delete_request(self, record_id: str) -> None:
+        if self._history_store is None:
+            return
+        try:
+            self._history_store.delete(record_id)
+        except KeyError:
+            pass
+        self._reload_history_page()
+
+    def _handle_history_resubmit_request(self, record_id: str) -> None:
+        if self._history_store is None:
+            return
+        try:
+            row = self._history_store.get(record_id)
+        except KeyError:
+            return
+
+        payload = self._build_payload_from_history_row(row)
+        self._sync_products_from_order(payload["order"])
+        try:
+            task = self._build_feishu_submission_task(payload)
+        except Exception as exc:
+            message = str(exc)
+            self.intake_page.capture_widget.status_label.setText(message)
+            self._update_history_snapshot(
+                record_id,
+                {
+                    "status": "写入失败",
+                    "message": message,
+                    "feishu_result": {"error": message},
+                },
+            )
+            return
+
+        self.intake_page.capture_widget.status_label.setText("写入飞书中...")
+        self.intake_page.set_submit_in_progress(True)
+        task["history_record_id"] = record_id
+        self._update_history_snapshot(
+            record_id,
+            {
+                "status": "写入中",
+                "message": "",
+            },
+        )
+        self._start_submit_job(task)
 
     def _sync_shop_selector(self, payload: dict) -> None:
         product_presets = payload.get("product_presets")
@@ -327,6 +381,42 @@ class MainWindow(QMainWindow):
             "fields": build_feishu_payload(
                 payload["order"],
                 shop.get("field_mapping"),
+            ),
+        }
+
+    @staticmethod
+    def _build_payload_from_history_row(row: dict) -> dict:
+        order_snapshot = row.get("order_snapshot") or {}
+        procurement_items = []
+        for item in order_snapshot.get("procurement_items", []):
+            if not isinstance(item, dict):
+                continue
+            procurement_items.append(
+                ProcurementItem(
+                    str(item.get("product_name", "")).strip(),
+                    str(item.get("quantity", "")).strip() or "1",
+                    str(item.get("cost", "")).strip(),
+                )
+            )
+        while len(procurement_items) < 3:
+            procurement_items.append(ProcurementItem("", "1", ""))
+
+        return {
+            "shop_name": row.get("shop_name", ""),
+            "order": ParsedOrder(
+                order_id=str(order_snapshot.get("order_id", "")).strip(),
+                placed_at=str(order_snapshot.get("placed_at", "")).strip(),
+                order_status=str(order_snapshot.get("order_status", "")).strip(),
+                product_name=str(order_snapshot.get("product_name", "")).strip(),
+                quantity=str(order_snapshot.get("quantity", "")).strip(),
+                order_amount=str(order_snapshot.get("order_amount", "")).strip(),
+                income_amount=str(order_snapshot.get("income_amount", "")).strip(),
+                recipient_name=str(order_snapshot.get("recipient_name", "")).strip(),
+                phone_number=str(order_snapshot.get("phone_number", "")).strip(),
+                code=str(order_snapshot.get("code", "")).strip(),
+                address=str(order_snapshot.get("address", "")).strip(),
+                delivery_note=str(order_snapshot.get("delivery_note", "")).strip(),
+                procurement_items=tuple(procurement_items[:3]),
             ),
         }
 

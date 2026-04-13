@@ -120,9 +120,20 @@ def test_history_page_emits_record_ids_for_actions(qtbot):
                 "何女士",
                 "何女士15781304332四川省成都市",
                 "请电话送货上门谢谢【3612】",
-            )
+            ),
+            _row(
+                "record-2",
+                "乐宝零食店",
+                "仅存历史",
+                "写入失败",
+                "6952003434324366111",
+                "田宝山",
+                "田宝山15784081541山东省德州市",
+                "请放门口",
+            ),
         ]
     )
+    page.list_widget.setCurrentRow(1)
 
     emitted = {"edit": [], "delete": [], "resubmit": []}
     page.edit_requested.connect(emitted["edit"].append)
@@ -134,7 +145,7 @@ def test_history_page_emits_record_ids_for_actions(qtbot):
     page.resubmit_button.click()
 
     assert emitted == {
-        "edit": ["record-1"],
-        "delete": ["record-1"],
-        "resubmit": ["record-1"],
+        "edit": ["record-2"],
+        "delete": ["record-2"],
+        "resubmit": ["record-2"],
     }

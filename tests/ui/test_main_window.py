@@ -86,11 +86,11 @@ def _settings_payload() -> dict:
         "product_presets": [{"name": "澳洲婴儿水", "default_cost": "18.50"}],
         "shops": [
             {
-                "name": "草莓店",
+                "name": "乐宝零食店",
             },
-            {"name": "乐宝零食店"},
+            {"name": "欢宝零食店"},
         ],
-        "selected_shop_name": "草莓店",
+        "selected_shop_name": "乐宝零食店",
     }
 
 
@@ -102,7 +102,7 @@ def _assert_rich_history_snapshot(
     expected_message: str,
     expected_procurement_items: Optional[dict[int, tuple[str, str, str]]] = None,
 ) -> None:
-    assert record["shop_name"] == "草莓店"
+    assert record["shop_name"] == "乐宝零食店"
     assert record["sync_source"] == expected_sync_source
     assert record["status"] == expected_status
     assert record["message"] == expected_message
@@ -157,7 +157,7 @@ def test_main_window_submits_order_to_total_table_with_shop_field(qtbot, tmp_pat
     qtbot.addWidget(window)
 
     window.intake_page.show_order(_sample_order())
-    window.intake_page.shop_selector.setCurrentText("草莓店")
+    window.intake_page.shop_selector.setCurrentText("乐宝零食店")
     window.intake_page.order_card_widget.procurement_product_1_combo.setCurrentText("澳洲婴儿水")
     window.intake_page.order_card_widget.procurement_quantity_1_edit.setText("2")
     window.intake_page.order_card_widget.procurement_cost_1_edit.setText("19.00")
@@ -165,7 +165,7 @@ def test_main_window_submits_order_to_total_table_with_shop_field(qtbot, tmp_pat
     window.intake_page.submit_button.click()
 
     qtbot.waitUntil(
-        lambda: window.intake_page.capture_widget.status_label.text() == "已写入飞书：草莓店",
+        lambda: window.intake_page.capture_widget.status_label.text() == "已写入飞书：乐宝零食店",
         timeout=3000,
     )
 
@@ -177,7 +177,7 @@ def test_main_window_submits_order_to_total_table_with_shop_field(qtbot, tmp_pat
     )
     assert captured["token_called"] is True
     assert captured["create"][0] == "tenant_token_123"
-    assert captured["create"][1]["店铺"] == "草莓店"
+    assert captured["create"][1]["店铺"] == "乐宝零食店"
     assert captured["create"][1]["订单编号"] == "6952003434324366473"
     assert captured["create"][1]["收入金额"] == "162.00"
     assert captured["create"][1]["发货地址"].startswith("何女士 15781304332-3612")
@@ -198,7 +198,7 @@ def test_main_window_submits_order_to_total_table_with_shop_field(qtbot, tmp_pat
     assert record["status"] == "已写入飞书"
     assert record["sync_source"] == "确认写入飞书"
     assert record["feishu_result"] == {"data": {"record_id": "rec_123"}}
-    assert window.intake_page.capture_widget.status_label.text() == "已写入飞书：草莓店"
+    assert window.intake_page.capture_widget.status_label.text() == "已写入飞书：乐宝零食店"
     assert any(
         item["name"] == "澳洲婴儿水" and item["default_cost"] == "19.00"
         for item in config_store.load()["product_presets"]
@@ -226,7 +226,7 @@ def test_main_window_records_failure_when_feishu_submit_errors(qtbot, tmp_path, 
     qtbot.addWidget(window)
 
     window.intake_page.show_order(_sample_order())
-    window.intake_page.shop_selector.setCurrentText("草莓店")
+    window.intake_page.shop_selector.setCurrentText("乐宝零食店")
 
     window.intake_page.submit_button.click()
 
@@ -273,7 +273,7 @@ def test_main_window_submits_to_feishu_in_background(qtbot, tmp_path, monkeypatc
     qtbot.addWidget(window)
 
     window.intake_page.show_order(_sample_order())
-    window.intake_page.shop_selector.setCurrentText("草莓店")
+    window.intake_page.shop_selector.setCurrentText("乐宝零食店")
 
     window.intake_page.submit_button.click()
 
@@ -286,7 +286,7 @@ def test_main_window_submits_to_feishu_in_background(qtbot, tmp_path, monkeypatc
     assert window.intake_page.address_widget.isEnabled() is True
 
     qtbot.waitUntil(
-        lambda: window.intake_page.capture_widget.status_label.text() == "已写入飞书：草莓店",
+        lambda: window.intake_page.capture_widget.status_label.text() == "已写入飞书：乐宝零食店",
         timeout=3000,
     )
     qtbot.waitUntil(lambda: window._submit_thread is None, timeout=3000)
@@ -307,7 +307,7 @@ def test_main_window_persists_submit_failure_before_worker_start(qtbot, tmp_path
     qtbot.addWidget(window)
 
     window.intake_page.show_order(_sample_order())
-    window.intake_page.shop_selector.setCurrentText("草莓店")
+    window.intake_page.shop_selector.setCurrentText("乐宝零食店")
 
     start_called = {"value": False}
 
@@ -341,10 +341,10 @@ def test_main_window_ignores_missing_history_row_during_async_completion(qtbot, 
     qtbot.addWidget(window)
 
     window.intake_page.show_order(_sample_order())
-    window.intake_page.shop_selector.setCurrentText("草莓店")
+    window.intake_page.shop_selector.setCurrentText("乐宝零食店")
 
     snapshot = window._build_history_snapshot(
-        {"shop_name": "草莓店", "order": _sample_order()},
+        {"shop_name": "乐宝零食店", "order": _sample_order()},
         "确认写入飞书",
         "写入中",
     )
@@ -353,15 +353,15 @@ def test_main_window_ignores_missing_history_row_during_async_completion(qtbot, 
 
     window._handle_submit_success(
         {
-            "payload": {"shop_name": "草莓店", "order": _sample_order()},
-            "shop_name": "草莓店",
+            "payload": {"shop_name": "乐宝零食店", "order": _sample_order()},
+            "shop_name": "乐宝零食店",
             "response": {"data": {"record_id": "rec_123"}},
             "history_record_id": saved_row["record_id"],
         }
     )
 
     assert history_store.list_items() == []
-    assert window.intake_page.capture_widget.status_label.text() == "已写入飞书：草莓店"
+    assert window.intake_page.capture_widget.status_label.text() == "已写入飞书：乐宝零食店"
 
 
 def test_main_window_deletes_selected_history_row_and_reloads_page(qtbot, tmp_path):
@@ -374,7 +374,7 @@ def test_main_window_deletes_selected_history_row_and_reloads_page(qtbot, tmp_pa
 
     first_row = history_store.append(
         window._build_history_snapshot(
-            {"shop_name": "草莓店", "order": _sample_order()},
+            {"shop_name": "乐宝零食店", "order": _sample_order()},
             "确认写入飞书",
             "已写入飞书",
             "写入成功",
@@ -383,7 +383,7 @@ def test_main_window_deletes_selected_history_row_and_reloads_page(qtbot, tmp_pa
     )
     history_store.append(
         window._build_history_snapshot(
-            {"shop_name": "草莓店", "order": _alternate_order()},
+            {"shop_name": "欢宝零食店", "order": _alternate_order()},
             "仅存历史",
             "仅存历史",
             "",
@@ -396,7 +396,7 @@ def test_main_window_deletes_selected_history_row_and_reloads_page(qtbot, tmp_pa
 
     assert [row["record_id"] for row in history_store.list_items()] == [first_row["record_id"]]
     assert window.history_page.list_widget.count() == 1
-    assert window.history_page.detail_title_label.text() == "草莓店"
+    assert window.history_page.detail_title_label.text() == "乐宝零食店"
     assert window.history_page.order_id_value.toPlainText() == _sample_order().order_id
 
 
@@ -410,7 +410,7 @@ def test_main_window_saves_history_edit_in_place_and_keeps_selection(qtbot, tmp_
 
     first_row = history_store.append(
         window._build_history_snapshot(
-            {"shop_name": "草莓店", "order": _sample_order()},
+            {"shop_name": "乐宝零食店", "order": _sample_order()},
             "确认写入飞书",
             "已写入飞书",
             "写入成功",
@@ -419,7 +419,7 @@ def test_main_window_saves_history_edit_in_place_and_keeps_selection(qtbot, tmp_
     )
     history_store.append(
         window._build_history_snapshot(
-            {"shop_name": "草莓店", "order": _alternate_order()},
+            {"shop_name": "欢宝零食店", "order": _alternate_order()},
             "仅存历史",
             "仅存历史",
             "",
@@ -448,7 +448,7 @@ def test_main_window_saves_history_edit_in_place_and_keeps_selection(qtbot, tmp_
         "cost": "23.60",
     }
     assert window.history_page.list_widget.currentRow() == 1
-    assert window.history_page.detail_title_label.text() == "草莓店"
+    assert window.history_page.detail_title_label.text() == "乐宝零食店"
     assert window.history_page.recipient_name_value.toPlainText() == "改后收件人"
     assert window.history_page.product_name_value.toPlainText() == "改后商品"
 
@@ -480,7 +480,7 @@ def test_main_window_resubmits_selected_history_row_in_place(qtbot, tmp_path, mo
 
     selected_row = history_store.append(
         window._build_history_snapshot(
-            {"shop_name": "草莓店", "order": _alternate_order()},
+            {"shop_name": "乐宝零食店", "order": _alternate_order()},
             "确认写入飞书",
             "已写入飞书",
             "写入成功",
@@ -489,7 +489,7 @@ def test_main_window_resubmits_selected_history_row_in_place(qtbot, tmp_path, mo
     )
     other_row = history_store.append(
         window._build_history_snapshot(
-            {"shop_name": "乐宝零食店", "order": _alternate_order()},
+            {"shop_name": "欢宝零食店", "order": _alternate_order()},
             "仅存历史",
             "仅存历史",
             "",
@@ -501,7 +501,7 @@ def test_main_window_resubmits_selected_history_row_in_place(qtbot, tmp_path, mo
     window.history_page.resubmit_button.click()
 
     qtbot.waitUntil(
-        lambda: window.intake_page.capture_widget.status_label.text() == "已写入飞书：草莓店",
+        lambda: window.intake_page.capture_widget.status_label.text() == "已写入飞书：乐宝零食店",
         timeout=3000,
     )
     qtbot.waitUntil(lambda: window._submit_thread is None, timeout=3000)
@@ -550,7 +550,7 @@ def test_main_window_resubmits_history_using_edited_snapshot(qtbot, tmp_path, mo
 
     selected_row = history_store.append(
         window._build_history_snapshot(
-            {"shop_name": "草莓店", "order": _alternate_order()},
+            {"shop_name": "乐宝零食店", "order": _alternate_order()},
             "确认写入飞书",
             "已写入飞书",
             "写入成功",
@@ -574,7 +574,7 @@ def test_main_window_resubmits_history_using_edited_snapshot(qtbot, tmp_path, mo
     window.history_page.resubmit_button.click()
 
     qtbot.waitUntil(
-        lambda: window.intake_page.capture_widget.status_label.text() == "已写入飞书：草莓店",
+        lambda: window.intake_page.capture_widget.status_label.text() == "已写入飞书：乐宝零食店",
         timeout=3000,
     )
     qtbot.waitUntil(lambda: window._submit_thread is None, timeout=3000)
@@ -623,7 +623,7 @@ def test_main_window_auto_persists_manual_products_when_saving_history(qtbot, tm
     qtbot.addWidget(window)
 
     window.intake_page.show_order(_sample_order())
-    window.intake_page.shop_selector.setCurrentText("草莓店")
+    window.intake_page.shop_selector.setCurrentText("乐宝零食店")
     window.intake_page.order_card_widget.procurement_product_2_combo.setEditText("补录商品")
     window.intake_page.order_card_widget.procurement_cost_2_edit.setText("7.50")
 

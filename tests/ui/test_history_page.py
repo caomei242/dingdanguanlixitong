@@ -82,7 +82,7 @@ def test_history_page_renders_list_and_loads_first_then_current_item(qtbot):
     rows = [
         _row(
             "record-1",
-            "草莓店",
+            "乐宝零食店",
             "确认写入飞书",
             "已写入飞书",
             "6952003434324366473",
@@ -92,7 +92,7 @@ def test_history_page_renders_list_and_loads_first_then_current_item(qtbot):
         ),
         _row(
             "record-2",
-            "乐宝零食店",
+            "欢宝零食店",
             "仅存历史",
             "写入失败",
             "6952003434324366111",
@@ -106,7 +106,7 @@ def test_history_page_renders_list_and_loads_first_then_current_item(qtbot):
 
     assert page.list_widget.count() == 2
     assert page.list_widget.currentRow() == 0
-    assert page.detail_title_label.text() == "草莓店"
+    assert page.detail_title_label.text() == "乐宝零食店"
     assert page.detail_subtitle_label.text() == "确认写入飞书 · 已写入飞书"
     assert page.order_id_value.toPlainText() == "6952003434324366473"
     assert page.recipient_name_value.toPlainText() == "何女士"
@@ -115,7 +115,7 @@ def test_history_page_renders_list_and_loads_first_then_current_item(qtbot):
 
     page.list_widget.setCurrentRow(1)
 
-    assert page.detail_title_label.text() == "乐宝零食店"
+    assert page.detail_title_label.text() == "欢宝零食店"
     assert page.detail_subtitle_label.text() == "仅存历史 · 写入失败"
     assert page.order_id_value.toPlainText() == "6952003434324366111"
     assert page.recipient_name_value.toPlainText() == "田宝山"
@@ -138,7 +138,7 @@ def test_history_page_keeps_selected_record_when_rows_refresh(qtbot):
     rows = [
         _row(
             "record-1",
-            "草莓店",
+            "乐宝零食店",
             "确认写入飞书",
             "已写入飞书",
             "6952003434324366473",
@@ -148,7 +148,7 @@ def test_history_page_keeps_selected_record_when_rows_refresh(qtbot):
         ),
         _row(
             "record-2",
-            "乐宝零食店",
+            "欢宝零食店",
             "仅存历史",
             "写入失败",
             "6952003434324366111",
@@ -168,7 +168,7 @@ def test_history_page_keeps_selected_record_when_rows_refresh(qtbot):
     page.load_rows(refreshed_rows)
 
     assert page.list_widget.currentRow() == 1
-    assert page.detail_title_label.text() == "乐宝零食店"
+    assert page.detail_title_label.text() == "欢宝零食店"
     assert page.detail_subtitle_label.text() == "仅存历史 · 写入失败"
 
 
@@ -179,7 +179,7 @@ def test_history_page_falls_back_to_adjacent_record_when_selected_row_is_deleted
     rows = [
         _row(
             "record-1",
-            "草莓店",
+            "乐宝零食店",
             "确认写入飞书",
             "已写入飞书",
             "6952003434324366473",
@@ -189,7 +189,7 @@ def test_history_page_falls_back_to_adjacent_record_when_selected_row_is_deleted
         ),
         _row(
             "record-2",
-            "乐宝零食店",
+            "欢宝零食店",
             "仅存历史",
             "写入失败",
             "6952003434324366111",
@@ -199,7 +199,7 @@ def test_history_page_falls_back_to_adjacent_record_when_selected_row_is_deleted
         ),
         _row(
             "record-3",
-            "橙子店",
+            "灵宝零食店",
             "仅存历史",
             "已写入飞书",
             "6952003434324366999",
@@ -215,7 +215,7 @@ def test_history_page_falls_back_to_adjacent_record_when_selected_row_is_deleted
     page.load_rows([rows[0], rows[2]])
 
     assert page.list_widget.currentRow() == 1
-    assert page.detail_title_label.text() == "橙子店"
+    assert page.detail_title_label.text() == "灵宝零食店"
     assert page.detail_subtitle_label.text() == "仅存历史 · 已写入飞书"
 
 
@@ -226,7 +226,7 @@ def test_history_page_emits_record_ids_for_actions(qtbot):
         [
             _row(
                 "record-1",
-                "草莓店",
+                "乐宝零食店",
                 "确认写入飞书",
                 "已写入飞书",
                 "6952003434324366473",
@@ -236,7 +236,7 @@ def test_history_page_emits_record_ids_for_actions(qtbot):
             ),
             _row(
                 "record-2",
-                "乐宝零食店",
+                "欢宝零食店",
                 "仅存历史",
                 "写入失败",
                 "6952003434324366111",
@@ -268,7 +268,7 @@ def test_history_page_directly_edits_fields_and_emits_save_patch(qtbot):
         [
             _row(
                 "record-1",
-                "草莓店",
+                "乐宝零食店",
                 "确认写入飞书",
                 "已写入飞书",
                 "6952003434324366473",
@@ -327,7 +327,7 @@ def test_history_page_save_button_stays_near_detail_header(qtbot):
         [
             _row(
                 "record-1",
-                "草莓店",
+                "乐宝零食店",
                 "确认写入飞书",
                 "已写入飞书",
                 "6952003434324366473",

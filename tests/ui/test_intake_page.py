@@ -35,8 +35,8 @@ def test_intake_page_shows_order_card_after_pipeline_result(qtbot):
     )
 
     page.show_order(order)
-    page.shop_selector.addItems(["草莓店"])
-    page.shop_selector.setCurrentText("草莓店")
+    page.shop_selector.addItems(["乐宝零食店"])
+    page.shop_selector.setCurrentText("乐宝零食店")
     page.submit_button.click()
 
     assert page.order_card_widget.order_id_edit.text() == "6952003434324366473"
@@ -47,7 +47,7 @@ def test_intake_page_shows_order_card_after_pipeline_result(qtbot):
     assert page.order_card_widget.delivery_note_edit.toPlainText() == "请电话送货上门谢谢【3612】"
     assert isinstance(page.address_widget, AddressExtractorWidget)
     assert page.submit_button.text() == "确认写入飞书"
-    assert submitted_orders == [{"shop_name": "草莓店", "order": order}]
+    assert submitted_orders == [{"shop_name": "乐宝零食店", "order": order}]
 
 
 def test_screenshot_input_widget_reads_image_from_clipboard(qtbot):
@@ -142,8 +142,8 @@ def test_intake_page_emits_modified_order_for_history_only(qtbot):
     )
     qtbot.addWidget(page)
 
-    page.shop_selector.addItems(["草莓店"])
-    page.shop_selector.setCurrentText("草莓店")
+    page.shop_selector.addItems(["乐宝零食店"])
+    page.shop_selector.setCurrentText("乐宝零食店")
     page.show_order(
         ParsedOrder(
             order_id="6952003434324366473",
@@ -164,7 +164,7 @@ def test_intake_page_emits_modified_order_for_history_only(qtbot):
 
     page.save_history_button.click()
 
-    assert saved_payloads[0]["shop_name"] == "草莓店"
+    assert saved_payloads[0]["shop_name"] == "乐宝零食店"
     assert saved_payloads[0]["order"].product_name == "手动改过的商品名"
 
 
@@ -268,8 +268,8 @@ def test_intake_page_emits_procurement_slots_with_order_payload(qtbot):
     qtbot.addWidget(page)
 
     page.set_product_presets([{"name": "澳洲婴儿水", "default_cost": "18.50"}])
-    page.shop_selector.addItems(["草莓店"])
-    page.shop_selector.setCurrentText("草莓店")
+    page.shop_selector.addItems(["乐宝零食店"])
+    page.shop_selector.setCurrentText("乐宝零食店")
     page.show_order(
         ParsedOrder(
             order_id="6952003434324366473",

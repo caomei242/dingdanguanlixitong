@@ -20,6 +20,15 @@ from PySide6.QtWidgets import (
 
 class SettingsPage(QWidget):
     save_requested = Signal(object)
+    DEFAULT_SHOPS = (
+        "乐宝零食店",
+        "欢宝零食店",
+        "灵宝零食店",
+        "君宝零食店",
+        "珍宝零食店",
+        "悦宝零食店",
+    )
+    DEFAULT_SELECTED_SHOP = "乐宝零食店"
     RECOMMENDED_FIELD_MAPPING = {
         "店铺": "店铺",
         "备注": "备注",
@@ -122,7 +131,9 @@ class SettingsPage(QWidget):
         self._on_resolve_shop_link = on_resolve_shop_link
         self.ocr_mcp_command_edit.setText("uvx minimax-coding-plan-mcp -y")
         self._product_presets: list[dict[str, str]] = []
-        self._shops: list[dict[str, str]] = []
+        self._shops: list[dict[str, str]] = [
+            {"name": name} for name in self.DEFAULT_SHOPS
+        ]
         self.mapping_edits: dict[str, QLineEdit] = {
             key: QLineEdit() for key in self.FIELD_MAPPING_KEYS
         }
@@ -218,6 +229,7 @@ class SettingsPage(QWidget):
         self.product_selector.currentIndexChanged.connect(self._load_selected_product)
         self.shop_selector.currentIndexChanged.connect(self._load_selected_shop)
         self._load_field_mapping({})
+        self._refresh_shop_selector(self.DEFAULT_SELECTED_SHOP)
 
     def to_payload(self) -> dict:
         return {
@@ -237,7 +249,7 @@ class SettingsPage(QWidget):
             "product_presets": [dict(item) for item in self._product_presets],
             "global_product_library": [dict(item) for item in self._product_presets],
             "shops": [{"name": shop["name"]} for shop in self._shops],
-            "selected_shop_name": self.shop_selector.currentText().strip(),
+            "selected_shop_name": self.shop_selector.currentText().strip() or self.DEFAULT_SELECTED_SHOP,
         }
 
     def load_payload(self, payload: dict) -> None:
@@ -287,14 +299,17 @@ class SettingsPage(QWidget):
             self._clean_text(payload.get("feishu_table_name"))
             or self._clean_text(legacy_shop.get("table_name"))
         )
-        self._shops = [
+        loaded_shops = [
             {"name": self._clean_text(shop.get("name"))}
             for shop in payload.get("shops", [])
             if isinstance(shop, dict) and self._clean_text(shop.get("name"))
         ]
+        self._shops = loaded_shops or [{"name": name} for name in self.DEFAULT_SHOPS]
         self._load_field_mapping(payload.get("feishu_field_mapping") or legacy_shop.get("field_mapping"))
         self._refresh_product_selector()
-        self._refresh_shop_selector(self._clean_text(payload.get("selected_shop_name")))
+        self._refresh_shop_selector(
+            self._clean_text(payload.get("selected_shop_name")) or self.DEFAULT_SELECTED_SHOP
+        )
 
     def _emit_save_requested(self) -> None:
         if self.shop_wiki_url_edit.text().strip() and self._on_resolve_shop_link is not None:
@@ -385,10 +400,13 @@ class SettingsPage(QWidget):
         self.shop_selector.blockSignals(True)
         self.shop_selector.clear()
         self.shop_selector.addItems([shop["name"] for shop in self._shops])
-        if selected_name:
-            index = self.shop_selector.findText(selected_name)
+        target = selected_name or self.DEFAULT_SELECTED_SHOP
+        if target:
+            index = self.shop_selector.findText(target)
             if index >= 0:
                 self.shop_selector.setCurrentIndex(index)
+            elif self.shop_selector.count() > 0:
+                self.shop_selector.setCurrentIndex(0)
         self.shop_selector.blockSignals(False)
         self._load_selected_shop()
 

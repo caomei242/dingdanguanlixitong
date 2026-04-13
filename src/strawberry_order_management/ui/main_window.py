@@ -127,7 +127,7 @@ class MainWindow(QMainWindow):
         if self._config_store is not None:
             payload = self._config_store.load()
             self.settings_page.load_payload(payload)
-            self._sync_shop_selector(payload)
+        self._sync_shop_selector(self.settings_page.to_payload())
         if self._history_store is not None:
             self._reload_history_page()
 

@@ -27,7 +27,7 @@ def test_settings_page_load_payload_preserves_global_product_library_and_total_t
             },
             "shops": [
                 {
-                    "name": "草莓店",
+                    "name": "乐宝零食店",
                     "wiki_url": "https://my.feishu.cn/wiki/QTXMwCDpQi9n6VkfDxJc5mNTnjh?table=tbl_xxx",
                     "app_token": "app_token_1",
                     "table_id": "tbl_xxx",
@@ -52,14 +52,14 @@ def test_settings_page_load_payload_preserves_global_product_library_and_total_t
                     },
                 }
             ],
-            "selected_shop_name": "草莓店",
+            "selected_shop_name": "乐宝零食店",
         }
     )
 
     assert page.product_selector.count() == 2
     assert page.product_name_edit.text() == "澳大利亚进口婴儿水"
     assert page.product_default_cost_edit.text() == "12.50"
-    assert page.shop_selector.currentText() == "草莓店"
+    assert page.shop_selector.currentText() == "乐宝零食店"
     assert page.shop_wiki_url_edit.text() == "https://my.feishu.cn/wiki/QTXMwCDpQi9n6VkfDxJc5mNTnjh?table=tbl_total"
     assert page.shop_app_token_edit.text() == "app_token_total"
     assert page.shop_table_id_edit.text() == "tbl_total"
@@ -99,7 +99,7 @@ def test_settings_page_to_payload_persists_global_product_library_and_total_tabl
     page.shop_table_id_edit.setText("tbl_total")
     page.shop_table_name_edit.setText("订单总表")
     page.shop_mapping_edits["shop_name"].setText("店铺列")
-    page.shop_name_edit.setText("草莓店")
+    page.shop_name_edit.setText("乐宝零食店")
     page.shop_mapping_edits["remark"].setText("备注列")
     page.shop_mapping_edits["order_date"].setText("订单日期列")
     page.shop_mapping_edits["order_time"].setText("下单时间列")
@@ -129,10 +129,13 @@ def test_settings_page_to_payload_persists_global_product_library_and_total_tabl
     assert payload["feishu_table_id"] == "tbl_total"
     assert payload["feishu_table_name"] == "订单总表"
     assert payload["feishu_field_mapping"]["店铺"] == "店铺列"
-    assert payload["shops"] == [
-        {
-            "name": "草莓店",
-        }
+    assert [shop["name"] for shop in payload["shops"]] == [
+        "乐宝零食店",
+        "欢宝零食店",
+        "灵宝零食店",
+        "君宝零食店",
+        "珍宝零食店",
+        "悦宝零食店",
     ]
 
 
@@ -154,7 +157,7 @@ def test_settings_page_collects_api_configuration(qtbot):
     page.shop_app_token_edit.setText("app_token_1")
     page.shop_table_id_edit.setText("tbl_xxx")
     page.shop_table_name_edit.setText("订单总表")
-    page.shop_name_edit.setText("草莓店")
+    page.shop_name_edit.setText("乐宝零食店")
     page.save_shop_button.click()
 
     payload = page.to_payload()
@@ -171,12 +174,15 @@ def test_settings_page_collects_api_configuration(qtbot):
     assert payload["feishu_table_app_token"] == "app_token_1"
     assert payload["feishu_table_id"] == "tbl_xxx"
     assert payload["feishu_table_name"] == "订单总表"
-    assert payload["shops"] == [
-        {
-            "name": "草莓店",
-        }
+    assert [shop["name"] for shop in payload["shops"]] == [
+        "乐宝零食店",
+        "欢宝零食店",
+        "灵宝零食店",
+        "君宝零食店",
+        "珍宝零食店",
+        "悦宝零食店",
     ]
-    assert payload["selected_shop_name"] == "草莓店"
+    assert payload["selected_shop_name"] == "乐宝零食店"
 
 
 def test_settings_page_load_payload_and_save_requested(qtbot):
@@ -196,8 +202,8 @@ def test_settings_page_load_payload_and_save_requested(qtbot):
         "feishu_table_app_token": " app_token_1 ",
         "feishu_table_id": " tbl_xxx ",
         "feishu_table_name": " 订单总表 ",
-        "shops": [{"name": "草莓店"}],
-        "selected_shop_name": "草莓店",
+        "shops": [{"name": "乐宝零食店"}],
+        "selected_shop_name": "乐宝零食店",
     }
 
     emitted = []
@@ -215,7 +221,7 @@ def test_settings_page_load_payload_and_save_requested(qtbot):
     assert page.feishu_app_id_edit.text() == "cli_xxx"
     assert page.feishu_app_secret_edit.text() == "secret_xxx"
     assert page.shop_selector.count() == 1
-    assert page.shop_selector.currentText() == "草莓店"
+    assert page.shop_selector.currentText() == "乐宝零食店"
     assert page.shop_wiki_url_edit.text() == "https://my.feishu.cn/wiki/QTXMwCDpQi9n6VkfDxJc5mNTnjh?table=tbl_xxx"
     assert page.shop_app_token_edit.text() == "app_token_1"
     assert page.shop_table_id_edit.text() == "tbl_xxx"
@@ -254,7 +260,14 @@ def test_settings_page_resolves_total_table_tokens_from_wiki_url(qtbot):
     assert page.status_label.text() == "已从飞书链接解析表格信息"
     assert page.to_payload()["feishu_table_app_token"] == "basc1234567890"
     assert page.to_payload()["feishu_table_id"] == "tblWZDrx4gqXpc5M"
-    assert page.to_payload()["shops"] == [{"name": "乐宝零食店"}]
+    assert [shop["name"] for shop in page.to_payload()["shops"]] == [
+        "乐宝零食店",
+        "欢宝零食店",
+        "灵宝零食店",
+        "君宝零食店",
+        "珍宝零食店",
+        "悦宝零食店",
+    ]
 
 
 def test_settings_page_shows_error_when_wiki_resolution_fails(qtbot):
@@ -272,7 +285,8 @@ def test_settings_page_shows_error_when_wiki_resolution_fails(qtbot):
     page.save_button.click()
 
     assert page.status_label.text() == "请先填写飞书 App ID 和 App Secret"
-    assert page.shop_selector.count() == 0
+    assert page.shop_selector.count() == 6
+    assert page.shop_selector.currentText() == "乐宝零食店"
 
 
 def test_history_page_load_rows_shows_summary_and_items(qtbot):
@@ -282,13 +296,13 @@ def test_history_page_load_rows_shows_summary_and_items(qtbot):
     page.load_rows(
         [
             {
-                "shop_name": "草莓店",
+                "shop_name": "乐宝零食店",
                 "recipient_name": "何女士",
                 "status": "已写入",
                 "order_id": "6952003434324366473",
             },
             {
-                "shop_name": "蓝莓店",
+                "shop_name": "欢宝零食店",
                 "recipient_name": "彭柏棋",
                 "status": "待重试",
                 "order_id": "6952003434324366474",
@@ -298,8 +312,8 @@ def test_history_page_load_rows_shows_summary_and_items(qtbot):
 
     assert page.summary_label.text() == "共 2 条记录"
     assert page.list_widget.count() == 2
-    assert page.list_widget.item(0).text() == "草莓店 · 何女士 · 已写入 · 6952003434324366473"
-    assert page.list_widget.item(1).text() == "蓝莓店 · 彭柏棋 · 待重试 · 6952003434324366474"
+    assert page.list_widget.item(0).text() == "乐宝零食店 · 何女士 · 已写入 · 6952003434324366473"
+    assert page.list_widget.item(1).text() == "欢宝零食店 · 彭柏棋 · 待重试 · 6952003434324366474"
 
 
 def test_history_page_renders_none_as_dash(qtbot):
@@ -377,6 +391,24 @@ def test_settings_page_prefills_recommended_mapping_for_new_shop(qtbot):
     assert page.shop_mapping_edits["purchase_item_1"].text() == ""
 
 
+def test_settings_page_uses_default_shop_presets_and_default_selection(qtbot):
+    page = SettingsPage()
+    qtbot.addWidget(page)
+
+    payload = page.to_payload()
+
+    assert [shop["name"] for shop in payload["shops"]] == [
+        "乐宝零食店",
+        "欢宝零食店",
+        "灵宝零食店",
+        "君宝零食店",
+        "珍宝零食店",
+        "悦宝零食店",
+    ]
+    assert payload["selected_shop_name"] == "乐宝零食店"
+    assert "草莓店" not in [shop["name"] for shop in payload["shops"]]
+
+
 def test_main_window_navigates_between_three_pages(qtbot):
     window = MainWindow()
     qtbot.addWidget(window)
@@ -424,13 +456,13 @@ def test_main_window_loads_initial_settings_from_config_store(qtbot):
             "helper_api_key": "minimax-secret",
             "shops": [
                 {
-                    "name": "草莓店",
+                    "name": "乐宝零食店",
                     "app_token": "app_token_1",
                     "table_id": "tbl_1",
                     "table_name": "草莓订单表",
                 }
             ],
-            "selected_shop_name": "草莓店",
+            "selected_shop_name": "乐宝零食店",
         }
     )
     window = MainWindow(config_store=store)
@@ -438,7 +470,22 @@ def test_main_window_loads_initial_settings_from_config_store(qtbot):
 
     assert window.settings_page.helper_base_url_edit.text() == "https://api.minimaxi.com/v1"
     assert window.settings_page.helper_api_key_edit.text() == "minimax-secret"
-    assert window.intake_page.shop_selector.currentText() == "草莓店"
+    assert window.intake_page.shop_selector.currentText() == "乐宝零食店"
+
+
+def test_main_window_uses_default_shop_presets_when_config_is_empty(qtbot):
+    window = MainWindow(config_store=MemoryConfigStore({}))
+    qtbot.addWidget(window)
+
+    assert [window.intake_page.shop_selector.itemText(index) for index in range(window.intake_page.shop_selector.count())] == [
+        "乐宝零食店",
+        "欢宝零食店",
+        "灵宝零食店",
+        "君宝零食店",
+        "珍宝零食店",
+        "悦宝零食店",
+    ]
+    assert window.intake_page.shop_selector.currentText() == "乐宝零食店"
 
 
 def test_main_window_saves_settings_into_config_store(qtbot):
@@ -490,13 +537,13 @@ def test_main_window_uses_current_settings_to_process_images(qtbot):
                 "helper_api_key": "helper-secret",
                 "shops": [
                     {
-                        "name": "草莓店",
+                        "name": "乐宝零食店",
                         "app_token": "app_token_1",
                         "table_id": "tbl_1",
                         "table_name": "草莓订单表",
                     }
                 ],
-                "selected_shop_name": "草莓店",
+                "selected_shop_name": "乐宝零食店",
             }
         ),
         order_pipeline_factory=pipeline_factory,

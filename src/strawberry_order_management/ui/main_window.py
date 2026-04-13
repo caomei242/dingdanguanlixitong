@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Optional
 
 from PySide6.QtCore import QObject, QThread, Signal
 from PySide6.QtWidgets import (
@@ -39,7 +40,13 @@ class _SubmitWorker(QObject):
         try:
             result = self._callback(self._task)
         except Exception as exc:
-            self.failed.emit({"message": str(exc), "payload": self._task["payload"]})
+            self.failed.emit(
+                {
+                    "message": str(exc),
+                    "payload": self._task["payload"],
+                    "history_record_id": self._task.get("history_record_id"),
+                }
+            )
             return
         self.finished.emit(result)
 
@@ -123,37 +130,94 @@ class MainWindow(QMainWindow):
 
     def _handle_save_history_request(self, payload: dict) -> None:
         self._sync_products_from_order(payload["order"])
-        self._append_history(payload, "仅存历史")
+        snapshot = self._build_history_snapshot(payload, "仅存历史", "仅存历史")
+        self._save_history_snapshot(snapshot)
         self.intake_page.capture_widget.status_label.setText("已保存到历史")
 
     def _handle_submit_request(self, payload: dict) -> None:
         self._sync_products_from_order(payload["order"])
+        snapshot = self._build_history_snapshot(payload, "确认写入飞书", "写入中")
+        saved_row = self._save_history_snapshot(snapshot)
         try:
             task = self._build_feishu_submission_task(payload)
         except Exception as exc:
             message = str(exc)
             self.intake_page.capture_widget.status_label.setText(message)
-            self._append_history(payload, "写入失败", message)
+            if saved_row is not None:
+                self._update_history_snapshot(
+                    saved_row["record_id"],
+                    {
+                        "status": "写入失败",
+                        "message": message,
+                        "feishu_result": {"error": message},
+                    },
+                )
             return
         self.intake_page.capture_widget.status_label.setText("写入飞书中...")
         self.intake_page.set_submit_in_progress(True)
+        if saved_row is not None:
+            task["history_record_id"] = saved_row["record_id"]
         self._start_submit_job(task)
 
-    def _append_history(self, payload: dict, status: str, message: str = "") -> None:
-        if self._history_store is None:
-            return
+    def _build_history_snapshot(
+        self,
+        payload: dict,
+        sync_source: str,
+        status: str,
+        message: str = "",
+        feishu_result: Optional[dict] = None,
+    ) -> dict:
         order = payload["order"]
         row = {
             "shop_name": payload.get("shop_name") or "-",
-            "order_id": order.order_id,
-            "recipient_name": order.recipient_name,
+            "sync_source": sync_source,
             "status": status,
-            "product_name": order.product_name,
             "message": message,
             "created_at": datetime.now().isoformat(timespec="seconds"),
+            "order_snapshot": {
+                "order_id": order.order_id,
+                "placed_at": order.placed_at,
+                "order_status": order.order_status,
+                "product_name": order.product_name,
+                "quantity": order.quantity,
+                "order_amount": order.order_amount,
+                "income_amount": order.income_amount,
+                "recipient_name": order.recipient_name,
+                "phone_number": order.phone_number,
+                "code": order.code,
+                "address": order.address,
+                "delivery_note": order.delivery_note,
+                "procurement_items": [
+                    {
+                        "product_name": item.product_name,
+                        "quantity": item.quantity,
+                        "cost": item.cost,
+                    }
+                    for item in order.procurement_items
+                ],
+            },
+            "address_snapshot": {
+                "output_one": self.intake_page.address_widget.output_one.toPlainText().strip(),
+                "output_two": self.intake_page.address_widget.output_two.toPlainText().strip(),
+            },
         }
-        self._history_store.append(row)
+        if feishu_result is not None:
+            row["feishu_result"] = feishu_result
+        return row
+
+    def _save_history_snapshot(self, snapshot: dict) -> Optional[dict]:
+        if self._history_store is None:
+            return None
+        row = self._history_store.append(snapshot)
         self.history_page.load_rows(self._history_store.list_items())
+        return row
+
+    def _update_history_snapshot(self, record_id: str, patch: dict) -> Optional[dict]:
+        if self._history_store is None:
+            return None
+        row = self._history_store.update(record_id, patch)
+        self.history_page.load_rows(self._history_store.list_items())
+        return row
 
     def _sync_shop_selector(self, payload: dict) -> None:
         product_presets = payload.get("product_presets")
@@ -264,7 +328,7 @@ class MainWindow(QMainWindow):
         }
 
     @staticmethod
-    def _find_shop(settings_payload: dict, shop_name: str) -> dict | None:
+    def _find_shop(settings_payload: dict, shop_name: str) -> Optional[dict]:
         for shop in settings_payload.get("shops", []):
             if not isinstance(shop, dict):
                 continue
@@ -301,22 +365,58 @@ class MainWindow(QMainWindow):
             "payload": task["payload"],
             "shop_name": task["shop_name"],
             "response": response,
+            "history_record_id": task.get("history_record_id"),
         }
 
     def _handle_submit_success(self, result: dict) -> None:
         payload = result["payload"]
         shop_name = result["shop_name"]
+        history_record_id = result.get("history_record_id")
         self.intake_page.set_submit_in_progress(False)
         self.intake_page.capture_widget.status_label.setText(f"已写入飞书：{shop_name}")
-        self._append_history(payload, "已写入飞书")
+        if history_record_id is not None:
+            self._update_history_snapshot(
+                history_record_id,
+                {
+                    "status": "已写入飞书",
+                    "message": "写入成功",
+                    "feishu_result": result["response"],
+                },
+            )
+        else:
+            snapshot = self._build_history_snapshot(
+                payload,
+                "确认写入飞书",
+                "已写入飞书",
+                "写入成功",
+                result["response"],
+            )
+            self._save_history_snapshot(snapshot)
 
     def _handle_submit_failure(self, failure: dict) -> None:
         message = str(failure.get("message", "")).strip() or "飞书写入失败"
         payload = failure.get("payload")
+        history_record_id = failure.get("history_record_id")
         self.intake_page.set_submit_in_progress(False)
         self.intake_page.capture_widget.status_label.setText(message)
-        if payload is not None:
-            self._append_history(payload, "写入失败", message)
+        if history_record_id is not None:
+            self._update_history_snapshot(
+                history_record_id,
+                {
+                    "status": "写入失败",
+                    "message": message,
+                    "feishu_result": {"error": message},
+                },
+            )
+        elif payload is not None:
+            snapshot = self._build_history_snapshot(
+                payload,
+                "确认写入飞书",
+                "写入失败",
+                message,
+                {"error": message},
+            )
+            self._save_history_snapshot(snapshot)
 
     def _clear_submit_refs(self) -> None:
         self._submit_thread = None

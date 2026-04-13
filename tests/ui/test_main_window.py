@@ -1,4 +1,5 @@
 import time
+from typing import Optional
 
 from strawberry_order_management.config import ConfigStore
 from strawberry_order_management.history import HistoryStore
@@ -67,6 +68,44 @@ def _settings_payload() -> dict:
     }
 
 
+def _assert_rich_history_snapshot(
+    record: dict,
+    order: ParsedOrder,
+    expected_sync_source: str,
+    expected_status: str,
+    expected_message: str,
+    expected_procurement_items: Optional[dict[int, tuple[str, str, str]]] = None,
+) -> None:
+    assert record["shop_name"] == "草莓店"
+    assert record["sync_source"] == expected_sync_source
+    assert record["status"] == expected_status
+    assert record["message"] == expected_message
+    assert isinstance(record["created_at"], str) and record["created_at"]
+
+    order_snapshot = record["order_snapshot"]
+    assert order_snapshot["order_id"] == order.order_id
+    assert order_snapshot["placed_at"] == order.placed_at
+    assert order_snapshot["order_status"] == order.order_status
+    assert order_snapshot["product_name"] == order.product_name
+    assert order_snapshot["quantity"] == order.quantity
+    assert order_snapshot["order_amount"] == order.order_amount
+    assert order_snapshot["income_amount"] == order.income_amount
+    assert order_snapshot["recipient_name"] == order.recipient_name
+    assert order_snapshot["phone_number"] == order.phone_number
+    assert order_snapshot["code"] == order.code
+    assert order_snapshot["address"] == order.address
+    assert order_snapshot["delivery_note"] == order.delivery_note
+    if expected_procurement_items is not None:
+        for index, (product_name, quantity, cost) in expected_procurement_items.items():
+            assert order_snapshot["procurement_items"][index]["product_name"] == product_name
+            assert order_snapshot["procurement_items"][index]["quantity"] == quantity
+            assert order_snapshot["procurement_items"][index]["cost"] == cost
+
+    address_snapshot = record["address_snapshot"]
+    assert address_snapshot["output_one"].strip()
+    assert address_snapshot["output_two"].strip()
+
+
 def test_main_window_submits_order_to_selected_shop_sheet(qtbot, tmp_path, monkeypatch):
     config_store = ConfigStore(tmp_path / "config.json")
     history_store = HistoryStore(tmp_path / "history.json")
@@ -118,8 +157,19 @@ def test_main_window_submits_order_to_selected_shop_sheet(qtbot, tmp_path, monke
     assert captured["create"][1]["采购数量1"] == "2"
     assert captured["create"][1]["采购成本1"] == "19.00"
     assert "价格" not in captured["create"][1]
-    assert history_store.list_items()[0]["status"] == "已写入飞书"
-    assert history_store.list_items()[0]["shop_name"] == "草莓店"
+    assert len(history_store.list_items()) == 1
+    record = history_store.list_items()[0]
+    _assert_rich_history_snapshot(
+        record,
+        _sample_order(),
+        "确认写入飞书",
+        "已写入飞书",
+        "写入成功",
+        {0: ("澳洲婴儿水", "2", "19.00")},
+    )
+    assert record["status"] == "已写入飞书"
+    assert record["sync_source"] == "确认写入飞书"
+    assert record["feishu_result"] == {"data": {"record_id": "rec_123"}}
     assert window.intake_page.capture_widget.status_label.text() == "已写入飞书：草莓店"
     assert any(
         item["name"] == "澳洲婴儿水" and item["default_cost"] == "19.00"
@@ -157,8 +207,18 @@ def test_main_window_records_failure_when_feishu_submit_errors(qtbot, tmp_path, 
         timeout=3000,
     )
 
-    assert history_store.list_items()[0]["status"] == "写入失败"
-    assert history_store.list_items()[0]["shop_name"] == "草莓店"
+    assert len(history_store.list_items()) == 1
+    record = history_store.list_items()[0]
+    _assert_rich_history_snapshot(
+        record,
+        _sample_order(),
+        "确认写入飞书",
+        "写入失败",
+        "飞书写入失败：无权限编辑该表",
+    )
+    assert record["status"] == "写入失败"
+    assert record["sync_source"] == "确认写入飞书"
+    assert record["message"] == "飞书写入失败：无权限编辑该表"
     assert window.intake_page.capture_widget.status_label.text() == "飞书写入失败：无权限编辑该表"
 
 
@@ -198,6 +258,7 @@ def test_main_window_submits_to_feishu_in_background(qtbot, tmp_path, monkeypatc
         timeout=3000,
     )
     qtbot.waitUntil(lambda: window._submit_thread is None, timeout=3000)
+    assert len(history_store.list_items()) == 1
     assert history_store.list_items()[0]["status"] == "已写入飞书"
 
 
@@ -237,6 +298,19 @@ def test_main_window_auto_persists_manual_products_when_saving_history(qtbot, tm
 
     window.intake_page.save_history_button.click()
 
+    assert len(history_store.list_items()) == 1
+    record = history_store.list_items()[0]
+    _assert_rich_history_snapshot(
+        record,
+        _sample_order(),
+        "仅存历史",
+        "仅存历史",
+        "",
+        {1: ("补录商品", "1", "7.50")},
+    )
+    assert record["status"] == "仅存历史"
+    assert record["sync_source"] == "仅存历史"
+    assert record["message"] == ""
     assert any(
         item["name"] == "补录商品" and item["default_cost"] == "7.50"
         for item in config_store.load()["product_presets"]

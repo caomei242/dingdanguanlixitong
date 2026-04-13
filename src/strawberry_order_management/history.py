@@ -6,6 +6,22 @@ from pathlib import Path
 from typing import Any
 
 
+_ORDER_SNAPSHOT_KEYS = {
+    "order_id",
+    "placed_at",
+    "order_status",
+    "product_name",
+    "quantity",
+    "order_amount",
+    "income_amount",
+    "recipient_name",
+    "phone_number",
+    "code",
+    "address",
+    "delivery_note",
+}
+
+
 class HistoryStore:
     def __init__(self, path: Path):
         self.path = path
@@ -28,7 +44,9 @@ class HistoryStore:
 
     def append(self, payload: dict[str, Any]) -> dict[str, Any]:
         rows = self._load_rows()
-        row = {**payload, "record_id": str(uuid.uuid4())}
+        row = {**payload}
+        row.pop("record_id", None)
+        row["record_id"] = str(uuid.uuid4())
         rows.insert(0, row)
         self._save_rows(rows)
         return row
@@ -43,7 +61,8 @@ class HistoryStore:
         rows = self._load_rows()
         for row in rows:
             if row.get("record_id") == record_id:
-                row.update(patch)
+                patch_without_record_id = {key: value for key, value in patch.items() if key != "record_id"}
+                row.update(patch_without_record_id)
                 self._save_rows(rows)
                 return self._normalize_row(row)
         raise KeyError(record_id)
@@ -68,17 +87,7 @@ class HistoryStore:
             order_snapshot = {
                 key: value
                 for key, value in normalized.items()
-                if key
-                not in {
-                    "record_id",
-                    "order_snapshot",
-                    "address_snapshot",
-                    "sync_source",
-                    "output_one",
-                    "output_two",
-                    "output_three",
-                    "address",
-                }
+                if key in _ORDER_SNAPSHOT_KEYS and value is not None
             }
         else:
             order_snapshot = dict(order_snapshot)

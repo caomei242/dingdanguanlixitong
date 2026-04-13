@@ -7,6 +7,7 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QFormLayout,
     QFrame,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QListWidget,
@@ -54,6 +55,20 @@ class HistoryPage(QWidget):
         self.summary_label = QLabel("暂无记录")
         self.summary_label.setObjectName("MutedText")
 
+        self.total_count_card, self.total_count_value = self._build_stat_card("总记录", "0")
+        self.written_count_card, self.written_count_value = self._build_stat_card("已写飞书", "0")
+        self.draft_count_card, self.draft_count_value = self._build_stat_card("仅存历史", "0")
+        self.failed_count_card, self.failed_count_value = self._build_stat_card("写入失败", "0")
+
+        stats_row = QGridLayout()
+        stats_row.setContentsMargins(0, 0, 0, 0)
+        stats_row.setHorizontalSpacing(12)
+        stats_row.setVerticalSpacing(12)
+        stats_row.addWidget(self.total_count_card, 0, 0)
+        stats_row.addWidget(self.written_count_card, 0, 1)
+        stats_row.addWidget(self.draft_count_card, 0, 2)
+        stats_row.addWidget(self.failed_count_card, 0, 3)
+
         self.list_widget = QListWidget()
         self.list_widget.setObjectName("HistoryList")
         self.list_widget.currentItemChanged.connect(self._handle_current_item_changed)
@@ -63,6 +78,9 @@ class HistoryPage(QWidget):
         list_card_layout = QVBoxLayout(list_card)
         list_card_layout.addWidget(self.summary_label)
         list_card_layout.addWidget(self.list_widget, 1)
+
+        self.action_card = QFrame()
+        self.action_card.setObjectName("HistoryActionCard")
 
         self.detail_title_label = QLabel("请选择一条历史记录")
         self.detail_title_label.setObjectName("HistoryDetailTitle")
@@ -171,18 +189,57 @@ class HistoryPage(QWidget):
         action_row.addWidget(self.save_button)
         action_row.addWidget(self.cancel_button)
         action_row.addStretch(1)
-        action_row.addWidget(self.delete_button)
-        action_row.addWidget(self.resubmit_button)
+
+        action_stack = QVBoxLayout(self.action_card)
+        action_stack.setContentsMargins(16, 16, 16, 16)
+        action_stack.setSpacing(12)
+        action_title = QLabel("快捷操作")
+        action_title.setObjectName("SectionTitle")
+        action_hint = QLabel("把当前选中记录直接编辑、删除或重新写入飞书")
+        action_hint.setObjectName("MutedText")
+        primary_action_row = QHBoxLayout()
+        primary_action_row.addWidget(self.edit_button)
+        primary_action_row.addWidget(self.resubmit_button)
+        secondary_action_row = QHBoxLayout()
+        secondary_action_row.addWidget(self.save_button)
+        secondary_action_row.addWidget(self.cancel_button)
+        secondary_action_row.addWidget(self.delete_button)
+        action_stack.addWidget(action_title)
+        action_stack.addWidget(action_hint)
+        action_stack.addLayout(primary_action_row)
+        action_stack.addLayout(secondary_action_row)
 
         detail_body = QWidget()
         detail_body_layout = QVBoxLayout(detail_body)
         detail_body_layout.addWidget(self.detail_title_label)
         detail_body_layout.addWidget(self.detail_subtitle_label)
-        detail_body_layout.addWidget(order_section)
-        detail_body_layout.addWidget(procurement_section)
-        detail_body_layout.addWidget(address_section)
-        detail_body_layout.addWidget(sync_section)
-        detail_body_layout.addLayout(action_row)
+
+        self.detail_summary_card = QFrame()
+        self.detail_summary_card.setObjectName("HistorySummaryCard")
+        detail_summary_layout = QGridLayout(self.detail_summary_card)
+        detail_summary_layout.setContentsMargins(16, 16, 16, 16)
+        detail_summary_layout.setHorizontalSpacing(12)
+        detail_summary_layout.setVerticalSpacing(12)
+        self.summary_income_card, self.summary_income_value = self._build_summary_value("收入")
+        self.summary_order_amount_card, self.summary_order_amount_value = self._build_summary_value("订单金额")
+        self.summary_product_card, self.summary_product_value = self._build_summary_value("商品")
+        self.summary_procurement_card, self.summary_procurement_value = self._build_summary_value("采购")
+        detail_summary_layout.addWidget(self.summary_income_card, 0, 0)
+        detail_summary_layout.addWidget(self.summary_order_amount_card, 0, 1)
+        detail_summary_layout.addWidget(self.summary_product_card, 0, 2)
+        detail_summary_layout.addWidget(self.summary_procurement_card, 0, 3)
+
+        detail_grid = QGridLayout()
+        detail_grid.setContentsMargins(0, 0, 0, 0)
+        detail_grid.setHorizontalSpacing(14)
+        detail_grid.setVerticalSpacing(14)
+        detail_grid.addWidget(order_section, 0, 0)
+        detail_grid.addWidget(procurement_section, 0, 1)
+        detail_grid.addWidget(address_section, 1, 0)
+        detail_grid.addWidget(sync_section, 1, 1)
+
+        detail_body_layout.addWidget(self.detail_summary_card)
+        detail_body_layout.addLayout(detail_grid)
         detail_body_layout.addStretch(1)
 
         detail_card = QFrame()
@@ -190,11 +247,24 @@ class HistoryPage(QWidget):
         detail_card_layout = QVBoxLayout(detail_card)
         detail_card_layout.addWidget(detail_body)
 
+        left_column = QWidget()
+        left_column_layout = QVBoxLayout(left_column)
+        left_column_layout.setContentsMargins(0, 0, 0, 0)
+        left_column_layout.setSpacing(14)
+        left_column_layout.addWidget(list_card, 1)
+        left_column_layout.addWidget(self.action_card)
+
         content = QWidget()
         content.setObjectName("PageContent")
-        content_layout = QHBoxLayout(content)
-        content_layout.addWidget(list_card, 2)
-        content_layout.addWidget(detail_card, 3)
+        content_layout = QVBoxLayout(content)
+        content_layout.setSpacing(18)
+        content_layout.addLayout(stats_row)
+
+        workspace_row = QHBoxLayout()
+        workspace_row.setSpacing(18)
+        workspace_row.addWidget(left_column, 2)
+        workspace_row.addWidget(detail_card, 3)
+        content_layout.addLayout(workspace_row)
 
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
@@ -237,6 +307,7 @@ class HistoryPage(QWidget):
         previous_record_id, previous_index = self._current_selection()
         self.is_editing = False
         self._rows = [self._normalize_row(row) for row in rows]
+        self._update_stats()
         self.list_widget.blockSignals(True)
         self.list_widget.clear()
         self.summary_label.setText(f"共 {len(self._rows)} 条记录")
@@ -380,6 +451,7 @@ class HistoryPage(QWidget):
         self.sync_source_value.setPlainText(self._display_value(row.get("sync_source")))
         self.status_value.setPlainText(self._display_value(row.get("status")))
         self.sync_message_value.setPlainText(self._build_sync_message(row))
+        self._update_detail_summary(order_snapshot)
         self._set_widgets_read_only(not self.is_editing)
 
     def _show_empty_detail(self) -> None:
@@ -414,6 +486,13 @@ class HistoryPage(QWidget):
             self.sync_message_value,
         ):
             widget.setPlainText("")
+        for widget in (
+            self.summary_income_value,
+            self.summary_order_amount_value,
+            self.summary_product_value,
+            self.summary_procurement_value,
+        ):
+            widget.setText("-")
         self._set_widgets_read_only(True)
 
     def _build_order_snapshot_from_inputs(self, current_snapshot: dict[str, Any]) -> dict[str, Any]:
@@ -575,6 +654,35 @@ class HistoryPage(QWidget):
         self.delete_button.setEnabled(has_row and not self.is_editing)
         self.resubmit_button.setEnabled(has_row and not self.is_editing)
 
+    def _update_stats(self) -> None:
+        total = len(self._rows)
+        written = sum(1 for row in self._rows if self._display_value(row.get("status")) == "已写入飞书")
+        draft = sum(1 for row in self._rows if self._display_value(row.get("status")) == "仅存历史")
+        failed = sum(1 for row in self._rows if self._display_value(row.get("status")) == "写入失败")
+        self.total_count_value.setText(str(total))
+        self.written_count_value.setText(str(written))
+        self.draft_count_value.setText(str(draft))
+        self.failed_count_value.setText(str(failed))
+
+    def _update_detail_summary(self, order_snapshot: dict[str, Any]) -> None:
+        procurement_items = order_snapshot.get("procurement_items") or []
+        first_procurement = next(
+            (item for item in procurement_items if isinstance(item, dict) and self._text_value(item.get("product_name"))),
+            None,
+        )
+        if first_procurement:
+            procurement_text = (
+                f"{self._text_value(first_procurement.get('product_name'))} / "
+                f"{self._text_value(first_procurement.get('quantity')) or '1'} / "
+                f"{self._text_value(first_procurement.get('cost')) or '-'}"
+            )
+        else:
+            procurement_text = "-"
+        self.summary_income_value.setText(self._text_value(order_snapshot.get("income_amount")) or "-")
+        self.summary_order_amount_value.setText(self._text_value(order_snapshot.get("order_amount")) or "-")
+        self.summary_product_value.setText(self._text_value(order_snapshot.get("product_name")) or "-")
+        self.summary_procurement_value.setText(procurement_text)
+
     @staticmethod
     def _build_text_value(minimum_height: int = 44, editable: bool = True) -> QTextEdit:
         widget = QTextEdit()
@@ -594,6 +702,37 @@ class HistoryPage(QWidget):
         layout.addWidget(header)
         layout.addLayout(form_layout)
         return frame
+
+    @staticmethod
+    def _build_stat_card(title: str, value: str) -> tuple[QFrame, QLabel]:
+        card = QFrame()
+        card.setObjectName("HistoryStatCard")
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(16, 14, 16, 14)
+        layout.setSpacing(6)
+        title_label = QLabel(title)
+        title_label.setObjectName("HistoryStatTitle")
+        value_label = QLabel(value)
+        value_label.setObjectName("HistoryStatValue")
+        layout.addWidget(title_label)
+        layout.addWidget(value_label)
+        return card, value_label
+
+    @staticmethod
+    def _build_summary_value(title: str) -> tuple[QFrame, QLabel]:
+        card = QFrame()
+        card.setObjectName("HistoryMiniSummaryCard")
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(14, 12, 14, 12)
+        layout.setSpacing(6)
+        title_label = QLabel(title)
+        title_label.setObjectName("HistoryMiniSummaryTitle")
+        value_label = QLabel("-")
+        value_label.setObjectName("HistoryMiniSummaryValue")
+        value_label.setWordWrap(True)
+        layout.addWidget(title_label)
+        layout.addWidget(value_label)
+        return card, value_label
 
     @staticmethod
     def _text_value(value: Any) -> str:

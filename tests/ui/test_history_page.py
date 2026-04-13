@@ -121,6 +121,11 @@ def test_history_page_renders_list_and_loads_first_then_current_item(qtbot):
     assert page.recipient_name_value.toPlainText() == "田宝山"
     assert page.address_output_one.toPlainText() == "田宝山15784081541山东省德州市"
     assert page.address_output_two.toPlainText() == "请放门口"
+    assert page.total_count_value.text() == "2"
+    assert page.written_count_value.text() == "1"
+    assert page.failed_count_value.text() == "1"
+    assert page.action_card.isHidden() is False
+    assert page.detail_summary_card.isHidden() is False
 
 
 def test_history_page_keeps_selected_record_when_rows_refresh(qtbot):

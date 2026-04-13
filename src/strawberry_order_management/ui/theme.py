@@ -33,7 +33,11 @@ QFrame#IntakeSupportCard {
 }
 
 QFrame#HistoryListCard,
-QFrame#HistoryDetailCard {
+QFrame#HistoryDetailCard,
+QFrame#HistoryActionCard,
+QFrame#HistorySummaryCard,
+QFrame#HistoryStatCard,
+QFrame#HistoryMiniSummaryCard {
     background: rgba(255, 255, 255, 0.98);
     border: 1px solid #dbe4f2;
     border-radius: 22px;
@@ -59,13 +63,13 @@ QListWidget {
 }
 
 QListWidget#HistoryList {
-    min-height: 420px;
+    min-height: 360px;
 }
 
 QListWidget::item {
-    padding: 14px 16px;
-    margin: 4px 0;
-    border-radius: 12px;
+    padding: 16px 18px;
+    margin: 6px 0;
+    border-radius: 16px;
 }
 
 QListWidget::item:selected {
@@ -173,6 +177,26 @@ QTextEdit#HistoryDetailValue {
     color: #17253d;
     background: #fcfdff;
     border: 1px solid #dbe4f4;
+    border-radius: 14px;
+}
+
+QLabel#HistoryStatTitle,
+QLabel#HistoryMiniSummaryTitle {
+    color: #7a89a6;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+QLabel#HistoryStatValue {
+    color: #1b2a45;
+    font-size: 28px;
+    font-weight: 800;
+}
+
+QLabel#HistoryMiniSummaryValue {
+    color: #1b2a45;
+    font-size: 16px;
+    font-weight: 700;
 }
 
 QLabel#OrderFieldLabel {

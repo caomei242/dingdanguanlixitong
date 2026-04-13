@@ -20,6 +20,14 @@ from PySide6.QtWidgets import (
 
 class SettingsPage(QWidget):
     save_requested = Signal(object)
+    RECOMMENDED_FIELD_MAPPING = {
+        "备注": "备注",
+        "订单日期": "订单日期",
+        "下单时间": "下单时间",
+        "订单状态": "订单状态",
+        "收入": "收入",
+        "发货地址": "发货地址",
+    }
     FIELD_MAPPING_KEYS = (
         "备注",
         "订单日期",
@@ -186,6 +194,7 @@ class SettingsPage(QWidget):
         self.remove_shop_button.clicked.connect(self._handle_remove_shop)
         self.product_selector.currentIndexChanged.connect(self._load_selected_product)
         self.shop_selector.currentIndexChanged.connect(self._load_selected_shop)
+        self._load_field_mapping({})
 
     def to_payload(self) -> dict:
         return {
@@ -233,7 +242,9 @@ class SettingsPage(QWidget):
                 "app_token": self._clean_text(shop.get("app_token")),
                 "table_id": self._clean_text(shop.get("table_id")),
                 "table_name": self._clean_text(shop.get("table_name")),
-                "field_mapping": self._clean_field_mapping(shop.get("field_mapping")),
+                "field_mapping": self._mapping_with_recommended_defaults(
+                    self._clean_field_mapping(shop.get("field_mapping"))
+                ),
             }
             for shop in payload.get("shops", [])
             if isinstance(shop, dict) and self._clean_text(shop.get("name"))
@@ -275,8 +286,7 @@ class SettingsPage(QWidget):
         self.shop_app_token_edit.clear()
         self.shop_table_id_edit.clear()
         self.shop_table_name_edit.clear()
-        for edit in self.mapping_edits.values():
-            edit.clear()
+        self._load_field_mapping({})
         self.shop_name_edit.setFocus()
         self.status_label.setText("")
 
@@ -421,9 +431,16 @@ class SettingsPage(QWidget):
         }
 
     def _load_field_mapping(self, mapping: dict | None) -> None:
-        cleaned_mapping = self._clean_field_mapping(mapping)
+        cleaned_mapping = self._mapping_with_recommended_defaults(self._clean_field_mapping(mapping))
         for key, edit in self.mapping_edits.items():
             edit.setText(cleaned_mapping.get(key, ""))
+
+    @classmethod
+    def _mapping_with_recommended_defaults(cls, mapping: dict[str, str]) -> dict[str, str]:
+        merged = dict(mapping)
+        if not any(merged.values()):
+            merged.update(cls.RECOMMENDED_FIELD_MAPPING)
+        return merged
 
     @classmethod
     def _clean_field_mapping(cls, mapping) -> dict[str, str]:

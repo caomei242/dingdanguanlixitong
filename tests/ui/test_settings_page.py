@@ -173,7 +173,14 @@ def test_settings_page_collects_api_configuration(qtbot):
             "app_token": "app_token_1",
             "table_id": "tbl_xxx",
             "table_name": "草莓订单表",
-            "field_mapping": {},
+            "field_mapping": {
+                "备注": "备注",
+                "订单日期": "订单日期",
+                "下单时间": "下单时间",
+                "订单状态": "订单状态",
+                "收入": "收入",
+                "发货地址": "发货地址",
+            },
         }
     ]
     assert payload["selected_shop_name"] == "草莓店"
@@ -265,6 +272,10 @@ def test_settings_page_resolves_shop_tokens_from_wiki_url(qtbot):
             "field_mapping": {
                 "备注": "备注列",
                 "订单日期": "订单日期列",
+                "下单时间": "下单时间",
+                "订单状态": "订单状态",
+                "收入": "收入",
+                "发货地址": "发货地址",
             },
         }
     ]
@@ -371,6 +382,22 @@ def test_settings_page_groups_forms_into_tabs(qtbot):
         "商品库",
         "店铺映射",
     ]
+
+
+def test_settings_page_prefills_recommended_mapping_for_new_shop(qtbot):
+    page = SettingsPage()
+    qtbot.addWidget(page)
+
+    page._handle_add_shop()
+
+    assert page.shop_mapping_edits["remark"].text() == "备注"
+    assert page.shop_mapping_edits["order_date"].text() == "订单日期"
+    assert page.shop_mapping_edits["order_time"].text() == "下单时间"
+    assert page.shop_mapping_edits["order_status"].text() == "订单状态"
+    assert page.shop_mapping_edits["income"].text() == "收入"
+    assert page.shop_mapping_edits["shipping_address"].text() == "发货地址"
+    assert page.shop_mapping_edits["price"].text() == ""
+    assert page.shop_mapping_edits["purchase_item_1"].text() == ""
 
 
 def test_main_window_navigates_between_three_pages(qtbot):

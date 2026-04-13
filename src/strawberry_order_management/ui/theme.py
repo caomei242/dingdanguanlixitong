@@ -45,13 +45,13 @@ QFrame#HistoryMiniSummaryCard {
 
 QLabel#BrandTitle {
     color: #ff4b6e;
-    font-size: 30px;
+    font-size: 24px;
     font-weight: 800;
 }
 
 QLabel#BrandSubtitle {
     color: #7e8aa5;
-    font-size: 13px;
+    font-size: 12px;
 }
 
 QListWidget {
@@ -67,9 +67,9 @@ QListWidget#HistoryList {
 }
 
 QListWidget::item {
-    padding: 16px 18px;
-    margin: 6px 0;
-    border-radius: 16px;
+    padding: 11px 13px;
+    margin: 3px 0;
+    border-radius: 14px;
 }
 
 QListWidget::item:selected {
@@ -82,7 +82,7 @@ QPushButton {
     color: white;
     border: none;
     border-radius: 14px;
-    padding: 10px 16px;
+    padding: 8px 12px;
     font-weight: 600;
 }
 
@@ -118,13 +118,13 @@ QPushButton#DangerActionButton:hover {
 QLineEdit, QTextEdit, QComboBox {
     background: #ffffff;
     border: 1px solid #d9e2f1;
-    border-radius: 12px;
-    padding: 10px 12px;
+    border-radius: 10px;
+    padding: 7px 10px;
     selection-background-color: #4a7cff;
 }
 
 QTextEdit {
-    min-height: 84px;
+    min-height: 60px;
 }
 
 QComboBox {
@@ -132,7 +132,7 @@ QComboBox {
 }
 
 QLabel#SectionTitle {
-    font-size: 18px;
+    font-size: 16px;
     font-weight: 700;
     color: #1f2b44;
 }
@@ -164,7 +164,7 @@ QLabel#MutedText {
 }
 
 QLabel#HistoryDetailTitle {
-    font-size: 22px;
+    font-size: 20px;
     font-weight: 800;
     color: #1c2740;
 }
@@ -189,13 +189,13 @@ QLabel#HistoryMiniSummaryTitle {
 
 QLabel#HistoryStatValue {
     color: #1b2a45;
-    font-size: 28px;
+    font-size: 22px;
     font-weight: 800;
 }
 
 QLabel#HistoryMiniSummaryValue {
     color: #1b2a45;
-    font-size: 16px;
+    font-size: 14px;
     font-weight: 700;
 }
 

@@ -71,7 +71,7 @@ class MainWindow(QMainWindow):
 
         self.nav = QListWidget()
         self.nav.addItems(["订单录入", "历史", "设置"])
-        self.nav.setFixedWidth(180)
+        self.nav.setFixedWidth(132)
 
         self.stack = QStackedWidget()
         self.intake_page = IntakePage(

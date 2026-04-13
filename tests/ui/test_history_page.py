@@ -126,6 +126,8 @@ def test_history_page_renders_list_and_loads_first_then_current_item(qtbot):
     assert page.failed_count_value.text() == "1"
     assert page.action_card.isHidden() is False
     assert page.detail_summary_card.isHidden() is False
+    assert page.order_id_value.minimumHeight() <= 40
+    assert page.address_value.minimumHeight() <= 60
 
 
 def test_history_page_keeps_selected_record_when_rows_refresh(qtbot):

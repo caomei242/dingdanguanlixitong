@@ -473,6 +473,27 @@ def test_settings_page_can_filter_to_enabled_mappings(qtbot):
     assert not page.mapping_row_widgets["平台"].isHidden()
 
 
+def test_settings_page_custom_cost_labels_update_mapping_row_text_and_defaults(qtbot):
+    page = SettingsPage()
+    qtbot.addWidget(page)
+
+    page.custom_cost_label_edits[0].setText("包装费")
+
+    assert page.mapping_row_labels["自定义字段1"].text() == "包装费 映射"
+    assert page.mapping_edits["自定义字段1"].text() == "包装费"
+
+
+def test_settings_page_custom_cost_label_does_not_override_manual_mapping(qtbot):
+    page = SettingsPage()
+    qtbot.addWidget(page)
+
+    page.mapping_edits["自定义字段1"].setText("费用A")
+    page.custom_cost_label_edits[0].setText("包装费")
+
+    assert page.mapping_row_labels["自定义字段1"].text() == "包装费 映射"
+    assert page.mapping_edits["自定义字段1"].text() == "费用A"
+
+
 def test_main_window_navigates_between_three_pages(qtbot):
     window = MainWindow()
     qtbot.addWidget(window)

@@ -188,6 +188,7 @@ class SettingsPage(QWidget):
             key: QLineEdit() for key in self.FIELD_MAPPING_KEYS
         }
         self.mapping_row_widgets: dict[str, QWidget] = {}
+        self.mapping_row_labels: dict[str, QLabel] = {}
         self.shop_mapping_edits: dict[str, QLineEdit] = {
             alias: self.mapping_edits[key]
             for alias, key in self.FIELD_MAPPING_ALIASES.items()
@@ -295,7 +296,11 @@ class SettingsPage(QWidget):
         self.show_enabled_only_checkbox.toggled.connect(self._update_mapping_visibility)
         for edit in self.mapping_edits.values():
             edit.textChanged.connect(self._update_mapping_visibility)
+        for index, edit in enumerate(self.custom_cost_label_edits):
+            edit.textChanged.connect(lambda _text, idx=index: self._handle_custom_cost_label_changed(idx))
         self._load_field_mapping(None, use_defaults=True)
+        for index in range(3):
+            self._handle_custom_cost_label_changed(index)
         self._refresh_shop_selector(self.DEFAULT_SELECTED_SHOP)
 
     def to_payload(self) -> dict:
@@ -383,6 +388,8 @@ class SettingsPage(QWidget):
         if stored_mapping is None:
             stored_mapping = legacy_shop.get("field_mapping")
         self._load_field_mapping(stored_mapping, use_defaults=not bool(stored_mapping))
+        for index in range(3):
+            self._handle_custom_cost_label_changed(index)
         self._clear_missing_field_highlight()
         self._refresh_product_selector()
         self._refresh_shop_selector(
@@ -479,6 +486,20 @@ class SettingsPage(QWidget):
             self.status_label.setText(f"总表缺少字段：{'、'.join(missing_fields)}")
             return
         self.status_label.setText("总表字段检测通过")
+
+    def _handle_custom_cost_label_changed(self, index: int) -> None:
+        key = f"自定义字段{index + 1}"
+        label_widget = self.mapping_row_labels.get(key)
+        if label_widget is None:
+            return
+        display_name = self._custom_mapping_display_name(key)
+        previous_name = label_widget.text().removesuffix(" 映射")
+        label_widget.setText(f"{display_name} 映射")
+        edit = self.mapping_edits[key]
+        current_value = edit.text().strip()
+        if current_value in {key, previous_name}:
+            edit.setText(display_name)
+        self._update_mapping_visibility()
 
     def upsert_product_preset(self, name: str, default_cost: str) -> bool:
         product = {
@@ -579,17 +600,26 @@ class SettingsPage(QWidget):
             has_value = bool(self.mapping_edits[key].text().strip())
             row_widget.setVisible((not enabled_only) or has_value)
 
-    @staticmethod
-    def _build_mapping_row(key: str, edit: QLineEdit) -> QWidget:
+    def _build_mapping_row(self, key: str, edit: QLineEdit) -> QWidget:
         row = QWidget()
         layout = QHBoxLayout(row)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(10)
-        label = QLabel(f"{key} 映射")
+        label = QLabel(f"{self._custom_mapping_display_name(key)} 映射")
         label.setMinimumWidth(96)
+        self.mapping_row_labels[key] = label
         layout.addWidget(label)
         layout.addWidget(edit, 1)
         return row
+
+    def _custom_mapping_display_name(self, key: str) -> str:
+        if key == "自定义字段1":
+            return self.custom_cost_label_edits[0].text().strip() or key
+        if key == "自定义字段2":
+            return self.custom_cost_label_edits[1].text().strip() or key
+        if key == "自定义字段3":
+            return self.custom_cost_label_edits[2].text().strip() or key
+        return key
 
     @staticmethod
     def _build_tab_card(title: str, *layouts) -> QWidget:

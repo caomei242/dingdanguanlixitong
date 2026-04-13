@@ -5,12 +5,14 @@ from functools import partial
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QComboBox,
-    QFormLayout,
+    QFrame,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QPushButton,
     QTextEdit,
+    QVBoxLayout,
     QWidget,
 )
 
@@ -47,22 +49,34 @@ class OrderCardWidget(QWidget):
             self._build_procurement_row(2)
         )
 
-        layout = QFormLayout(self)
-        layout.addRow(self._label("订单编号"), self.order_id_edit)
-        layout.addRow(self._label("下单时间"), self.placed_at_edit)
-        layout.addRow(self._label("订单状态"), self.order_status_edit)
-        layout.addRow(self._label("商品名称"), self.product_name_edit)
-        layout.addRow(self._label("数量"), self.quantity_edit)
-        layout.addRow(self._label("订单金额"), self.order_amount_edit)
-        layout.addRow(self._label("商家收入"), self.income_amount_edit)
-        layout.addRow(self._label("收件人"), self.recipient_name_edit)
-        layout.addRow(self._label("手机号"), self.phone_number_edit)
-        layout.addRow(self._label("编号"), self.code_edit)
-        layout.addRow(self._label("收货地址"), self.address_edit)
-        layout.addRow(self._label("自动备注"), self.delivery_note_edit)
-        layout.addRow(self._label("采购1"), self._procurement_row_widget(0))
-        layout.addRow(self._label("采购2"), self._procurement_row_widget(1))
-        layout.addRow(self._label("采购3"), self._procurement_row_widget(2))
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(12)
+        layout.addWidget(
+            self._build_section_card(
+                "订单概览",
+                "编号、状态和金额放在一起，方便快速核对。",
+                "OrderSummaryCard",
+                self._build_overview_body(),
+            )
+        )
+        layout.addWidget(
+            self._build_section_card(
+                "收件信息",
+                "收件人、电话、地址与备注单独收拢。",
+                "OrderShippingCard",
+                self._build_shipping_body(),
+            )
+        )
+        layout.addWidget(
+            self._build_section_card(
+                "采购信息",
+                "三条采购槽位用于入库或补录商品库信息。",
+                "ProcurementSectionCard",
+                self._build_procurement_body(),
+            )
+        )
+        layout.addStretch(1)
 
     def set_product_presets(self, product_presets: list[dict[str, str]]) -> None:
         self._product_presets = [
@@ -135,6 +149,53 @@ class OrderCardWidget(QWidget):
             return
         self.product_library_requested.emit(product_name, cost)
 
+    def _build_overview_body(self) -> QWidget:
+        body = QWidget()
+        grid = QGridLayout(body)
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setHorizontalSpacing(12)
+        grid.setVerticalSpacing(10)
+
+        grid.addWidget(self._field_block("订单编号", self.order_id_edit), 0, 0)
+        grid.addWidget(self._field_block("下单时间", self.placed_at_edit), 0, 1)
+        grid.addWidget(self._field_block("订单状态", self.order_status_edit), 1, 0)
+        grid.addWidget(self._field_block("数量", self.quantity_edit), 1, 1)
+        grid.addWidget(self._field_block("商品名称", self.product_name_edit), 2, 0, 1, 2)
+        grid.addWidget(self._field_block("订单金额", self.order_amount_edit), 3, 0)
+        grid.addWidget(self._field_block("商家收入", self.income_amount_edit), 3, 1)
+        return body
+
+    def _build_shipping_body(self) -> QWidget:
+        body = QWidget()
+        grid = QGridLayout(body)
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setHorizontalSpacing(12)
+        grid.setVerticalSpacing(10)
+
+        grid.addWidget(self._field_block("收件人", self.recipient_name_edit), 0, 0)
+        grid.addWidget(self._field_block("手机号", self.phone_number_edit), 0, 1)
+        grid.addWidget(self._field_block("编号", self.code_edit), 1, 0)
+        grid.addWidget(self._field_block("收货地址", self.address_edit), 1, 1)
+        grid.addWidget(self._field_block("自动备注", self.delivery_note_edit), 2, 0, 1, 2)
+        return body
+
+    def _build_procurement_body(self) -> QWidget:
+        body = QWidget()
+        layout = QVBoxLayout(body)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
+
+        self.procurement_section_title = QLabel("采购信息")
+        self.procurement_section_title.setObjectName("ProcurementSectionTitle")
+        procurement_subtitle = QLabel("商品库联动后可以直接带出默认成本。")
+        procurement_subtitle.setObjectName("MutedText")
+        layout.addWidget(self.procurement_section_title)
+        layout.addWidget(procurement_subtitle)
+        layout.addWidget(self._build_procurement_row_card("采购1", self._procurement_row_widget(0)))
+        layout.addWidget(self._build_procurement_row_card("采购2", self._procurement_row_widget(1)))
+        layout.addWidget(self._build_procurement_row_card("采购3", self._procurement_row_widget(2)))
+        return body
+
     def _build_procurement_row(self, index: int) -> tuple[QComboBox, QLineEdit, QLineEdit, QPushButton]:
         product_combo = QComboBox()
         product_combo.setEditable(True)
@@ -160,11 +221,24 @@ class OrderCardWidget(QWidget):
         self.procurement_rows.append((product_combo, quantity_edit, cost_edit, save_button))
         return product_combo, quantity_edit, cost_edit, save_button
 
+    def _build_procurement_row_card(self, title: str, row_widget: QWidget) -> QWidget:
+        card = QFrame()
+        card.setObjectName("ProcurementRowCard")
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+        label = QLabel(title)
+        label.setObjectName("OrderFieldLabel")
+        layout.addWidget(label)
+        layout.addWidget(row_widget)
+        return card
+
     def _procurement_row_widget(self, index: int) -> QWidget:
         combo, quantity_edit, cost_edit, save_button = self.procurement_rows[index]
         row = QWidget()
         layout = QHBoxLayout(row)
         layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
         layout.addWidget(combo, 3)
         layout.addWidget(quantity_edit, 1)
         layout.addWidget(cost_edit, 1)
@@ -186,6 +260,41 @@ class OrderCardWidget(QWidget):
                 cost_edit.setText(item["default_cost"])
                 return
 
+    def _build_section_card(
+        self,
+        title_text: str,
+        subtitle_text: str,
+        object_name: str,
+        body_widget: QWidget,
+    ) -> QFrame:
+        card = QFrame()
+        card.setObjectName(object_name)
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(16, 14, 16, 16)
+        layout.setSpacing(10)
+
+        title = QLabel(title_text)
+        title_object_name = "SectionTitle"
+        if title_text == "采购信息":
+            title_object_name = "ProcurementSectionTitle"
+        title.setObjectName(title_object_name)
+        layout.addWidget(title)
+
+        subtitle = QLabel(subtitle_text)
+        subtitle.setObjectName("MutedText")
+        layout.addWidget(subtitle)
+        layout.addWidget(body_widget)
+        return card
+
+    def _field_block(self, label_text: str, widget: QWidget) -> QWidget:
+        block = QWidget()
+        layout = QVBoxLayout(block)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
+        layout.addWidget(self._label(label_text))
+        layout.addWidget(widget)
+        return block
+
     @staticmethod
     def _to_text(value) -> str:
         if value is None:
@@ -196,13 +305,14 @@ class OrderCardWidget(QWidget):
     def _build_line_edit() -> QLineEdit:
         widget = QLineEdit()
         widget.setObjectName("OrderValueEdit")
+        widget.setMinimumHeight(36)
         return widget
 
     @staticmethod
     def _build_text_edit(object_name: str = "OrderValueEdit") -> QTextEdit:
         widget = QTextEdit()
         widget.setObjectName(object_name)
-        widget.setMaximumHeight(92)
+        widget.setMaximumHeight(84)
         return widget
 
     @staticmethod

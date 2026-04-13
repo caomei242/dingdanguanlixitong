@@ -1,7 +1,7 @@
 import time
 
 from PySide6.QtGui import QColor, QGuiApplication, QImage
-from PySide6.QtWidgets import QFrame, QScrollArea
+from PySide6.QtWidgets import QFrame, QLabel, QScrollArea
 
 from strawberry_order_management.models import ParsedOrder, ProcurementItem
 from strawberry_order_management import app as app_module
@@ -233,6 +233,22 @@ def test_order_card_autofills_procurement_cost_from_selected_preset(qtbot):
 
     assert page.order_card_widget.procurement_quantity_1_edit.text() == "1"
     assert page.order_card_widget.procurement_cost_1_edit.text() == "18.50"
+
+
+def test_intake_page_groups_order_entry_into_sections(qtbot):
+    page = IntakePage(use_background_thread=False)
+    qtbot.addWidget(page)
+
+    procurement_title = page.order_card_widget.findChild(QLabel, "ProcurementSectionTitle")
+    order_summary_card = page.order_card_widget.findChild(QFrame, "OrderSummaryCard")
+    purchase_card = page.order_card_widget.findChild(QFrame, "ProcurementSectionCard")
+    support_card = page.findChild(QFrame, "IntakeSupportCard")
+
+    assert procurement_title is not None
+    assert procurement_title.text() == "采购信息"
+    assert order_summary_card is not None
+    assert purchase_card is not None
+    assert support_card is not None
 
 
 def test_intake_page_emits_procurement_slots_with_order_payload(qtbot):

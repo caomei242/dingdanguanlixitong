@@ -21,7 +21,12 @@ QWidget#PageContent {
 }
 
 QFrame#ShellFrame,
-QFrame#CardFrame {
+QFrame#CardFrame,
+QFrame#OrderSummaryCard,
+QFrame#OrderShippingCard,
+QFrame#ProcurementSectionCard,
+QFrame#ProcurementRowCard,
+QFrame#IntakeSupportCard {
     background: rgba(255, 255, 255, 0.96);
     border: 1px solid #e3e9f4;
     border-radius: 24px;
@@ -123,6 +128,12 @@ QComboBox {
 }
 
 QLabel#SectionTitle {
+    font-size: 18px;
+    font-weight: 700;
+    color: #1f2b44;
+}
+
+QLabel#ProcurementSectionTitle {
     font-size: 18px;
     font-weight: 700;
     color: #1f2b44;

@@ -121,6 +121,7 @@ class HistoryPage(QWidget):
         self._update_action_state()
 
     def load_rows(self, rows: list[dict[str, Any]]) -> None:
+        previous_record_id, previous_index = self._current_selection()
         self._rows = [self._normalize_row(row) for row in rows]
         self.list_widget.blockSignals(True)
         self.list_widget.clear()
@@ -136,7 +137,12 @@ class HistoryPage(QWidget):
             self.list_widget.addItem(self._build_row_text(row))
 
         self.list_widget.blockSignals(False)
-        self.list_widget.setCurrentRow(0)
+        selected_index = self._restore_selection(previous_record_id, previous_index)
+        if selected_index is not None:
+            self.list_widget.setCurrentRow(selected_index)
+            self._show_row(selected_index)
+        else:
+            self._show_empty_detail()
         self._update_action_state()
 
     def _build_row_text(self, row: dict[str, Any]) -> str:
@@ -235,6 +241,29 @@ class HistoryPage(QWidget):
         if self._rows:
             return self._rows[0]
         return None
+
+    def _current_selection(self) -> tuple[str | None, int | None]:
+        index = self.list_widget.currentRow()
+        if 0 <= index < len(self._rows):
+            record_id = self._display_value(self._rows[index].get("record_id"))
+            if record_id != "-":
+                return record_id, index
+        return None, None
+
+    def _restore_selection(
+        self,
+        previous_record_id: str | None,
+        previous_index: int | None,
+    ) -> int | None:
+        if not self._rows:
+            return None
+        if previous_record_id:
+            for index, row in enumerate(self._rows):
+                if self._display_value(row.get("record_id")) == previous_record_id:
+                    return index
+        if previous_index is not None:
+            return min(previous_index, len(self._rows) - 1)
+        return 0
 
     def _emit_edit_requested(self) -> None:
         self._emit_action(self.edit_requested)

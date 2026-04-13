@@ -398,6 +398,7 @@ def test_main_window_resubmits_selected_history_row_in_place(qtbot, tmp_path, mo
     config_store = ConfigStore(tmp_path / "config.json")
     history_store = HistoryStore(tmp_path / "history.json")
     config_store.save(_settings_payload())
+    initial_product_presets = config_store.load()["product_presets"]
 
     captured: dict[str, object] = {}
 
@@ -420,7 +421,7 @@ def test_main_window_resubmits_selected_history_row_in_place(qtbot, tmp_path, mo
 
     selected_row = history_store.append(
         window._build_history_snapshot(
-            {"shop_name": "草莓店", "order": _sample_order()},
+            {"shop_name": "草莓店", "order": _alternate_order()},
             "确认写入飞书",
             "已写入飞书",
             "写入成功",
@@ -447,10 +448,10 @@ def test_main_window_resubmits_selected_history_row_in_place(qtbot, tmp_path, mo
     qtbot.waitUntil(lambda: window._submit_thread is None, timeout=3000)
 
     assert captured["access_token"] == "tenant_token_123"
-    assert captured["fields"]["备注"] == _sample_order().delivery_note
-    assert captured["fields"]["发货地址"].startswith("何女士 15781304332-3612")
-    assert captured["fields"]["发货地址"] != "王先生 13900001111-8899 广东省深圳市南山区科技园"
-    assert captured["fields"]["收入金额"] == _sample_order().income_amount
+    assert captured["fields"]["备注"] == _alternate_order().delivery_note
+    assert captured["fields"]["发货地址"].startswith("王先生 13900001111-8899")
+    assert captured["fields"]["发货地址"] != "何女士 15781304332-3612 四川省成都市金牛区营门口街道友谊花园9-2304"
+    assert captured["fields"]["收入金额"] == _alternate_order().income_amount
 
     rows = history_store.list_items()
     assert len(rows) == 2
@@ -461,6 +462,7 @@ def test_main_window_resubmits_selected_history_row_in_place(qtbot, tmp_path, mo
     assert rows[1]["status"] == "已写入飞书"
     assert rows[1]["message"] == "写入成功"
     assert rows[1]["feishu_result"] == {"data": {"record_id": "rec_resubmit"}}
+    assert config_store.load()["product_presets"] == initial_product_presets
 
 
 def test_main_window_can_save_manual_product_into_global_library(qtbot, tmp_path):

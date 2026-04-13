@@ -106,6 +106,94 @@ def test_history_page_renders_list_and_loads_first_then_current_item(qtbot):
     assert page.address_output_two.toPlainText() == "请放门口"
 
 
+def test_history_page_keeps_selected_record_when_rows_refresh(qtbot):
+    page = HistoryPage()
+    qtbot.addWidget(page)
+
+    rows = [
+        _row(
+            "record-1",
+            "草莓店",
+            "确认写入飞书",
+            "已写入飞书",
+            "6952003434324366473",
+            "何女士",
+            "何女士15781304332四川省成都市",
+            "请电话送货上门谢谢【3612】",
+        ),
+        _row(
+            "record-2",
+            "乐宝零食店",
+            "仅存历史",
+            "写入失败",
+            "6952003434324366111",
+            "田宝山",
+            "田宝山15784081541山东省德州市",
+            "请放门口",
+        ),
+    ]
+
+    page.load_rows(rows)
+    page.list_widget.setCurrentRow(1)
+
+    refreshed_rows = [
+        dict(rows[0], status="已写入飞书"),
+        dict(rows[1], status="写入失败"),
+    ]
+    page.load_rows(refreshed_rows)
+
+    assert page.list_widget.currentRow() == 1
+    assert page.detail_title_label.text() == "乐宝零食店"
+    assert page.detail_subtitle_label.text() == "仅存历史 · 写入失败"
+
+
+def test_history_page_falls_back_to_adjacent_record_when_selected_row_is_deleted(qtbot):
+    page = HistoryPage()
+    qtbot.addWidget(page)
+
+    rows = [
+        _row(
+            "record-1",
+            "草莓店",
+            "确认写入飞书",
+            "已写入飞书",
+            "6952003434324366473",
+            "何女士",
+            "何女士15781304332四川省成都市",
+            "请电话送货上门谢谢【3612】",
+        ),
+        _row(
+            "record-2",
+            "乐宝零食店",
+            "仅存历史",
+            "写入失败",
+            "6952003434324366111",
+            "田宝山",
+            "田宝山15784081541山东省德州市",
+            "请放门口",
+        ),
+        _row(
+            "record-3",
+            "橙子店",
+            "仅存历史",
+            "已写入飞书",
+            "6952003434324366999",
+            "王先生",
+            "王先生13900001111广东省深圳市",
+            "请尽快发货",
+        ),
+    ]
+
+    page.load_rows(rows)
+    page.list_widget.setCurrentRow(1)
+
+    page.load_rows([rows[0], rows[2]])
+
+    assert page.list_widget.currentRow() == 1
+    assert page.detail_title_label.text() == "橙子店"
+    assert page.detail_subtitle_label.text() == "仅存历史 · 已写入飞书"
+
+
 def test_history_page_emits_record_ids_for_actions(qtbot):
     page = HistoryPage()
     qtbot.addWidget(page)

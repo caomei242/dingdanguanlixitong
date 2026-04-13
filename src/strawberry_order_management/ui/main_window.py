@@ -248,7 +248,6 @@ class MainWindow(QMainWindow):
             return
 
         payload = self._build_payload_from_history_row(row)
-        self._sync_products_from_order(payload["order"])
         try:
             task = self._build_feishu_submission_task(payload)
         except Exception as exc:

@@ -124,7 +124,8 @@ def test_history_page_renders_list_and_loads_first_then_current_item(qtbot):
     assert page.total_count_value.text() == "2"
     assert page.written_count_value.text() == "1"
     assert page.failed_count_value.text() == "1"
-    assert page.action_card.isHidden() is False
+    assert page.header_actions_widget.isHidden() is False
+    assert page.left_column_widget.layout().count() == 1
     assert page.detail_summary_card.isHidden() is False
     assert page.order_id_value.minimumHeight() <= 40
     assert page.address_value.minimumHeight() <= 60
@@ -247,23 +248,20 @@ def test_history_page_emits_record_ids_for_actions(qtbot):
     )
     page.list_widget.setCurrentRow(1)
 
-    emitted = {"edit": [], "delete": [], "resubmit": []}
-    page.edit_requested.connect(emitted["edit"].append)
+    emitted = {"delete": [], "resubmit": []}
     page.delete_requested.connect(emitted["delete"].append)
     page.resubmit_requested.connect(emitted["resubmit"].append)
 
     page.delete_button.click()
     page.resubmit_button.click()
-    page.edit_button.click()
 
     assert emitted == {
-        "edit": ["record-2"],
         "delete": ["record-2"],
         "resubmit": ["record-2"],
     }
 
 
-def test_history_page_toggles_edit_mode_and_emits_save_patch(qtbot):
+def test_history_page_directly_edits_fields_and_emits_save_patch(qtbot):
     page = HistoryPage()
     qtbot.addWidget(page)
     page.load_rows(
@@ -281,24 +279,12 @@ def test_history_page_toggles_edit_mode_and_emits_save_patch(qtbot):
         ]
     )
 
-    assert page.is_editing is False
-    assert page.edit_button.isEnabled() is True
-    assert page.save_button.isEnabled() is False
-    assert page.cancel_button.isEnabled() is False
+    assert page.order_id_value.isReadOnly() is False
+    assert page.product_name_value.isReadOnly() is False
+    assert page.save_button.isEnabled() is True
 
     emitted = []
     page.save_requested.connect(lambda record_id, patch: emitted.append((record_id, patch)))
-
-    page.edit_button.click()
-
-    assert page.is_editing is True
-    assert page.edit_button.isEnabled() is False
-    assert page.delete_button.isEnabled() is False
-    assert page.resubmit_button.isEnabled() is False
-    assert page.save_button.isEnabled() is True
-    assert page.cancel_button.isEnabled() is True
-    assert page.product_name_value.isReadOnly() is False
-    assert page.procurement_product_1_value.isReadOnly() is False
 
     page.product_name_value.setPlainText("改后商品")
     page.procurement_product_1_value.setPlainText("改后采购")
@@ -332,13 +318,9 @@ def test_history_page_toggles_edit_mode_and_emits_save_patch(qtbot):
             },
         )
     ]
-    assert page.is_editing is False
-    assert page.edit_button.isEnabled() is True
-    assert page.save_button.isEnabled() is False
-    assert page.cancel_button.isEnabled() is False
 
 
-def test_history_page_cancel_restores_snapshot_without_emitting_save(qtbot):
+def test_history_page_save_button_stays_near_detail_header(qtbot):
     page = HistoryPage()
     qtbot.addWidget(page)
     page.load_rows(
@@ -356,16 +338,5 @@ def test_history_page_cancel_restores_snapshot_without_emitting_save(qtbot):
         ]
     )
 
-    emitted = []
-    page.save_requested.connect(lambda record_id, patch: emitted.append((record_id, patch)))
-
-    page.edit_button.click()
-    page.recipient_name_value.setPlainText("临时改名")
-    page.delivery_note_value.setPlainText("临时备注")
-
-    page.cancel_button.click()
-
-    assert emitted == []
-    assert page.is_editing is False
-    assert page.recipient_name_value.toPlainText() == "何女士"
-    assert page.delivery_note_value.toPlainText() == "请电话送货上门谢谢【3612】"
+    assert page.header_actions_widget.isHidden() is False
+    assert page.left_column_widget.layout().count() == 1

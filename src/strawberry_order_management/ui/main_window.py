@@ -71,7 +71,7 @@ class MainWindow(QMainWindow):
 
         self.nav = QListWidget()
         self.nav.addItems(["订单录入", "历史", "设置"])
-        self.nav.setFixedWidth(132)
+        self.nav.setFixedWidth(118)
 
         self.stack = QStackedWidget()
         self.intake_page = IntakePage(
@@ -95,15 +95,19 @@ class MainWindow(QMainWindow):
         brand_subtitle.setObjectName("BrandSubtitle")
 
         brand_box = QVBoxLayout()
+        brand_box.setContentsMargins(0, 0, 0, 0)
+        brand_box.setSpacing(2)
         brand_box.addWidget(brand_title)
         brand_box.addWidget(brand_subtitle)
-        brand_box.addStretch(1)
 
         sidebar = QFrame()
         sidebar.setObjectName("ShellFrame")
         sidebar_layout = QVBoxLayout(sidebar)
+        sidebar_layout.setContentsMargins(14, 14, 14, 14)
+        sidebar_layout.setSpacing(12)
         sidebar_layout.addLayout(brand_box)
         sidebar_layout.addWidget(self.nav)
+        sidebar_layout.addStretch(1)
 
         content = QFrame()
         content.setObjectName("ShellFrame")

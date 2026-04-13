@@ -422,7 +422,6 @@ def test_main_window_saves_history_edit_in_place_and_keeps_selection(qtbot, tmp_
     window.history_page.load_rows(history_store.list_items())
     window.history_page.list_widget.setCurrentRow(1)
 
-    window.history_page.edit_button.click()
     window.history_page.recipient_name_value.setPlainText("改后收件人")
     window.history_page.phone_number_value.setPlainText("18800001111")
     window.history_page.address_value.setPlainText("上海市徐汇区漕河泾")
@@ -555,7 +554,6 @@ def test_main_window_resubmits_history_using_edited_snapshot(qtbot, tmp_path, mo
     window.history_page.load_rows(history_store.list_items())
     window.history_page.list_widget.setCurrentRow(0)
 
-    window.history_page.edit_button.click()
     window.history_page.recipient_name_value.setPlainText("改后王先生")
     window.history_page.phone_number_value.setPlainText("18800002222")
     window.history_page.code_value.setPlainText("9900")

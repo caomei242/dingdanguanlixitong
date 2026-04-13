@@ -45,7 +45,6 @@ class HistoryPage(QWidget):
         super().__init__()
         self.setObjectName("HistoryPage")
         self._rows: list[dict[str, Any]] = []
-        self.is_editing = False
 
         title = QLabel("历史工作台")
         title.setObjectName("SectionTitle")
@@ -80,9 +79,6 @@ class HistoryPage(QWidget):
         list_card_layout.setSpacing(8)
         list_card_layout.addWidget(self.summary_label)
         list_card_layout.addWidget(self.list_widget, 1)
-
-        self.action_card = QFrame()
-        self.action_card.setObjectName("HistoryActionCard")
 
         self.detail_title_label = QLabel("请选择一条历史记录")
         self.detail_title_label.setObjectName("HistoryDetailTitle")
@@ -169,52 +165,44 @@ class HistoryPage(QWidget):
 
         sync_section = self._build_section("同步信息", sync_form)
 
-        self.edit_button = QPushButton("编辑")
-        self.edit_button.setObjectName("SecondaryActionButton")
         self.save_button = QPushButton("保存修改")
         self.save_button.setObjectName("SecondaryActionButton")
-        self.cancel_button = QPushButton("取消编辑")
-        self.cancel_button.setObjectName("SecondaryActionButton")
         self.delete_button = QPushButton("删除")
         self.delete_button.setObjectName("DangerActionButton")
         self.resubmit_button = QPushButton("重新写入飞书")
         self.resubmit_button.setObjectName("SecondaryActionButton")
 
-        self.edit_button.clicked.connect(self._enter_edit_mode)
         self.save_button.clicked.connect(self._emit_save_requested)
-        self.cancel_button.clicked.connect(self._cancel_editing)
         self.delete_button.clicked.connect(self._emit_delete_requested)
         self.resubmit_button.clicked.connect(self._emit_resubmit_requested)
 
-        action_row = QHBoxLayout()
-        action_row.addWidget(self.edit_button)
-        action_row.addWidget(self.save_button)
-        action_row.addWidget(self.cancel_button)
-        action_row.addStretch(1)
-
-        action_stack = QVBoxLayout(self.action_card)
-        action_stack.setContentsMargins(12, 12, 12, 12)
-        action_stack.setSpacing(8)
-        action_title = QLabel("快捷操作")
-        action_title.setObjectName("SectionTitle")
-        action_hint = QLabel("把当前选中记录直接编辑、删除或重新写入飞书")
-        action_hint.setObjectName("MutedText")
-        primary_action_row = QHBoxLayout()
-        primary_action_row.addWidget(self.edit_button)
-        primary_action_row.addWidget(self.resubmit_button)
-        secondary_action_row = QHBoxLayout()
-        secondary_action_row.addWidget(self.save_button)
-        secondary_action_row.addWidget(self.cancel_button)
-        secondary_action_row.addWidget(self.delete_button)
-        action_stack.addWidget(action_title)
-        action_stack.addWidget(action_hint)
-        action_stack.addLayout(primary_action_row)
-        action_stack.addLayout(secondary_action_row)
-
         detail_body = QWidget()
         detail_body_layout = QVBoxLayout(detail_body)
-        detail_body_layout.addWidget(self.detail_title_label)
-        detail_body_layout.addWidget(self.detail_subtitle_label)
+        detail_body_layout.setContentsMargins(0, 0, 0, 0)
+        detail_body_layout.setSpacing(10)
+
+        detail_header = QWidget()
+        detail_header_layout = QHBoxLayout(detail_header)
+        detail_header_layout.setContentsMargins(0, 0, 0, 0)
+        detail_header_layout.setSpacing(10)
+        detail_header_text = QWidget()
+        detail_header_text_layout = QVBoxLayout(detail_header_text)
+        detail_header_text_layout.setContentsMargins(0, 0, 0, 0)
+        detail_header_text_layout.setSpacing(2)
+        detail_header_text_layout.addWidget(self.detail_title_label)
+        detail_header_text_layout.addWidget(self.detail_subtitle_label)
+
+        self.header_actions_widget = QWidget()
+        header_actions_layout = QHBoxLayout(self.header_actions_widget)
+        header_actions_layout.setContentsMargins(0, 0, 0, 0)
+        header_actions_layout.setSpacing(8)
+        header_actions_layout.addWidget(self.save_button)
+        header_actions_layout.addWidget(self.resubmit_button)
+        header_actions_layout.addWidget(self.delete_button)
+
+        detail_header_layout.addWidget(detail_header_text, 1)
+        detail_header_layout.addWidget(self.header_actions_widget, 0, Qt.AlignmentFlag.AlignTop)
+        detail_body_layout.addWidget(detail_header)
 
         self.detail_summary_card = QFrame()
         self.detail_summary_card.setObjectName("HistorySummaryCard")
@@ -249,12 +237,11 @@ class HistoryPage(QWidget):
         detail_card_layout = QVBoxLayout(detail_card)
         detail_card_layout.addWidget(detail_body)
 
-        left_column = QWidget()
-        left_column_layout = QVBoxLayout(left_column)
+        self.left_column_widget = QWidget()
+        left_column_layout = QVBoxLayout(self.left_column_widget)
         left_column_layout.setContentsMargins(0, 0, 0, 0)
         left_column_layout.setSpacing(10)
         left_column_layout.addWidget(list_card, 1)
-        left_column_layout.addWidget(self.action_card)
 
         content = QWidget()
         content.setObjectName("PageContent")
@@ -264,7 +251,7 @@ class HistoryPage(QWidget):
 
         workspace_row = QHBoxLayout()
         workspace_row.setSpacing(10)
-        workspace_row.addWidget(left_column, 2)
+        workspace_row.addWidget(self.left_column_widget, 2)
         workspace_row.addWidget(detail_card, 3)
         content_layout.addLayout(workspace_row)
 
@@ -302,12 +289,11 @@ class HistoryPage(QWidget):
             self.procurement_cost_3_value,
         ]
 
-        self._set_widgets_read_only(True)
+        self._set_widgets_read_only(False)
         self._update_action_state()
 
     def load_rows(self, rows: list[dict[str, Any]]) -> None:
         previous_record_id, previous_index = self._current_selection()
-        self.is_editing = False
         self._rows = [self._normalize_row(row) for row in rows]
         self._update_stats()
         self.list_widget.blockSignals(True)
@@ -343,26 +329,6 @@ class HistoryPage(QWidget):
 
     def _handle_current_item_changed(self, current, previous) -> None:
         del current, previous
-        if self.is_editing:
-            self.is_editing = False
-        self._show_row(self.list_widget.currentRow())
-        self._update_action_state()
-
-    def _enter_edit_mode(self) -> None:
-        row = self._current_row()
-        if row is None:
-            return
-        self.is_editing = True
-        self._show_row(self.list_widget.currentRow())
-        self._update_action_state()
-        record_id = self._text_value(row.get("record_id"))
-        if record_id:
-            self.edit_requested.emit(record_id)
-
-    def _cancel_editing(self) -> None:
-        if not self.is_editing:
-            return
-        self.is_editing = False
         self._show_row(self.list_widget.currentRow())
         self._update_action_state()
 
@@ -375,7 +341,6 @@ class HistoryPage(QWidget):
             return
         patch = {"order_snapshot": self._build_order_snapshot_from_inputs(row.get("order_snapshot") or {})}
         self._merge_patch(row, patch)
-        self.is_editing = False
         self._show_row(self.list_widget.currentRow())
         self._update_action_state()
         self.save_requested.emit(record_id, patch)
@@ -454,7 +419,7 @@ class HistoryPage(QWidget):
         self.status_value.setPlainText(self._display_value(row.get("status")))
         self.sync_message_value.setPlainText(self._build_sync_message(row))
         self._update_detail_summary(order_snapshot)
-        self._set_widgets_read_only(not self.is_editing)
+        self._set_widgets_read_only(False)
 
     def _show_empty_detail(self) -> None:
         self.detail_title_label.setText("请选择一条历史记录")
@@ -495,7 +460,7 @@ class HistoryPage(QWidget):
             self.summary_procurement_value,
         ):
             widget.setText("-")
-        self._set_widgets_read_only(True)
+        self._set_widgets_read_only(False)
 
     def _build_order_snapshot_from_inputs(self, current_snapshot: dict[str, Any]) -> dict[str, Any]:
         order_snapshot = dict(current_snapshot)
@@ -649,12 +614,11 @@ class HistoryPage(QWidget):
 
     def _update_action_state(self) -> None:
         has_row = self._current_row() is not None
-        self.list_widget.setEnabled(has_row and not self.is_editing)
-        self.edit_button.setEnabled(has_row and not self.is_editing)
-        self.save_button.setEnabled(has_row and self.is_editing)
-        self.cancel_button.setEnabled(has_row and self.is_editing)
-        self.delete_button.setEnabled(has_row and not self.is_editing)
-        self.resubmit_button.setEnabled(has_row and not self.is_editing)
+        self.list_widget.setEnabled(True)
+        self.save_button.setEnabled(has_row)
+        self.delete_button.setEnabled(has_row)
+        self.resubmit_button.setEnabled(has_row)
+        self.header_actions_widget.setHidden(not has_row)
 
     def _update_stats(self) -> None:
         total = len(self._rows)

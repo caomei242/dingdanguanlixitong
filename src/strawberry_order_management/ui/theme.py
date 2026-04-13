@@ -58,7 +58,7 @@ QListWidget {
     background: #ffffff;
     border: 1px solid #dbe4f2;
     border-radius: 18px;
-    padding: 8px;
+    padding: 6px;
     outline: none;
 }
 
@@ -67,9 +67,9 @@ QListWidget#HistoryList {
 }
 
 QListWidget::item {
-    padding: 11px 13px;
-    margin: 3px 0;
-    border-radius: 14px;
+    padding: 9px 11px;
+    margin: 2px 0;
+    border-radius: 12px;
 }
 
 QListWidget::item:selected {
@@ -82,7 +82,7 @@ QPushButton {
     color: white;
     border: none;
     border-radius: 14px;
-    padding: 8px 12px;
+    padding: 7px 11px;
     font-weight: 600;
 }
 

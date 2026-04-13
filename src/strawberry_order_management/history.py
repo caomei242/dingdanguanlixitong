@@ -33,17 +33,72 @@ class HistoryStore:
         self._save_rows(rows)
         return row
 
-    def update_status(self, record_id: str, status: str) -> None:
+    def get(self, record_id: str) -> dict[str, Any]:
+        for row in self._load_rows():
+            if row.get("record_id") == record_id:
+                return self._normalize_row(row)
+        raise KeyError(record_id)
+
+    def update(self, record_id: str, patch: dict[str, Any]) -> dict[str, Any]:
         rows = self._load_rows()
         for row in rows:
             if row.get("record_id") == record_id:
-                row["status"] = status
+                row.update(patch)
                 self._save_rows(rows)
-                return
+                return self._normalize_row(row)
         raise KeyError(record_id)
 
+    def delete(self, record_id: str) -> None:
+        rows = self._load_rows()
+        kept_rows = [row for row in rows if row.get("record_id") != record_id]
+        if len(kept_rows) == len(rows):
+            raise KeyError(record_id)
+        self._save_rows(kept_rows)
+
+    def update_status(self, record_id: str, status: str) -> None:
+        self.update(record_id, {"status": status})
+
     def list_items(self) -> list[dict[str, Any]]:
-        return self._load_rows()
+        return [self._normalize_row(row) for row in self._load_rows()]
+
+    def _normalize_row(self, row: dict[str, Any]) -> dict[str, Any]:
+        normalized = dict(row)
+        order_snapshot = normalized.get("order_snapshot")
+        if not isinstance(order_snapshot, dict):
+            order_snapshot = {
+                key: value
+                for key, value in normalized.items()
+                if key
+                not in {
+                    "record_id",
+                    "order_snapshot",
+                    "address_snapshot",
+                    "sync_source",
+                    "output_one",
+                    "output_two",
+                    "output_three",
+                    "address",
+                }
+            }
+        else:
+            order_snapshot = dict(order_snapshot)
+
+        address_snapshot = normalized.get("address_snapshot")
+        if not isinstance(address_snapshot, dict):
+            address_snapshot = {
+                key: value
+                for key, value in normalized.items()
+                if key in {"output_one", "output_two", "output_three", "address"}
+            }
+        else:
+            address_snapshot = dict(address_snapshot)
+        address_snapshot.setdefault("output_one", "")
+        address_snapshot.setdefault("output_two", "")
+
+        normalized["order_snapshot"] = order_snapshot
+        normalized["address_snapshot"] = address_snapshot
+        normalized["sync_source"] = str(normalized.get("sync_source", "")).strip() or "-"
+        return normalized
 
 
 def default_history_path() -> Path:

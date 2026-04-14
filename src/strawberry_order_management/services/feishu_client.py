@@ -27,31 +27,22 @@ class FeishuClient:
         return tenant_access_token
 
     def create_record(self, access_token: str, fields: dict) -> dict:
-        prepared_fields = self._materialize_fields(access_token, fields)
-        return self._request_json(
+        prepared_fields, image_field_names = self._materialize_fields(access_token, fields)
+        return self._submit_record_request(
             "POST",
-            "https://open.feishu.cn/open-apis/bitable/v1/apps/"
-            f"{self.table_app_token}/tables/{self.table_id}/records",
-            headers={
-                "Authorization": f"Bearer {access_token}",
-                "Content-Type": "application/json; charset=utf-8",
-            },
-            json_body={"fields": prepared_fields},
-            error_prefix="飞书写入失败",
+            access_token,
+            prepared_fields,
+            image_field_names=image_field_names,
         )
 
     def update_record(self, access_token: str, record_id: str, fields: dict) -> dict:
-        prepared_fields = self._materialize_fields(access_token, fields)
-        return self._request_json(
+        prepared_fields, image_field_names = self._materialize_fields(access_token, fields)
+        return self._submit_record_request(
             "PUT",
-            "https://open.feishu.cn/open-apis/bitable/v1/apps/"
-            f"{self.table_app_token}/tables/{self.table_id}/records/{record_id}",
-            headers={
-                "Authorization": f"Bearer {access_token}",
-                "Content-Type": "application/json; charset=utf-8",
-            },
-            json_body={"fields": prepared_fields},
-            error_prefix="飞书写入失败",
+            access_token,
+            prepared_fields,
+            record_id=record_id,
+            image_field_names=image_field_names,
         )
 
     def delete_record(self, access_token: str, record_id: str) -> dict:
@@ -124,8 +115,57 @@ class FeishuClient:
             "wiki_url": cleaned_url,
         }
 
-    def _materialize_fields(self, access_token: str, fields: dict) -> dict:
+    def _submit_record_request(
+        self,
+        method: str,
+        access_token: str,
+        prepared_fields: dict,
+        *,
+        record_id: str = "",
+        image_field_names: set[str] | None = None,
+    ) -> dict:
+        if record_id:
+            url = (
+                "https://open.feishu.cn/open-apis/bitable/v1/apps/"
+                f"{self.table_app_token}/tables/{self.table_id}/records/{record_id}"
+            )
+        else:
+            url = (
+                "https://open.feishu.cn/open-apis/bitable/v1/apps/"
+                f"{self.table_app_token}/tables/{self.table_id}/records"
+            )
+        try:
+            return self._request_json(
+                method,
+                url,
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                    "Content-Type": "application/json; charset=utf-8",
+                },
+                json_body={"fields": prepared_fields},
+                error_prefix="飞书写入失败",
+            )
+        except ValueError as exc:
+            image_field_names = image_field_names or set()
+            if not image_field_names or "TextFieldConvFail" not in str(exc):
+                raise
+            reduced_fields = {
+                key: value for key, value in prepared_fields.items() if key not in image_field_names
+            }
+            return self._request_json(
+                method,
+                url,
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                    "Content-Type": "application/json; charset=utf-8",
+                },
+                json_body={"fields": reduced_fields},
+                error_prefix="飞书写入失败",
+            )
+
+    def _materialize_fields(self, access_token: str, fields: dict) -> tuple[dict, set[str]]:
         prepared: dict = {}
+        image_field_names: set[str] = set()
         for key, value in dict(fields).items():
             if isinstance(value, list) and value and all(isinstance(item, dict) for item in value):
                 local_paths = [str(item.get("local_path", "")).strip() for item in value if item.get("local_path")]
@@ -136,9 +176,10 @@ class FeishuClient:
                     ]
                     if file_tokens:
                         prepared[key] = file_tokens
+                        image_field_names.add(key)
                     continue
             prepared[key] = value
-        return prepared
+        return prepared, image_field_names
 
     def upload_bitable_image(self, access_token: str, image_path: str) -> str:
         mime_type = mimetypes.guess_type(image_path)[0] or "image/png"

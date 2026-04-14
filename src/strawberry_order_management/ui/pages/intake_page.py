@@ -3,12 +3,13 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import Callable
 
-from PySide6.QtCore import QObject, QThread, Signal
+from PySide6.QtCore import QObject, Qt, QThread, Signal
 from PySide6.QtWidgets import (
     QComboBox,
     QHBoxLayout,
     QFrame,
     QLabel,
+    QMessageBox,
     QPushButton,
     QScrollArea,
     QVBoxLayout,
@@ -46,6 +47,7 @@ class IntakePage(QWidget):
     submit_requested = Signal(object)
     save_history_requested = Signal(object)
     product_library_requested = Signal(str, str)
+    procurement_template_requested = Signal(object)
     PLATFORM_OPTIONS = ("抖店", "微信小店")
 
     def __init__(
@@ -76,10 +78,7 @@ class IntakePage(QWidget):
         self.platform_selector.setCurrentText("抖店")
         self.save_history_button.setEnabled(False)
         self.submit_button.setEnabled(False)
-
-        header_row = QHBoxLayout()
-        header_row.setContentsMargins(0, 0, 0, 0)
-        header_row.setSpacing(12)
+        extractor_input_panel, extractor_results_panel = self.address_widget.take_workspace_panels()
 
         shop_row = QHBoxLayout()
         shop_label = QLabel("店铺")
@@ -93,50 +92,93 @@ class IntakePage(QWidget):
         platform_row.addWidget(platform_label)
         platform_row.addWidget(self.platform_selector, 1)
 
-        header_row.addLayout(shop_row, 1)
-        header_row.addLayout(platform_row, 1)
-        header_row.addStretch(1)
-        header_row.addWidget(self.save_history_button)
-        header_row.addWidget(self.submit_button)
+        action_bar = QFrame()
+        action_bar.setObjectName("EntryActionBar")
+        action_bar_layout = QHBoxLayout(action_bar)
+        action_bar_layout.setContentsMargins(16, 12, 16, 12)
+        action_bar_layout.setSpacing(12)
+        action_bar_layout.addLayout(shop_row, 1)
+        action_bar_layout.addLayout(platform_row, 0)
+        action_bar_layout.addStretch(1)
+        action_bar_layout.addWidget(self.save_history_button)
+        action_bar_layout.addWidget(self.submit_button)
 
-        left_column = QVBoxLayout()
-        left_column.setContentsMargins(0, 0, 0, 0)
-        left_column.setSpacing(14)
-        left_column.addLayout(header_row)
-        left_column.addWidget(self.capture_widget)
-        left_column.addWidget(self.order_card_widget)
+        left_column = QWidget()
+        left_column.setObjectName("EntryLeftRail")
+        left_column.setFixedWidth(312)
+        left_column_layout = QVBoxLayout(left_column)
+        left_column_layout.setContentsMargins(0, 0, 0, 0)
+        left_column_layout.setSpacing(14)
 
-        right_column = QVBoxLayout()
-        right_column.setContentsMargins(0, 0, 0, 0)
-        right_column.setSpacing(14)
+        capture_card = QFrame()
+        capture_card.setObjectName("EntryCaptureCard")
+        capture_layout = QVBoxLayout(capture_card)
+        capture_layout.setContentsMargins(16, 14, 16, 16)
+        capture_layout.setSpacing(10)
+        capture_layout.addWidget(self.capture_widget)
+
+        extractor_input_card = QFrame()
+        extractor_input_card.setObjectName("EntryExtractorInputCard")
+        extractor_input_layout = QVBoxLayout(extractor_input_card)
+        extractor_input_layout.setContentsMargins(16, 14, 16, 16)
+        extractor_input_layout.setSpacing(10)
+        extractor_input_layout.addWidget(extractor_input_panel)
+
+        left_column_layout.addWidget(capture_card)
+        left_column_layout.addWidget(extractor_input_card, 1)
+
+        center_scroll = QScrollArea()
+        center_scroll.setObjectName("EntryFormRail")
+        center_scroll.setWidgetResizable(True)
+        center_scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        center_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        center_scroll.setWidget(self.order_card_widget)
+
+        right_column = QWidget()
+        right_column.setObjectName("EntryRightRail")
+        right_column.setFixedWidth(312)
+        right_column_layout = QVBoxLayout(right_column)
+        right_column_layout.setContentsMargins(0, 0, 0, 0)
+        right_column_layout.setSpacing(14)
         support_card = QFrame()
-        support_card.setObjectName("IntakeSupportCard")
+        support_card.setObjectName("EntryExtractorResultCard")
         support_layout = QVBoxLayout(support_card)
         support_layout.setContentsMargins(16, 14, 16, 16)
         support_layout.setSpacing(0)
-        support_layout.addWidget(self.address_widget)
-        right_column.addWidget(support_card)
-        right_column.addStretch(1)
+        support_layout.addWidget(extractor_results_panel)
+        right_column_layout.addWidget(support_card, 1)
+        right_column_layout.addStretch(1)
 
         content = QWidget()
         content.setObjectName("PageContent")
-        content_layout = QHBoxLayout(content)
+        content_layout = QVBoxLayout(content)
         content_layout.setContentsMargins(0, 0, 0, 0)
-        content_layout.setSpacing(16)
-        content_layout.addLayout(left_column, 4)
-        content_layout.addLayout(right_column, 2)
+        content_layout.setSpacing(14)
+        content_layout.addWidget(action_bar)
+
+        workspace = QWidget()
+        workspace_layout = QHBoxLayout(workspace)
+        workspace_layout.setContentsMargins(0, 0, 0, 0)
+        workspace_layout.setSpacing(16)
+        workspace_layout.addWidget(left_column, 0)
+        workspace_layout.addWidget(center_scroll, 1)
+        workspace_layout.addWidget(right_column, 0)
+        content_layout.addWidget(workspace, 1)
 
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
         scroll_area.setFrameShape(QScrollArea.Shape.NoFrame)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         scroll_area.setWidget(content)
 
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(scroll_area)
         self.submit_button.clicked.connect(self._handle_submit)
         self.save_history_button.clicked.connect(self._handle_save_history)
         self.capture_widget.image_ready.connect(self.process_image_bytes)
         self.order_card_widget.product_library_requested.connect(self.product_library_requested.emit)
+        self.order_card_widget.procurement_template_requested.connect(self.procurement_template_requested.emit)
 
     def show_order(self, order) -> None:
         self._current_order = order
@@ -147,9 +189,13 @@ class IntakePage(QWidget):
         self.address_widget.load_from_order(order)
         self.save_history_button.setEnabled(True)
         self.submit_button.setEnabled(True)
+        self._warn_for_large_quantity(order)
 
     def set_product_presets(self, product_presets: list[dict[str, str]]) -> None:
         self.order_card_widget.set_product_presets(product_presets)
+
+    def set_procurement_templates(self, procurement_templates: list[dict[str, object]]) -> None:
+        self.order_card_widget.set_procurement_templates(procurement_templates)
 
     def set_custom_cost_labels(self, labels: list[str]) -> None:
         self.order_card_widget.set_custom_cost_labels(labels)
@@ -251,3 +297,19 @@ class IntakePage(QWidget):
     def closeEvent(self, event) -> None:
         self.shutdown_background_job()
         super().closeEvent(event)
+
+    def _warn_for_large_quantity(self, order) -> None:
+        if not self.isVisible():
+            return
+        quantity_text = str(getattr(order, "quantity", "")).strip()
+        try:
+            quantity = float(quantity_text)
+        except ValueError:
+            return
+        if quantity <= 1:
+            return
+        QMessageBox.warning(
+            self,
+            "数量提醒",
+            "当前订单数量大于 1，请确认采购数量不要和实际订单数量不一致。",
+        )

@@ -48,6 +48,7 @@ _ORDER_SNAPSHOT_KEYS = (
     "code",
     "address",
     "delivery_note",
+    "procurement_tracking_number",
     "platform_fee_rate",
     "platform_fee_amount",
     "other_cost",
@@ -111,6 +112,7 @@ class HistoryPage(QWidget):
         self.quick_filter_buttons: dict[str, QPushButton] = {}
         self.shop_filter_combo = QComboBox()
         self.status_filter_combo = QComboBox()
+        self.keyword_filter_edit = QLineEdit()
         self.date_filter_edit = QDateEdit()
         self.date_filter_edit.setCalendarPopup(True)
         self.date_filter_edit.setDisplayFormat("yyyy-MM-dd")
@@ -133,7 +135,9 @@ class HistoryPage(QWidget):
             if key == "全部订单":
                 card.set_active(True)
 
-        stats_row = QGridLayout()
+        self.stats_row_widget = QWidget()
+        self.stats_row_widget.setObjectName("HistoryStatsRow")
+        stats_row = QGridLayout(self.stats_row_widget)
         stats_row.setContentsMargins(0, 0, 0, 0)
         stats_row.setHorizontalSpacing(8)
         stats_row.setVerticalSpacing(8)
@@ -203,7 +207,6 @@ class HistoryPage(QWidget):
         order_form.addRow("订单状态", self.order_status_value)
         order_form.addRow("商品名称", self.product_name_value)
         order_form.addRow("规格", self.specification_value)
-        order_form.addRow("SKU", self.sku_value)
         order_form.addRow("SKU 图片", self.sku_image_value)
         order_form.addRow("数量", self.quantity_value)
         order_form.addRow("订单金额", self.order_amount_value)
@@ -212,19 +215,22 @@ class HistoryPage(QWidget):
         order_form.addRow("手机号", self.phone_number_value)
         order_form.addRow("编号", self.code_value)
         order_form.addRow("收货地址", self.address_value)
-        order_form.addRow("自动备注", self.delivery_note_value)
+        order_form.addRow("备注", self.delivery_note_value)
 
         order_section = self._build_section("订单基础信息", order_form)
 
         self.procurement_product_1_combo = self._build_procurement_combo()
         self.procurement_quantity_1_value = self._build_line_edit()
         self.procurement_cost_1_value = self._build_line_edit()
+        self.procurement_tracking_1_value = self._build_line_edit()
         self.procurement_product_2_combo = self._build_procurement_combo()
         self.procurement_quantity_2_value = self._build_line_edit()
         self.procurement_cost_2_value = self._build_line_edit()
+        self.procurement_tracking_2_value = self._build_line_edit()
         self.procurement_product_3_combo = self._build_procurement_combo()
         self.procurement_quantity_3_value = self._build_line_edit()
         self.procurement_cost_3_value = self._build_line_edit()
+        self.procurement_tracking_3_value = self._build_line_edit()
         for combo in (
             self.procurement_product_1_combo,
             self.procurement_product_2_combo,
@@ -244,12 +250,15 @@ class HistoryPage(QWidget):
         procurement_form.addRow("采购 1 商品", self.procurement_product_1_combo)
         procurement_form.addRow("采购 1 数量", self.procurement_quantity_1_value)
         procurement_form.addRow("采购 1 成本", self.procurement_cost_1_value)
+        procurement_form.addRow("采购 1 快递单号", self.procurement_tracking_1_value)
         procurement_form.addRow("采购 2 商品", self.procurement_product_2_combo)
         procurement_form.addRow("采购 2 数量", self.procurement_quantity_2_value)
         procurement_form.addRow("采购 2 成本", self.procurement_cost_2_value)
+        procurement_form.addRow("采购 2 快递单号", self.procurement_tracking_2_value)
         procurement_form.addRow("采购 3 商品", self.procurement_product_3_combo)
         procurement_form.addRow("采购 3 数量", self.procurement_quantity_3_value)
         procurement_form.addRow("采购 3 成本", self.procurement_cost_3_value)
+        procurement_form.addRow("采购 3 快递单号", self.procurement_tracking_3_value)
 
         procurement_section = self._build_section("采购信息", procurement_form)
 
@@ -291,7 +300,7 @@ class HistoryPage(QWidget):
 
         sync_section = self._build_section("同步信息", sync_form)
 
-        self.save_button = QPushButton("保存修改")
+        self.save_button = QPushButton("保存修改并重新写入飞书")
         self.save_button.setObjectName("SecondaryActionButton")
         self.delete_button = QPushButton("删除")
         self.delete_button.setObjectName("DangerActionButton")
@@ -303,11 +312,13 @@ class HistoryPage(QWidget):
         self.resubmit_button.clicked.connect(self._emit_resubmit_requested)
 
         detail_body = QWidget()
+        detail_body.setObjectName("PageContent")
         detail_body_layout = QVBoxLayout(detail_body)
         detail_body_layout.setContentsMargins(0, 0, 0, 0)
         detail_body_layout.setSpacing(10)
 
-        detail_header = QWidget()
+        detail_header = QFrame()
+        detail_header.setObjectName("HistoryStickyActionBar")
         detail_header_layout = QHBoxLayout(detail_header)
         detail_header_layout.setContentsMargins(0, 0, 0, 0)
         detail_header_layout.setSpacing(10)
@@ -323,8 +334,8 @@ class HistoryPage(QWidget):
         header_actions_layout.setContentsMargins(0, 0, 0, 0)
         header_actions_layout.setSpacing(8)
         header_actions_layout.addWidget(self.save_button)
-        header_actions_layout.addWidget(self.resubmit_button)
         header_actions_layout.addWidget(self.delete_button)
+        self.resubmit_button.hide()
 
         detail_header_layout.addWidget(detail_header_text, 1)
         detail_header_layout.addWidget(self.header_actions_widget, 0, Qt.AlignmentFlag.AlignTop)
@@ -359,39 +370,40 @@ class HistoryPage(QWidget):
         detail_body_layout.addLayout(detail_grid)
         detail_body_layout.addStretch(1)
 
-        detail_card = QFrame()
-        detail_card.setObjectName("HistoryDetailCard")
-        detail_card_layout = QVBoxLayout(detail_card)
-        detail_card_layout.addWidget(detail_body)
+        detail_scroll = QScrollArea()
+        detail_scroll.setObjectName("HistoryDetailScroll")
+        detail_scroll.setWidgetResizable(True)
+        detail_scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        detail_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        detail_scroll.setWidget(detail_body)
 
-        self.left_column_widget = QWidget()
+        detail_card = QFrame()
+        detail_card.setObjectName("HistoryDetailPane")
+        detail_card_layout = QVBoxLayout(detail_card)
+        detail_card_layout.setContentsMargins(12, 12, 12, 12)
+        detail_card_layout.addWidget(detail_scroll)
+
+        self.left_column_widget = QFrame()
+        self.left_column_widget.setObjectName("HistoryMasterPane")
         self.left_column_widget.setMaximumWidth(420)
         left_column_layout = QVBoxLayout(self.left_column_widget)
         left_column_layout.setContentsMargins(0, 0, 0, 0)
         left_column_layout.setSpacing(10)
         left_column_layout.addWidget(list_card, 1)
 
-        content = QWidget()
-        content.setObjectName("PageContent")
-        content_layout = QVBoxLayout(content)
-        content_layout.setSpacing(10)
-        content_layout.addLayout(stats_row)
-
         workspace_row = QHBoxLayout()
+        workspace_row.setContentsMargins(0, 0, 0, 0)
         workspace_row.setSpacing(10)
         workspace_row.addWidget(self.left_column_widget, 1)
         workspace_row.addWidget(detail_card, 2)
-        content_layout.addLayout(workspace_row)
-
-        scroll_area = QScrollArea()
-        scroll_area.setWidgetResizable(True)
-        scroll_area.setFrameShape(QScrollArea.Shape.NoFrame)
-        scroll_area.setWidget(content)
 
         root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(10)
         root.addWidget(title)
         root.addWidget(filter_bar)
-        root.addWidget(scroll_area)
+        root.addWidget(self.stats_row_widget)
+        root.addLayout(workspace_row, 1)
 
         self._editable_widgets = [
             self.order_id_value,
@@ -399,7 +411,6 @@ class HistoryPage(QWidget):
             self.platform_value,
             self.product_name_value,
             self.specification_value,
-            self.sku_value,
             self.quantity_value,
             self.order_amount_value,
             self.income_amount_value,
@@ -413,6 +424,9 @@ class HistoryPage(QWidget):
             self.other_cost_value,
             self.procurement_total_cost_value,
             self.gross_profit_value,
+            self.procurement_tracking_1_value,
+            self.procurement_tracking_2_value,
+            self.procurement_tracking_3_value,
             self.procurement_quantity_1_value,
             self.procurement_cost_1_value,
             self.procurement_quantity_2_value,
@@ -427,6 +441,7 @@ class HistoryPage(QWidget):
         self._set_widgets_read_only(False)
         self._update_action_state()
         self._wire_filter_events()
+        self._wire_edit_events()
         self._show_empty_detail()
 
     def set_product_presets(self, product_presets: list[dict[str, str]]) -> None:
@@ -497,6 +512,17 @@ class HistoryPage(QWidget):
             recipient_name = self._display_value(row.get("sync_source"))
         status = self._display_value(row.get("status"))
         order_id = self._text_value((row.get("order_snapshot") or {}).get("order_id")) or "-"
+        tracking_number = self._text_value(
+            (row.get("order_snapshot") or {}).get("procurement_tracking_number")
+        )
+        if not tracking_number:
+            tracking_number = " / ".join(
+                self._text_value(item.get("tracking_number"))
+                for item in (row.get("order_snapshot") or {}).get("procurement_items", [])
+                if isinstance(item, dict) and self._text_value(item.get("tracking_number"))
+            )
+        if tracking_number:
+            return f"{shop_name} · {recipient_name} · {status} · {order_id} · {tracking_number}"
         return f"{shop_name} · {recipient_name} · {status} · {order_id}"
 
     def _handle_current_item_changed(self, current, previous) -> None:
@@ -581,16 +607,19 @@ class HistoryPage(QWidget):
                 self.procurement_product_1_combo,
                 self.procurement_quantity_1_value,
                 self.procurement_cost_1_value,
+                self.procurement_tracking_1_value,
             ),
             (
                 self.procurement_product_2_combo,
                 self.procurement_quantity_2_value,
                 self.procurement_cost_2_value,
+                self.procurement_tracking_2_value,
             ),
             (
                 self.procurement_product_3_combo,
                 self.procurement_quantity_3_value,
                 self.procurement_cost_3_value,
+                self.procurement_tracking_3_value,
             ),
         ]
         for index, widgets in enumerate(procurement_widgets):
@@ -599,8 +628,9 @@ class HistoryPage(QWidget):
                 item = {}
             if isinstance(widgets[0], QComboBox):
                 widgets[0].setCurrentText(self._text_value(item.get("product_name")))
-            widgets[1].setText(self._text_value(item.get("quantity")) or "1")
+            widgets[1].setText(self._text_value(item.get("quantity")))
             widgets[2].setText(self._text_value(item.get("cost")))
+            widgets[3].setText(self._text_value(item.get("tracking_number")))
 
         self.address_output_one.setPlainText(self._text_value(address_snapshot.get("output_one")))
         self.address_output_two.setPlainText(self._text_value(address_snapshot.get("output_two")))
@@ -642,19 +672,19 @@ class HistoryPage(QWidget):
             self.gross_profit_value,
             self.procurement_quantity_1_value,
             self.procurement_cost_1_value,
+            self.procurement_tracking_1_value,
             self.procurement_quantity_2_value,
             self.procurement_cost_2_value,
+            self.procurement_tracking_2_value,
             self.procurement_quantity_3_value,
             self.procurement_cost_3_value,
+            self.procurement_tracking_3_value,
             self.custom_cost_value_1,
             self.custom_cost_value_2,
             self.custom_cost_value_3,
         ):
             widget.setText("")
         self.platform_fee_rate_value.setText(_DEFAULT_PLATFORM_FEE_RATE)
-        self.procurement_quantity_1_value.setText("1")
-        self.procurement_quantity_2_value.setText("1")
-        self.procurement_quantity_3_value.setText("1")
         self.procurement_product_1_combo.setCurrentText("")
         self.procurement_product_2_combo.setCurrentText("")
         self.procurement_product_3_combo.setCurrentText("")
@@ -708,23 +738,31 @@ class HistoryPage(QWidget):
                     self._text_value(self.custom_cost_value_3.text()),
                 ],
                 "procurement_items": [
-                {
-                    "product_name": self._text_value(self.procurement_product_1_combo.currentText()),
-                    "quantity": self._text_value(self.procurement_quantity_1_value.text()) or "1",
-                    "cost": self._text_value(self.procurement_cost_1_value.text()),
-                },
-                {
-                    "product_name": self._text_value(self.procurement_product_2_combo.currentText()),
-                    "quantity": self._text_value(self.procurement_quantity_2_value.text()) or "1",
-                    "cost": self._text_value(self.procurement_cost_2_value.text()),
-                },
-                {
-                    "product_name": self._text_value(self.procurement_product_3_combo.currentText()),
-                    "quantity": self._text_value(self.procurement_quantity_3_value.text()) or "1",
-                    "cost": self._text_value(self.procurement_cost_3_value.text()),
-                },
+                    self._build_procurement_item_snapshot(
+                        self.procurement_product_1_combo,
+                        self.procurement_quantity_1_value,
+                        self.procurement_cost_1_value,
+                        self.procurement_tracking_1_value,
+                    ),
+                    self._build_procurement_item_snapshot(
+                        self.procurement_product_2_combo,
+                        self.procurement_quantity_2_value,
+                        self.procurement_cost_2_value,
+                        self.procurement_tracking_2_value,
+                    ),
+                    self._build_procurement_item_snapshot(
+                        self.procurement_product_3_combo,
+                        self.procurement_quantity_3_value,
+                        self.procurement_cost_3_value,
+                        self.procurement_tracking_3_value,
+                    ),
                 ],
             }
+        )
+        order_snapshot["procurement_tracking_number"] = " / ".join(
+            item["tracking_number"]
+            for item in order_snapshot["procurement_items"]
+            if self._text_value(item.get("tracking_number"))
         )
         order_snapshot = self._recalculate_financial_snapshot(order_snapshot)
         return order_snapshot
@@ -784,14 +822,29 @@ class HistoryPage(QWidget):
             source_items = []
         for index in range(3):
             item = source_items[index] if index < len(source_items) and isinstance(source_items[index], dict) else {}
+            product_name = self._text_value(item.get("product_name"))
+            quantity = self._text_value(item.get("quantity"))
+            cost = self._text_value(item.get("cost"))
+            tracking_number = self._text_value(item.get("tracking_number"))
             normalized_items.append(
                 {
-                    "product_name": self._text_value(item.get("product_name")),
-                    "quantity": self._text_value(item.get("quantity")) or "1",
-                    "cost": self._text_value(item.get("cost")),
+                    "product_name": product_name,
+                    "quantity": (
+                        quantity
+                        if quantity != "1" or any((product_name, cost, tracking_number))
+                        else ""
+                    ) or ("1" if any((product_name, cost, tracking_number)) else ""),
+                    "cost": cost,
+                    **({"tracking_number": tracking_number} if tracking_number else {}),
                 }
             )
         order_snapshot["procurement_items"] = normalized_items
+        if not self._text_value(order_snapshot.get("procurement_tracking_number")):
+            order_snapshot["procurement_tracking_number"] = " / ".join(
+                self._text_value(item.get("tracking_number"))
+                for item in normalized_items
+                if self._text_value(item.get("tracking_number"))
+            )
 
         address_snapshot = normalized.get("address_snapshot")
         if not isinstance(address_snapshot, dict):
@@ -901,6 +954,28 @@ class HistoryPage(QWidget):
                 or (key != "全部订单" and key == current_status)
             )
 
+    def _build_procurement_item_snapshot(
+        self,
+        combo: QComboBox,
+        quantity_widget: QLineEdit,
+        cost_widget: QLineEdit,
+        tracking_widget: QLineEdit,
+    ) -> dict[str, str]:
+        product_name = self._text_value(combo.currentText())
+        quantity = self._text_value(quantity_widget.text())
+        cost = self._text_value(cost_widget.text())
+        tracking_number = self._text_value(tracking_widget.text())
+        if any((product_name, cost, tracking_number)):
+            quantity = quantity or "1"
+        elif quantity == "1":
+            quantity = ""
+        return {
+            "product_name": product_name,
+            "quantity": quantity,
+            "cost": cost,
+            **({"tracking_number": tracking_number} if tracking_number else {}),
+        }
+
     def _update_detail_summary(self, order_snapshot: dict[str, Any]) -> None:
         procurement_items = order_snapshot.get("procurement_items") or []
         first_procurement = next(
@@ -922,9 +997,9 @@ class HistoryPage(QWidget):
 
     def _build_filter_bar(self) -> QWidget:
         container = QFrame()
-        container.setObjectName("HistoryFilterBar")
+        container.setObjectName("HistoryFilterCard")
         layout = QHBoxLayout(container)
-        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(8)
 
         for label in ("今天", "昨天", "近7天", "全部"):
@@ -935,6 +1010,9 @@ class HistoryPage(QWidget):
             layout.addWidget(button)
 
         self.quick_filter_buttons["全部"].setChecked(True)
+        self.keyword_filter_edit.setPlaceholderText("搜订单号 / 收件人 / 手机号 / 快递单号")
+        self.keyword_filter_edit.setClearButtonEnabled(True)
+        layout.addWidget(self.keyword_filter_edit, 1)
         layout.addWidget(self._label("日期"))
         layout.addWidget(self.date_filter_edit)
         layout.addWidget(self._label("店铺"))
@@ -954,6 +1032,40 @@ class HistoryPage(QWidget):
         self.apply_filters_button.clicked.connect(self._apply_filters_from_ui)
         self.clear_filters_button.clicked.connect(self._clear_filters)
         self.date_filter_edit.dateChanged.connect(self._mark_specific_date_active)
+        self.keyword_filter_edit.returnPressed.connect(self._apply_filters_from_ui)
+
+    def _wire_edit_events(self) -> None:
+        self.income_amount_value.textChanged.connect(self._recalculate_detail_financials)
+        self.platform_fee_rate_value.textChanged.connect(self._recalculate_detail_financials)
+        self.other_cost_value.textChanged.connect(self._recalculate_detail_financials)
+        for widget in (
+            self.procurement_quantity_1_value,
+            self.procurement_cost_1_value,
+            self.procurement_quantity_2_value,
+            self.procurement_cost_2_value,
+            self.procurement_quantity_3_value,
+            self.procurement_cost_3_value,
+            self.custom_cost_value_1,
+            self.custom_cost_value_2,
+            self.custom_cost_value_3,
+        ):
+            widget.textChanged.connect(self._recalculate_detail_financials)
+
+    def _recalculate_detail_financials(self) -> None:
+        row = self._current_row()
+        if row is None:
+            return
+        snapshot = self._build_order_snapshot_from_inputs(row.get("order_snapshot") or {})
+        self.platform_fee_amount_value.blockSignals(True)
+        self.procurement_total_cost_value.blockSignals(True)
+        self.gross_profit_value.blockSignals(True)
+        self.platform_fee_amount_value.setText(self._text_value(snapshot.get("platform_fee_amount")))
+        self.procurement_total_cost_value.setText(self._text_value(snapshot.get("procurement_total_cost")))
+        self.gross_profit_value.setText(self._text_value(snapshot.get("gross_profit")))
+        self.platform_fee_amount_value.blockSignals(False)
+        self.procurement_total_cost_value.blockSignals(False)
+        self.gross_profit_value.blockSignals(False)
+        self._update_detail_summary(snapshot)
 
     def _mark_specific_date_active(self, _date: QDate) -> None:
         self._specific_date_active = True
@@ -980,6 +1092,7 @@ class HistoryPage(QWidget):
     def _clear_filters(self) -> None:
         self.shop_filter_combo.setCurrentIndex(0)
         self.status_filter_combo.setCurrentIndex(0)
+        self.keyword_filter_edit.clear()
         self._active_quick_filter = "全部"
         for label, button in self.quick_filter_buttons.items():
             button.blockSignals(True)
@@ -1012,6 +1125,23 @@ class HistoryPage(QWidget):
 
     def _row_matches_filters(self, row: dict[str, Any], ignore_status: bool = False) -> bool:
         order_snapshot = row.get("order_snapshot") or {}
+        keyword = self.keyword_filter_edit.text().strip()
+        if keyword:
+            haystacks = (
+                self._display_value(row.get("shop_name")),
+                self._text_value(order_snapshot.get("order_id")),
+                self._text_value(order_snapshot.get("recipient_name")),
+                self._text_value(order_snapshot.get("phone_number")),
+                self._text_value(order_snapshot.get("procurement_tracking_number")),
+                self._text_value(order_snapshot.get("delivery_note")),
+                *[
+                    self._text_value(item.get("tracking_number"))
+                    for item in order_snapshot.get("procurement_items", [])
+                    if isinstance(item, dict)
+                ],
+            )
+            if not any(keyword in value for value in haystacks if value):
+                return False
         shop_filter = self.shop_filter_combo.currentText().strip()
         if shop_filter and shop_filter != "全部店铺":
             if self._display_value(row.get("shop_name")) != shop_filter:
@@ -1114,11 +1244,14 @@ class HistoryPage(QWidget):
         if not quantity_widget.text().strip():
             quantity_widget.setText("1")
         if not selected_name:
+            self._recalculate_detail_financials()
             return
         for item in self._product_presets:
             if item["name"] == selected_name:
                 cost_widget.setText(item["default_cost"])
+                self._recalculate_detail_financials()
                 return
+        self._recalculate_detail_financials()
 
     def _recalculate_financial_snapshot(self, order_snapshot: dict[str, Any]) -> dict[str, Any]:
         snapshot = dict(order_snapshot)

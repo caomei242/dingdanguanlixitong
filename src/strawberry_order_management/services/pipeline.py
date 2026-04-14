@@ -24,6 +24,10 @@ DEFAULT_FEISHU_FIELD_MAPPING = {
     "编号": "",
     "收入": "收入",
     "发货地址": "发货地址",
+    "采购快递单号": "",
+    "采购快递单号1": "",
+    "采购快递单号2": "",
+    "采购快递单号3": "",
     "价格": "",
     "平台扣点比例": "",
     "平台扣点金额": "",
@@ -57,6 +61,7 @@ def build_feishu_payload(
     sync_source: str = "",
     sync_status: str = "",
     sync_message: str = "",
+    blank_source_fields: set[str] | None = None,
 ) -> dict[str, object]:
     try:
         placed_at = datetime.strptime(order.placed_at, "%Y-%m-%d %H:%M:%S")
@@ -65,6 +70,15 @@ def build_feishu_payload(
     mapping = dict(DEFAULT_FEISHU_FIELD_MAPPING)
     if field_mapping:
         mapping.update(field_mapping)
+    blank_source_fields = {str(item).strip() for item in (blank_source_fields or set()) if str(item).strip()}
+
+    procurement_tracking_number = order.procurement_tracking_number
+    if not str(procurement_tracking_number).strip():
+        procurement_tracking_number = " / ".join(
+            str(item.tracking_number).strip()
+            for item in order.procurement_items
+            if str(item.tracking_number).strip()
+        )
 
     source_fields = {
         "店铺": shop_name,
@@ -84,6 +98,10 @@ def build_feishu_payload(
         "编号": order.code,
         "收入": order.income_amount,
         "发货地址": f"{order.recipient_name} {order.phone_number}-{order.code} {order.address}",
+        "采购快递单号": procurement_tracking_number,
+        "采购快递单号1": "",
+        "采购快递单号2": "",
+        "采购快递单号3": "",
         "价格": order.order_amount,
         "平台扣点比例": order.platform_fee_rate,
         "平台扣点金额": order.platform_fee_amount,
@@ -102,6 +120,7 @@ def build_feishu_payload(
         source_fields[f"采购商品{index}"] = item.product_name
         source_fields[f"采购数量{index}"] = item.quantity
         source_fields[f"采购成本{index}"] = item.cost
+        source_fields[f"采购快递单号{index}"] = item.tracking_number
 
     payload: dict[str, object] = {}
     for source_name, value in source_fields.items():
@@ -115,7 +134,7 @@ def build_feishu_payload(
             payload[target_name] = [{"local_path": image_path}]
             continue
         text_value = str(value).strip()
-        if not text_value:
+        if not text_value and source_name not in blank_source_fields:
             continue
         payload[target_name] = text_value
     return payload

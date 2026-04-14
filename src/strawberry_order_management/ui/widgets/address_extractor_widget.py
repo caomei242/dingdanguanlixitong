@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
+    QFrame,
     QHBoxLayout,
     QLabel,
     QPushButton,
@@ -27,6 +28,15 @@ class AddressExtractorWidget(QWidget):
         self.output_one.setReadOnly(True)
         self.output_two.setReadOnly(True)
 
+        self.input_panel = QFrame()
+        self.input_panel.setObjectName("ExtractorInputPanel")
+        input_layout = QVBoxLayout(self.input_panel)
+        input_layout.setContentsMargins(0, 0, 0, 0)
+        input_layout.setSpacing(10)
+        input_layout.addWidget(QLabel("输入"))
+        input_layout.addWidget(self.input_edit)
+        input_layout.addWidget(self.extract_button)
+
         output_one_header = QHBoxLayout()
         output_one_header.addWidget(QLabel("提取结果一"))
         output_one_header.addStretch(1)
@@ -37,15 +47,22 @@ class AddressExtractorWidget(QWidget):
         output_two_header.addStretch(1)
         output_two_header.addWidget(self.copy_output_two_button)
 
+        self.results_panel = QFrame()
+        self.results_panel.setObjectName("ExtractorResultsPanel")
+        results_layout = QVBoxLayout(self.results_panel)
+        results_layout.setContentsMargins(0, 0, 0, 0)
+        results_layout.setSpacing(10)
+        results_layout.addLayout(output_one_header)
+        results_layout.addWidget(self.output_one)
+        results_layout.addLayout(output_two_header)
+        results_layout.addWidget(self.output_two)
+        results_layout.addWidget(self.status_label)
+
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("输入"))
-        layout.addWidget(self.input_edit)
-        layout.addWidget(self.extract_button)
-        layout.addLayout(output_one_header)
-        layout.addWidget(self.output_one)
-        layout.addLayout(output_two_header)
-        layout.addWidget(self.output_two)
-        layout.addWidget(self.status_label)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(14)
+        layout.addWidget(self.input_panel)
+        layout.addWidget(self.results_panel)
 
         self.extract_button.clicked.connect(self._extract)
         self.copy_output_one_button.clicked.connect(
@@ -54,6 +71,16 @@ class AddressExtractorWidget(QWidget):
         self.copy_output_two_button.clicked.connect(
             lambda: self._copy_output(self.output_two.toPlainText(), "已复制结果二")
         )
+
+    def take_workspace_panels(self) -> tuple[QWidget, QWidget]:
+        layout = self.layout()
+        if layout is not None:
+            layout.removeWidget(self.input_panel)
+            layout.removeWidget(self.results_panel)
+        self.input_panel.setParent(None)
+        self.results_panel.setParent(None)
+        self.hide()
+        return self.input_panel, self.results_panel
 
     def load_from_order(self, order) -> None:
         payload = extract_address_payload(

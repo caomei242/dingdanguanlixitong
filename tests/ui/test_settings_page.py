@@ -1,4 +1,4 @@
-from PySide6.QtWidgets import QFrame, QScrollArea, QTabWidget
+from PySide6.QtWidgets import QFrame, QListWidget, QScrollArea, QStackedWidget
 
 from strawberry_order_management.ui.main_window import MainWindow
 from strawberry_order_management.ui.pages.history_page import HistoryPage
@@ -153,6 +153,172 @@ def test_settings_page_to_payload_persists_global_product_library_and_total_tabl
         "珍宝零食店",
         "悦宝零食店",
     ]
+
+
+def test_settings_page_preserves_procurement_templates_in_payload(qtbot):
+    page = SettingsPage()
+    qtbot.addWidget(page)
+
+    page.load_payload(
+        {
+            "procurement_templates": [
+                {
+                    "specification": "1L/桶*12袋(赵露思同款 澳洲版)",
+                    "procurement_items": [
+                        {"product_name": "27000-澳洲版-1升装", "quantity": "2", "cost": "109"},
+                        {"product_name": "康兴-瓶盖-粉色", "quantity": "1", "cost": "13.8"},
+                        {"product_name": "", "quantity": "1", "cost": ""},
+                    ],
+                }
+            ]
+        }
+    )
+
+    payload = page.to_payload()
+
+    assert payload["procurement_templates"] == [
+        {
+            "specification": "1L/桶*12袋(赵露思同款 澳洲版)",
+            "procurement_items": [
+                {"product_name": "27000-澳洲版-1升装", "quantity": "2", "cost": "109"},
+                {"product_name": "康兴-瓶盖-粉色", "quantity": "1", "cost": "13.8"},
+                {"product_name": "", "quantity": "", "cost": ""},
+            ],
+        }
+    ]
+
+
+def test_settings_page_load_payload_preserves_update_logs(qtbot):
+    page = SettingsPage()
+    qtbot.addWidget(page)
+
+    page.load_payload(
+        {
+            "update_logs_initialized": True,
+            "update_logs": [
+                {
+                    "id": "log-2",
+                    "created_at": "2026-04-14 12:00:00",
+                    "updated_at": "2026-04-14 12:00:00",
+                    "module": "利润计算",
+                    "title": "新增利润页",
+                    "content": "新增大盘和每日账目明细两个 tab。",
+                },
+                {
+                    "id": "log-1",
+                    "created_at": "2026-04-13 10:00:00",
+                    "updated_at": "2026-04-13 10:00:00",
+                    "module": "历史",
+                    "title": "支持历史编辑",
+                    "content": "支持直接在历史页改订单并同步飞书。",
+                },
+            ],
+        }
+    )
+
+    assert page.update_log_list.count() == 2
+    assert "新增利润页" in page.update_log_list.item(0).text()
+    assert page.update_log_title_edit.text() == "新增利润页"
+    assert page.update_log_module_edit.text() == "利润计算"
+    assert page.update_log_content_edit.toPlainText() == "新增大盘和每日账目明细两个 tab。"
+
+
+def test_settings_page_to_payload_persists_update_logs(qtbot):
+    page = SettingsPage()
+    qtbot.addWidget(page)
+
+    page.load_payload({"update_logs_initialized": True, "update_logs": []})
+    page._handle_add_update_log()
+    page.update_log_module_edit.setText("录单")
+    page.update_log_title_edit.setText("支持规格模板")
+    page.update_log_content_edit.setPlainText("相同规格自动预填采购明细。")
+    page._handle_save_update_log()
+
+    payload = page.to_payload()
+
+    assert payload["update_logs_initialized"] is True
+    assert len(payload["update_logs"]) == 1
+    assert payload["update_logs"][0]["module"] == "录单"
+    assert payload["update_logs"][0]["title"] == "支持规格模板"
+    assert payload["update_logs"][0]["content"] == "相同规格自动预填采购明细。"
+    assert payload["update_logs"][0]["id"]
+    assert payload["update_logs"][0]["created_at"]
+    assert payload["update_logs"][0]["updated_at"]
+
+
+def test_settings_page_can_edit_and_delete_update_log(qtbot):
+    page = SettingsPage()
+    qtbot.addWidget(page)
+
+    page.load_payload(
+        {
+            "update_logs_initialized": True,
+            "update_logs": [
+                {
+                    "id": "log-1",
+                    "created_at": "2026-04-13 10:00:00",
+                    "updated_at": "2026-04-13 10:00:00",
+                    "module": "飞书同步",
+                    "title": "初始标题",
+                    "content": "初始内容",
+                }
+            ],
+        }
+    )
+
+    page.update_log_title_edit.setText("改后标题")
+    page.update_log_content_edit.setPlainText("改后内容")
+    page._handle_save_update_log()
+
+    assert page.to_payload()["update_logs"][0]["title"] == "改后标题"
+    assert page.to_payload()["update_logs"][0]["content"] == "改后内容"
+
+    page._handle_remove_update_log()
+
+    assert page.update_log_list.count() == 0
+    assert page.to_payload()["update_logs"] == []
+
+
+def test_settings_page_backfills_update_logs_once_for_empty_legacy_payload(qtbot):
+    page = SettingsPage()
+    qtbot.addWidget(page)
+
+    page.load_payload({})
+    first_payload = page.to_payload()
+
+    assert first_payload["update_logs_initialized"] is True
+    assert len(first_payload["update_logs"]) > 0
+
+    page.load_payload(
+        {
+            "update_logs_initialized": True,
+            "update_logs": [],
+        }
+    )
+
+    assert page.to_payload()["update_logs"] == []
+
+
+def test_settings_page_append_update_log_adds_latest_entry_to_top(qtbot):
+    page = SettingsPage()
+    qtbot.addWidget(page)
+
+    page.load_payload({"update_logs_initialized": True, "update_logs": []})
+
+    assert page.append_update_log(
+        "历史",
+        "修复历史备注清空同步",
+        "历史页保存修改并重新写入飞书时，允许用空备注覆盖飞书备注列。",
+        created_at="2026-04-14 22:30:00",
+    ) is True
+
+    payload = page.to_payload()
+
+    assert payload["update_logs"][0]["module"] == "历史"
+    assert payload["update_logs"][0]["title"] == "修复历史备注清空同步"
+    assert payload["update_logs"][0]["content"] == "历史页保存修改并重新写入飞书时，允许用空备注覆盖飞书备注列。"
+    assert page.update_log_list.count() == 1
+    assert "修复历史备注清空同步" in page.update_log_list.item(0).text()
 
 
 def test_settings_page_collects_api_configuration(qtbot):
@@ -367,7 +533,7 @@ def test_settings_page_wraps_content_in_scroll_area(qtbot):
     page = SettingsPage()
     qtbot.addWidget(page)
 
-    scroll_area = page.findChild(QScrollArea)
+    scroll_area = page.findChild(QScrollArea, "SettingsSectionScroll")
 
     assert scroll_area is not None
     assert scroll_area.widgetResizable() is True
@@ -375,19 +541,32 @@ def test_settings_page_wraps_content_in_scroll_area(qtbot):
     assert scroll_area.widget().objectName() == "PageContent"
 
 
-def test_settings_page_groups_forms_into_tabs(qtbot):
+def test_settings_page_uses_sidebar_nav_and_content_stack(qtbot):
     page = SettingsPage()
     qtbot.addWidget(page)
 
-    tabs = page.findChild(QTabWidget)
+    nav = page.findChild(QListWidget, "SettingsSectionNav")
+    stack = page.findChild(QStackedWidget, "SettingsSectionStack")
 
-    assert tabs is not None
-    assert tabs.count() == 3
-    assert [tabs.tabText(index) for index in range(tabs.count())] == [
+    assert nav is not None
+    assert stack is not None
+    assert nav.count() == 4
+    assert stack.count() == 4
+    assert [nav.item(index).text() for index in range(nav.count())] == [
         "接口配置",
         "商品库",
         "店铺映射",
+        "更新日志",
     ]
+
+
+def test_settings_page_uses_three_column_mapping_grid(qtbot):
+    page = SettingsPage()
+    qtbot.addWidget(page)
+
+    assert page.mapping_grid_layout.itemAtPosition(0, 0) is not None
+    assert page.mapping_grid_layout.itemAtPosition(0, 1) is not None
+    assert page.mapping_grid_layout.itemAtPosition(0, 2) is not None
 
 
 def test_settings_page_prefills_recommended_mapping_for_new_shop(qtbot):
@@ -405,7 +584,7 @@ def test_settings_page_prefills_recommended_mapping_for_new_shop(qtbot):
     assert page.shop_mapping_edits["order_status"].text() == "订单状态"
     assert page.shop_mapping_edits["product_name"].text() == "商品名称"
     assert page.shop_mapping_edits["specification"].text() == "规格"
-    assert page.shop_mapping_edits["sku"].text() == "SKU"
+    assert page.shop_mapping_edits["sku"].text() == ""
     assert page.shop_mapping_edits["sku_image"].text() == "SKU图片"
     assert page.shop_mapping_edits["quantity"].text() == "数量"
     assert page.shop_mapping_edits["recipient_name"].text() == "收件人"
@@ -413,6 +592,10 @@ def test_settings_page_prefills_recommended_mapping_for_new_shop(qtbot):
     assert page.shop_mapping_edits["code"].text() == "编号"
     assert page.shop_mapping_edits["income"].text() == "收入"
     assert page.shop_mapping_edits["shipping_address"].text() == "发货地址"
+    assert page.mapping_edits["采购快递单号"].text() == "采购快递单号"
+    assert page.mapping_edits["采购快递单号1"].text() == "采购快递单号1"
+    assert page.mapping_edits["采购快递单号2"].text() == "采购快递单号2"
+    assert page.mapping_edits["采购快递单号3"].text() == "采购快递单号3"
     assert page.shop_mapping_edits["price"].text() == ""
     assert page.shop_mapping_edits["sync_source"].text() == "同步方式"
     assert page.shop_mapping_edits["sync_status"].text() == "同步状态"
@@ -510,7 +693,7 @@ def test_settings_page_custom_cost_label_does_not_override_manual_mapping(qtbot)
     assert page.mapping_edits["自定义字段1"].text() == "费用A"
 
 
-def test_main_window_navigates_between_three_pages(qtbot):
+def test_main_window_navigates_between_four_pages(qtbot):
     window = MainWindow()
     qtbot.addWidget(window)
 
@@ -521,6 +704,9 @@ def test_main_window_navigates_between_three_pages(qtbot):
     assert window.stack.currentWidget() is window.history_page
 
     window.nav.setCurrentRow(2)
+    assert window.stack.currentWidget() is window.profit_page
+
+    window.nav.setCurrentRow(3)
     assert window.stack.currentWidget() is window.settings_page
 
     window.nav.setCurrentRow(0)

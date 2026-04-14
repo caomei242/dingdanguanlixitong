@@ -24,6 +24,7 @@ class ParsedOrder:
     code: str
     address: str
     delivery_note: str
+    procurement_tracking_number: str = ""
     specification: str = ""
     sku: str = ""
     sku_image_path: str = ""
@@ -37,9 +38,9 @@ class ParsedOrder:
     custom_cost_values: tuple[str, str, str] = ("", "", "")
     procurement_items: tuple["ProcurementItem", "ProcurementItem", "ProcurementItem"] = field(
         default_factory=lambda: (
-            ProcurementItem("", "1", ""),
-            ProcurementItem("", "1", ""),
-            ProcurementItem("", "1", ""),
+            ProcurementItem("", "", ""),
+            ProcurementItem("", "", ""),
+            ProcurementItem("", "", ""),
         )
     )
 
@@ -49,6 +50,7 @@ class ProcurementItem:
     product_name: str
     quantity: str
     cost: str
+    tracking_number: str = ""
 
 
 @dataclass(frozen=True)

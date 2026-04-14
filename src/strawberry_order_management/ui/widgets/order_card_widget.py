@@ -3,6 +3,7 @@ from __future__ import annotations
 from decimal import Decimal, ROUND_HALF_UP
 from functools import partial
 from pathlib import Path
+import re
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QPixmap
@@ -29,12 +30,15 @@ from strawberry_order_management.models import ParsedOrder, ProcurementItem
 
 class OrderCardWidget(QWidget):
     product_library_requested = Signal(str, str)
+    procurement_template_requested = Signal(object)
     ORDER_STATUS_OPTIONS = ("已发货", "待发货", "已拍单未发货")
     DEFAULT_PLATFORM_FEE_RATE = "0.06"
+    DEFAULT_DELIVERY_NOTE_PATTERN = re.compile(r"^请电话送货上门谢谢【\d+】$")
 
     def __init__(self) -> None:
         super().__init__()
         self._product_presets: list[dict[str, str]] = []
+        self._procurement_templates: list[dict[str, object]] = []
         self.order_id_edit = self._build_line_edit()
         self.placed_at_edit = self._build_line_edit()
         self.order_status_edit = QComboBox()
@@ -66,15 +70,15 @@ class OrderCardWidget(QWidget):
         self.custom_cost_row_widgets: list[QWidget] = []
         self._platform_fee_amount_overridden = False
         self._suspend_financial_recalculation = False
-        self.procurement_rows: list[tuple[QComboBox, QLineEdit, QLineEdit, QPushButton]] = []
+        self.procurement_rows: list[tuple[QComboBox, QLineEdit, QLineEdit, QLineEdit, QPushButton]] = []
 
-        self.procurement_product_1_combo, self.procurement_quantity_1_edit, self.procurement_cost_1_edit, self.procurement_save_1_button = (
+        self.procurement_product_1_combo, self.procurement_quantity_1_edit, self.procurement_cost_1_edit, self.procurement_tracking_number_1_edit, self.procurement_save_1_button = (
             self._build_procurement_row(0)
         )
-        self.procurement_product_2_combo, self.procurement_quantity_2_edit, self.procurement_cost_2_edit, self.procurement_save_2_button = (
+        self.procurement_product_2_combo, self.procurement_quantity_2_edit, self.procurement_cost_2_edit, self.procurement_tracking_number_2_edit, self.procurement_save_2_button = (
             self._build_procurement_row(1)
         )
-        self.procurement_product_3_combo, self.procurement_quantity_3_edit, self.procurement_cost_3_edit, self.procurement_save_3_button = (
+        self.procurement_product_3_combo, self.procurement_quantity_3_edit, self.procurement_cost_3_edit, self.procurement_tracking_number_3_edit, self.procurement_save_3_button = (
             self._build_procurement_row(2)
         )
 
@@ -126,7 +130,7 @@ class OrderCardWidget(QWidget):
             for item in product_presets
             if self._to_text(item.get("name")).strip()
         ]
-        for index, (combo, _, _, _) in enumerate(self.procurement_rows):
+        for index, (combo, _, _, _, _) in enumerate(self.procurement_rows):
             current = combo.currentText().strip()
             combo.blockSignals(True)
             combo.clear()
@@ -135,6 +139,13 @@ class OrderCardWidget(QWidget):
             combo.setCurrentText(current)
             combo.blockSignals(False)
             self._apply_preset_to_slot(index)
+
+    def set_procurement_templates(self, procurement_templates: list[dict[str, object]]) -> None:
+        self._procurement_templates = [
+            self._normalize_procurement_template(item)
+            for item in procurement_templates
+            if isinstance(item, dict)
+        ]
 
     def set_custom_cost_labels(self, labels: list[str] | tuple[str, str, str]) -> None:
         normalized = list(labels[:3]) + [""] * max(0, 3 - len(labels))
@@ -173,7 +184,10 @@ class OrderCardWidget(QWidget):
         self.phone_number_edit.setText(self._to_text(order.phone_number))
         self.code_edit.setText(self._to_text(order.code))
         self.address_edit.setPlainText(self._to_text(order.address))
-        self.delivery_note_edit.setPlainText(self._to_text(order.delivery_note))
+        delivery_note = self._to_text(order.delivery_note)
+        if self._is_default_delivery_note(delivery_note):
+            delivery_note = ""
+        self.delivery_note_edit.setPlainText(delivery_note)
         self._load_sku_image(self._to_text(getattr(order, "sku_image_path", "")))
         fee_rate_value = self._to_text(order.platform_fee_rate).strip() or self.DEFAULT_PLATFORM_FEE_RATE
         self.platform_fee_rate_edit.setText(fee_rate_value)
@@ -187,11 +201,19 @@ class OrderCardWidget(QWidget):
         for index, edit in enumerate(self.custom_cost_value_edits):
             edit.setText(self._to_text(custom_values[index] if index < len(custom_values) else ""))
         procurement_items = tuple(order.procurement_items) or ()
-        for index, (combo, quantity_edit, cost_edit, _) in enumerate(self.procurement_rows):
-            item = procurement_items[index] if index < len(procurement_items) else ProcurementItem("", "1", "")
+        normalized_items = list(procurement_items[:3])
+        while len(normalized_items) < 3:
+            normalized_items.append(ProcurementItem("", "", "", ""))
+        if self._should_apply_template(normalized_items, self._to_text(getattr(order, "specification", ""))):
+            normalized_items = self._procurement_items_from_template(
+                self._find_template_for_specification(self._to_text(getattr(order, "specification", "")))
+            )
+        for index, (combo, quantity_edit, cost_edit, tracking_edit, _) in enumerate(self.procurement_rows):
+            item = normalized_items[index] if index < len(normalized_items) else ProcurementItem("", "", "", "")
             combo.setCurrentText(self._to_text(item.product_name))
-            quantity_edit.setText(self._to_text(item.quantity) or "1")
+            quantity_edit.setText(self._to_text(item.quantity))
             cost_edit.setText(self._to_text(item.cost))
+            tracking_edit.setText(self._to_text(getattr(item, "tracking_number", "")))
         should_recalculate = False
         if self._to_text(order.platform_fee_rate).strip():
             self._platform_fee_amount_overridden = False
@@ -219,6 +241,7 @@ class OrderCardWidget(QWidget):
             code=self.code_edit.text().strip(),
             address=self.address_edit.toPlainText().strip(),
             delivery_note=self.delivery_note_edit.toPlainText().strip(),
+            procurement_tracking_number=self._combined_procurement_tracking_number(),
             platform_fee_rate=self.platform_fee_rate_edit.text().strip(),
             platform_fee_amount=self.platform_fee_amount_edit.text().strip(),
             other_cost=self.other_cost_edit.text().strip(),
@@ -227,22 +250,38 @@ class OrderCardWidget(QWidget):
             custom_cost_labels=tuple(label.text().strip() for label in self.custom_cost_label_edits),
             custom_cost_values=tuple(edit.text().strip() for edit in self.custom_cost_value_edits),
             procurement_items=tuple(
-                ProcurementItem(
-                    combo.currentText().strip(),
-                    quantity_edit.text().strip() or "1",
-                    cost_edit.text().strip(),
-                )
-                for combo, quantity_edit, cost_edit, _ in self.procurement_rows
+                ProcurementItem(*self._normalized_procurement_row_values(combo, quantity_edit, cost_edit, tracking_edit))
+                for combo, quantity_edit, cost_edit, tracking_edit, _ in self.procurement_rows
             ),
         )
 
     def emit_product_library_request(self, index: int) -> None:
-        combo, _, cost_edit, _ = self.procurement_rows[index]
+        combo, _, cost_edit, _, _ = self.procurement_rows[index]
         product_name = combo.currentText().strip()
         cost = cost_edit.text().strip()
         if not product_name:
             return
         self.product_library_requested.emit(product_name, cost)
+        specification = self.specification_edit.text().strip()
+        if not specification:
+            return
+        self.procurement_template_requested.emit(
+            {
+                "specification": specification,
+                "procurement_items": [
+                    {
+                        "product_name": product_name,
+                        "quantity": quantity,
+                        "cost": cost,
+                        "tracking_number": "",
+                    }
+                    for product_name, quantity, cost, _ in (
+                        self._normalized_procurement_row_values(combo, quantity_edit, cost_edit, tracking_edit)
+                        for combo, quantity_edit, cost_edit, tracking_edit, _ in self.procurement_rows
+                    )
+                ],
+            }
+        )
 
     def _build_overview_body(self) -> QWidget:
         body = QWidget()
@@ -251,13 +290,11 @@ class OrderCardWidget(QWidget):
         grid.setHorizontalSpacing(12)
         grid.setVerticalSpacing(10)
 
-        grid.addWidget(self._field_block("订单编号", self.order_id_edit), 0, 0)
-        grid.addWidget(self._field_block("下单时间", self.placed_at_edit), 0, 1)
-        grid.addWidget(self._field_block("订单状态", self.order_status_edit), 1, 0)
-        grid.addWidget(self._field_block("数量", self.quantity_edit), 1, 1)
+        grid.addWidget(self._field_block("下单时间", self.placed_at_edit), 0, 0)
+        grid.addWidget(self._field_block("订单状态", self.order_status_edit), 0, 1)
+        grid.addWidget(self._field_block("数量", self.quantity_edit), 1, 0)
         grid.addWidget(self._field_block("商品名称", self.product_name_edit), 2, 0, 1, 2)
-        grid.addWidget(self._field_block("规格", self.specification_edit), 3, 0)
-        grid.addWidget(self._field_block("SKU", self.sku_edit), 3, 1)
+        grid.addWidget(self._field_block("规格", self.specification_edit), 3, 0, 1, 2)
         grid.addWidget(self._field_block("SKU 图片", self.sku_image_label), 4, 0)
         grid.addWidget(self._field_block("订单金额", self.order_amount_edit), 4, 1)
         grid.addWidget(self._field_block("商家收入", self.income_amount_edit), 5, 0, 1, 2)
@@ -274,7 +311,7 @@ class OrderCardWidget(QWidget):
         grid.addWidget(self._field_block("手机号", self.phone_number_edit), 0, 1)
         grid.addWidget(self._field_block("编号", self.code_edit), 1, 0)
         grid.addWidget(self._field_block("收货地址", self.address_edit), 1, 1)
-        grid.addWidget(self._field_block("自动备注", self.delivery_note_edit), 2, 0, 1, 2)
+        grid.addWidget(self._field_block("备注", self.delivery_note_edit), 2, 0, 1, 2)
         return body
 
     def _build_procurement_body(self) -> QWidget:
@@ -307,7 +344,7 @@ class OrderCardWidget(QWidget):
             grid.addWidget(row_widget, 3 + index, 0, 1, 2)
         return body
 
-    def _build_procurement_row(self, index: int) -> tuple[QComboBox, QLineEdit, QLineEdit, QPushButton]:
+    def _build_procurement_row(self, index: int) -> tuple[QComboBox, QLineEdit, QLineEdit, QLineEdit, QPushButton]:
         product_combo = QComboBox()
         product_combo.setEditable(True)
         product_combo.setObjectName("OrderValueEdit")
@@ -316,12 +353,15 @@ class OrderCardWidget(QWidget):
 
         quantity_edit = self._build_line_edit()
         quantity_edit.setPlaceholderText("数量")
-        quantity_edit.setText("1")
         quantity_edit.setMaximumWidth(92)
 
         cost_edit = self._build_line_edit()
         cost_edit.setPlaceholderText("成本")
         cost_edit.setMaximumWidth(140)
+
+        tracking_edit = self._build_line_edit()
+        tracking_edit.setPlaceholderText("快递单号")
+        tracking_edit.setMinimumWidth(170)
 
         save_button = QPushButton("入库")
         save_button.setObjectName("SecondaryActionButton")
@@ -329,8 +369,8 @@ class OrderCardWidget(QWidget):
 
         product_combo.currentTextChanged.connect(partial(self._handle_procurement_product_changed, index))
         save_button.clicked.connect(partial(self.emit_product_library_request, index))
-        self.procurement_rows.append((product_combo, quantity_edit, cost_edit, save_button))
-        return product_combo, quantity_edit, cost_edit, save_button
+        self.procurement_rows.append((product_combo, quantity_edit, cost_edit, tracking_edit, save_button))
+        return product_combo, quantity_edit, cost_edit, tracking_edit, save_button
 
     def _build_procurement_row_card(self, title: str, row_widget: QWidget) -> QWidget:
         card = QFrame()
@@ -345,7 +385,7 @@ class OrderCardWidget(QWidget):
         return card
 
     def _procurement_row_widget(self, index: int) -> QWidget:
-        combo, quantity_edit, cost_edit, save_button = self.procurement_rows[index]
+        combo, quantity_edit, cost_edit, tracking_edit, save_button = self.procurement_rows[index]
         row = QWidget()
         layout = QHBoxLayout(row)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -353,6 +393,7 @@ class OrderCardWidget(QWidget):
         layout.addWidget(combo, 3)
         layout.addWidget(quantity_edit, 1)
         layout.addWidget(cost_edit, 1)
+        layout.addWidget(tracking_edit, 2)
         layout.addWidget(save_button, 0)
         return row
 
@@ -360,10 +401,8 @@ class OrderCardWidget(QWidget):
         self._apply_preset_to_slot(index)
 
     def _apply_preset_to_slot(self, index: int) -> None:
-        combo, quantity_edit, cost_edit, _ = self.procurement_rows[index]
+        combo, _, cost_edit, _, _ = self.procurement_rows[index]
         selected_name = combo.currentText().strip()
-        if not quantity_edit.text().strip():
-            quantity_edit.setText("1")
         if not selected_name:
             return
         for item in self._product_presets:
@@ -390,7 +429,7 @@ class OrderCardWidget(QWidget):
         self.platform_fee_rate_edit.textChanged.connect(self._handle_platform_fee_rate_changed)
         self.platform_fee_amount_edit.textEdited.connect(self._handle_platform_fee_amount_edited)
         self.other_cost_edit.textChanged.connect(self._recalculate_financials)
-        for _, quantity_edit, cost_edit, _ in self.procurement_rows:
+        for _, quantity_edit, cost_edit, _, _ in self.procurement_rows:
             quantity_edit.textChanged.connect(self._recalculate_financials)
             cost_edit.textChanged.connect(self._recalculate_financials)
         for edit in self.custom_cost_value_edits:
@@ -435,11 +474,104 @@ class OrderCardWidget(QWidget):
 
     def _sum_procurement_costs(self) -> Decimal:
         total = Decimal("0")
-        for _, quantity_edit, cost_edit, _ in self.procurement_rows:
+        for _, quantity_edit, cost_edit, _, _ in self.procurement_rows:
             quantity = parse_decimal(quantity_edit.text() or "1")
             cost = parse_decimal(cost_edit.text())
             total += quantity * cost
         return total.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+    def _combined_procurement_tracking_number(self) -> str:
+        values = [tracking_edit.text().strip() for _, _, _, tracking_edit, _ in self.procurement_rows if tracking_edit.text().strip()]
+        return " / ".join(values)
+
+    def _should_apply_template(self, procurement_items: list[ProcurementItem], specification: str) -> bool:
+        if not specification.strip():
+            return False
+        if self._find_template_for_specification(specification) is None:
+            return False
+        return not any(
+            item.product_name.strip() or item.cost.strip() or item.tracking_number.strip()
+            for item in procurement_items
+        )
+
+    def _find_template_for_specification(self, specification: str) -> dict[str, object] | None:
+        normalized = specification.strip()
+        for item in self._procurement_templates:
+            if self._to_text(item.get("specification")).strip() == normalized:
+                return item
+        return None
+
+    def _procurement_items_from_template(self, template: dict[str, object] | None) -> list[ProcurementItem]:
+        if not template:
+            return [ProcurementItem("", "", "", "") for _ in range(3)]
+        items = []
+        for item in list(template.get("procurement_items") or [])[:3]:
+            if not isinstance(item, dict):
+                item = {}
+            product_name = self._to_text(item.get("product_name")).strip()
+            quantity = self._to_text(item.get("quantity")).strip()
+            cost = self._to_text(item.get("cost")).strip()
+            items.append(
+                ProcurementItem(
+                    product_name,
+                    (
+                        quantity
+                        if quantity != "1" or any((product_name, cost))
+                        else ""
+                    ) or ("1" if any((product_name, cost)) else ""),
+                    cost,
+                    "",
+                )
+            )
+        while len(items) < 3:
+            items.append(ProcurementItem("", "", "", ""))
+        return items
+
+    @staticmethod
+    def _normalize_procurement_template(template: dict[str, object]) -> dict[str, object]:
+        items = []
+        raw_items = template.get("procurement_items")
+        if isinstance(raw_items, list):
+            source_items = raw_items
+        else:
+            source_items = []
+        for index in range(3):
+            item = source_items[index] if index < len(source_items) and isinstance(source_items[index], dict) else {}
+            product_name = str(item.get("product_name", "")).strip()
+            quantity = str(item.get("quantity", "")).strip()
+            cost = str(item.get("cost", "")).strip()
+            items.append(
+                {
+                    "product_name": product_name,
+                    "quantity": (
+                        quantity
+                        if quantity != "1" or any((product_name, cost))
+                        else ""
+                    ) or ("1" if any((product_name, cost)) else ""),
+                    "cost": cost,
+                }
+            )
+        return {
+            "specification": str(template.get("specification", "")).strip(),
+            "procurement_items": items,
+        }
+
+    def _normalized_procurement_row_values(
+        self,
+        combo: QComboBox,
+        quantity_edit: QLineEdit,
+        cost_edit: QLineEdit,
+        tracking_edit: QLineEdit,
+    ) -> tuple[str, str, str, str]:
+        product_name = combo.currentText().strip()
+        quantity = quantity_edit.text().strip()
+        cost = cost_edit.text().strip()
+        tracking_number = tracking_edit.text().strip()
+        if any((product_name, cost, tracking_number)):
+            quantity = quantity or "1"
+        elif quantity == "1":
+            quantity = ""
+        return product_name, quantity, cost, tracking_number
 
     @staticmethod
     def _set_line_edit_text(widget: QLineEdit, value: str) -> None:
@@ -534,6 +666,10 @@ class OrderCardWidget(QWidget):
                 Qt.TransformationMode.SmoothTransformation,
             )
         )
+
+    @classmethod
+    def _is_default_delivery_note(cls, value: str) -> bool:
+        return bool(cls.DEFAULT_DELIVERY_NOTE_PATTERN.match(str(value).strip()))
 
     @staticmethod
     def _label(text: str) -> QLabel:

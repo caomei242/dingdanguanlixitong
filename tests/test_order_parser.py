@@ -15,7 +15,8 @@ def test_parses_jd_order_fixture_into_structured_order():
     assert order.phone_number == "15781304332"
     assert order.code == "3612"
     assert order.address == "四川省成都市金牛区营门口街道友谊花园9-2304"
-    assert order.product_name == "【明日达】赵露丝同款27000澳大利亚进口婴儿水宝宝水高偏矿泉水 1L/桶*12袋"
+    assert order.product_name == "【明日达】赵露丝同款27000澳大利亚进口婴儿水宝宝水高偏矿泉水"
+    assert order.specification == "1L/桶*12袋"
     assert order.quantity == "1"
     assert order.order_amount == "405.00"
     assert order.income_amount == "162.00"
@@ -41,7 +42,8 @@ def test_parses_order_text_with_extra_spaces_and_newlines():
 
     order = parse_order_text(raw_text)
 
-    assert order.product_name == "【明日达】赵露丝同款27000澳大利亚进口婴儿水宝宝水高偏矿泉水 1L/桶*12袋"
+    assert order.product_name == "【明日达】赵露丝同款27000澳大利亚进口婴儿水宝宝水高偏矿泉水"
+    assert order.specification == "1L/桶*12袋"
     assert order.quantity == "1"
     assert order.delivery_note == "请电话送货上门谢谢【3612】"
 
@@ -67,3 +69,21 @@ def test_parses_specification_and_optional_sku_from_multiline_product_block():
     assert order.specification == "1L/桶*12袋(赵露思同款 澳洲版)"
     assert order.sku == "27000-澳洲版-1升装"
     assert order.order_status == "待发货"
+
+
+def test_parses_inline_specification_when_it_is_on_same_product_line():
+    raw_text = """
+    订单编号 69525544900545379782
+    下单时间 2026-04-12 21:48:29
+    订单状态 已发货
+    商品信息
+    【明日达】赵露丝同款27000澳大利亚进口婴儿水宝宝水高偏矿泉水 1L/瓶*12袋(赵露思同款（含同款瓶盖）
+    单价/数量 ¥355.00 x1
+    商家收入金额 ¥142.00
+    收货信息 田宝山 [5842] 15784081541 山东省德州市齐河县晏城街道 玫瑰园4号楼（西北门超市） [5842]
+    """
+
+    order = parse_order_text(raw_text)
+
+    assert order.product_name == "【明日达】赵露丝同款27000澳大利亚进口婴儿水宝宝水高偏矿泉水"
+    assert order.specification == "1L/瓶*12袋(赵露思同款（含同款瓶盖）"

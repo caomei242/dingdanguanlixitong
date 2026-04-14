@@ -1,4 +1,5 @@
 from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QFrame, QScrollArea, QWidget
 
 from strawberry_order_management.ui.pages.history_page import HistoryPage
 
@@ -35,6 +36,7 @@ def _row(
             "code": "3612",
             "address": "四川省成都市金牛区营门口街道友谊花园9-2304",
             "delivery_note": "请电话送货上门谢谢【3612】",
+            "procurement_tracking_number": "",
             "platform_fee_rate": "10",
             "platform_fee_amount": "16.20",
             "other_cost": "5.00",
@@ -141,6 +143,43 @@ def test_history_page_renders_list_and_loads_first_then_current_item(qtbot):
     assert page.detail_summary_card.isHidden() is False
     assert page.order_id_value.minimumHeight() <= 40
     assert page.address_value.minimumHeight() <= 60
+
+
+def test_history_page_uses_master_detail_workspace_shell(qtbot):
+    page = HistoryPage()
+    qtbot.addWidget(page)
+
+    assert page.findChild(QFrame, "HistoryFilterCard") is not None
+    assert page.findChild(QWidget, "HistoryStatsRow") is not None
+    assert page.findChild(QFrame, "HistoryMasterPane") is not None
+    assert page.findChild(QFrame, "HistoryDetailPane") is not None
+    assert page.findChild(QFrame, "HistoryStickyActionBar") is not None
+    assert page.findChild(QScrollArea, "HistoryDetailScroll") is not None
+
+
+def test_history_page_hides_sku_field_but_keeps_sku_image(qtbot):
+    page = HistoryPage()
+    qtbot.addWidget(page)
+
+    page.load_rows(
+        [
+            _row(
+                "record-1",
+                "乐宝零食店",
+                "确认写入飞书",
+                "已写入飞书",
+                "6952003434324366473",
+                "何女士",
+                "何女士15781304332四川省成都市",
+                "请电话送货上门谢谢【3612】",
+            )
+        ]
+    )
+
+    labels = [label.text() for label in page.findChildren(type(page.detail_title_label))]
+
+    assert "SKU" not in labels
+    assert "SKU 图片" in labels
 
 
 def test_history_page_keeps_selected_record_when_rows_refresh(qtbot):
@@ -260,16 +299,16 @@ def test_history_page_emits_record_ids_for_actions(qtbot):
     )
     page.list_widget.setCurrentRow(1)
 
-    emitted = {"delete": [], "resubmit": []}
+    emitted = {"delete": [], "save": []}
     page.delete_requested.connect(emitted["delete"].append)
-    page.resubmit_requested.connect(emitted["resubmit"].append)
+    page.save_requested.connect(lambda record_id, patch: emitted["save"].append(record_id))
 
     page.delete_button.click()
-    page.resubmit_button.click()
+    page.save_button.click()
 
     assert emitted == {
         "delete": ["record-2"],
-        "resubmit": ["record-2"],
+        "save": ["record-2"],
     }
 
 
@@ -427,6 +466,8 @@ def test_history_page_save_button_stays_near_detail_header(qtbot):
 
     assert page.header_actions_widget.isHidden() is False
     assert page.left_column_widget.layout().count() == 1
+    assert page.save_button.text() == "保存修改并重新写入飞书"
+    assert page.resubmit_button.isHidden() is True
 
 
 def test_history_page_filters_by_quick_range_shop_status_and_specific_date(qtbot):
@@ -528,6 +569,134 @@ def test_history_page_uses_product_presets_for_procurement_editing(qtbot):
         "quantity": "1",
         "cost": "13.80",
     }
+
+
+def test_history_page_recalculates_totals_live_when_procurement_changes(qtbot):
+    page = HistoryPage()
+    qtbot.addWidget(page)
+    page.set_product_presets(
+        [
+            {"name": "27000-澳洲版-1升装", "default_cost": "109"},
+            {"name": "康兴-瓶盖-粉色", "default_cost": "13.80"},
+        ]
+    )
+    page.load_rows(
+        [
+            _row(
+                "record-1",
+                "乐宝零食店",
+                "确认写入飞书",
+                "已写入飞书",
+                "6952003434324366473",
+                "何女士",
+                "何女士15781304332四川省成都市",
+                "请电话送货上门谢谢【3612】",
+            )
+        ]
+    )
+
+    assert page.procurement_total_cost_value.text() == "38.00"
+    assert page.gross_profit_value.text() == "101.80"
+
+    page.procurement_product_2_combo.setCurrentText("康兴-瓶盖-粉色")
+
+    assert page.procurement_cost_2_value.text() == "13.80"
+    assert page.procurement_total_cost_value.text() == "51.80"
+
+
+def test_history_page_keeps_blank_procurement_slots_blank_when_saving(qtbot):
+    page = HistoryPage()
+    qtbot.addWidget(page)
+    page.load_rows(
+        [
+            _row(
+                "record-1",
+                "乐宝零食店",
+                "确认写入飞书",
+                "已写入飞书",
+                "6952003434324366473",
+                "何女士",
+                "何女士15781304332四川省成都市",
+                "请电话送货上门谢谢【3612】",
+            )
+        ]
+    )
+    emitted = []
+    page.save_requested.connect(lambda record_id, patch: emitted.append((record_id, patch)))
+
+    page.procurement_product_2_combo.setCurrentText("")
+    page.procurement_quantity_2_value.setText("")
+    page.procurement_cost_2_value.setText("")
+    page.procurement_tracking_2_value.setText("")
+    page.save_button.click()
+
+    assert emitted[0][1]["order_snapshot"]["procurement_items"][1] == {
+        "product_name": "",
+        "quantity": "",
+        "cost": "",
+    }
+    assert page.gross_profit_value.text() == "101.80"
+
+
+def test_history_page_can_filter_by_procurement_tracking_number(qtbot):
+    page = HistoryPage()
+    qtbot.addWidget(page)
+    rows = [
+        _row(
+            "record-1",
+            "乐宝零食店",
+            "确认写入飞书",
+            "已写入飞书",
+            "6952003434324366473",
+            "何女士",
+            "何女士15781304332四川省成都市",
+            "请电话送货上门谢谢【3612】",
+        ),
+        _row(
+            "record-2",
+            "欢宝零食店",
+            "仅存历史",
+            "写入失败",
+            "6952003434324366111",
+            "田宝山",
+            "田宝山15784081541山东省德州市",
+            "请放门口",
+        ),
+    ]
+    rows[0]["order_snapshot"]["procurement_tracking_number"] = "SF5566778899"
+    rows[1]["order_snapshot"]["procurement_tracking_number"] = "YT111222333"
+
+    page.load_rows(rows)
+    page.keyword_filter_edit.setText("SF5566778899")
+    page.apply_filters_button.click()
+
+    assert page.list_widget.count() == 1
+    assert page.detail_title_label.text() == "乐宝零食店"
+
+
+def test_history_page_can_filter_by_procurement_item_tracking_number(qtbot):
+    page = HistoryPage()
+    qtbot.addWidget(page)
+    rows = [
+        _row(
+            "record-1",
+            "乐宝零食店",
+            "确认写入飞书",
+            "已写入飞书",
+            "6952003434324366473",
+            "何女士",
+            "何女士15781304332四川省成都市",
+            "请电话送货上门谢谢【3612】",
+        )
+    ]
+    rows[0]["order_snapshot"]["procurement_items"][1]["tracking_number"] = "YT555888999"
+
+    page.load_rows(rows)
+    page.keyword_filter_edit.setText("YT555888999")
+    page.apply_filters_button.click()
+
+    assert page.list_widget.count() == 1
+    assert page.detail_title_label.text() == "乐宝零食店"
 
 
 def test_history_page_status_cards_show_counts_and_filter_rows(qtbot):

@@ -8,7 +8,7 @@ QWidget {
 }
 
 QMainWindow {
-    background: #f6f8fc;
+    background: #e9eef5;
 }
 
 QScrollArea {
@@ -20,28 +20,93 @@ QWidget#PageContent {
     background: #f6f8fc;
 }
 
+QWidget#ProfitDashboardTab,
+QWidget#ProfitDailyTab,
+QFrame#ProfitDailyRowsPanel {
+    background: #f6f8fc;
+}
+
+QFrame#WindowShell {
+    background: #f4f7fb;
+    border: 1px solid #d8e1ef;
+    border-radius: 16px;
+}
+
+QFrame#WindowChromeBar {
+    background: rgba(255, 255, 255, 0.98);
+    border-bottom: 1px solid #e2e8f0;
+    border-top-left-radius: 16px;
+    border-top-right-radius: 16px;
+}
+
+QLabel#WindowChromeTitle {
+    color: #6a7892;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+QFrame#WindowSidebar {
+    background: #f8fafc;
+    border-right: 1px solid #e2e8f0;
+    border-bottom-left-radius: 16px;
+}
+
+QFrame#WindowContentShell,
 QFrame#ShellFrame,
+QFrame#EntryActionBar,
 QFrame#CardFrame,
+QFrame#ProfitOverviewHeader,
+QFrame#ProfitTrendCard,
+QFrame#ProfitInsightCard,
+QFrame#ProfitMetricCard,
+QFrame#ProfitSummaryChip,
+QFrame#ProfitDailyFilterCard,
+QFrame#ProfitDailyDayCard,
+QFrame#ProfitDailyShopRow,
+QFrame#ProfitDailyDetailPanel,
 QFrame#OrderSummaryCard,
 QFrame#OrderShippingCard,
 QFrame#ProcurementSectionCard,
+QFrame#FinancialSectionCard,
 QFrame#ProcurementRowCard,
-QFrame#IntakeSupportCard {
+QFrame#IntakeSupportCard,
+QFrame#EntryCaptureCard,
+QFrame#EntryExtractorInputCard,
+QFrame#EntryExtractorResultCard {
     background: rgba(255, 255, 255, 0.96);
     border: 1px solid #e3e9f4;
     border-radius: 24px;
 }
 
+QFrame#EntryActionBar {
+    background: rgba(255, 255, 255, 0.95);
+}
+
 QFrame#HistoryListCard,
+QFrame#HistoryFilterCard,
+QFrame#HistoryMasterPane,
+QFrame#HistoryDetailPane,
 QFrame#HistoryDetailCard,
 QFrame#HistoryActionCard,
 QFrame#HistorySummaryCard,
 QFrame#HistoryStatCard,
 QFrame#HistoryMiniSummaryCard,
-QFrame#HistoryStatusCard {
+QFrame#HistoryStatusCard,
+QFrame#HistoryStickyActionBar {
     background: rgba(255, 255, 255, 0.98);
     border: 1px solid #dbe4f2;
     border-radius: 22px;
+}
+
+QFrame#SettingsStickyActionBar,
+QFrame#SettingsNavPane {
+    background: rgba(255, 255, 255, 0.98);
+    border: 1px solid #dbe4f2;
+    border-radius: 22px;
+}
+
+QFrame#HistoryStickyActionBar {
+    background: rgba(255, 255, 255, 0.96);
 }
 
 QFrame#HistoryStatusCard[active="true"] {
@@ -51,7 +116,7 @@ QFrame#HistoryStatusCard[active="true"] {
 
 QLabel#BrandTitle {
     color: #ff4b6e;
-    font-size: 24px;
+    font-size: 26px;
     font-weight: 800;
 }
 
@@ -61,7 +126,7 @@ QLabel#BrandSubtitle {
 }
 
 QListWidget {
-    background: #ffffff;
+    background: rgba(255, 255, 255, 0.98);
     border: 1px solid #dbe4f2;
     border-radius: 18px;
     padding: 6px;
@@ -148,6 +213,11 @@ QTabWidget::pane {
     background: transparent;
 }
 
+QTabWidget#ProfitSegmentTabs::pane {
+    border: none;
+    background: transparent;
+}
+
 QTabBar::tab {
     background: #edf2ff;
     color: #5a6f96;
@@ -161,6 +231,23 @@ QTabBar::tab {
 }
 
 QTabBar::tab:selected {
+    background: #ffffff;
+    color: #1f2b44;
+}
+
+QTabWidget#ProfitSegmentTabs QTabBar::tab {
+    background: #eef3ff;
+    color: #5f7396;
+    border: 1px solid #d7e2f6;
+    border-bottom: none;
+    padding: 10px 22px;
+    margin-right: 6px;
+    border-top-left-radius: 14px;
+    border-top-right-radius: 14px;
+    font-weight: 700;
+}
+
+QTabWidget#ProfitSegmentTabs QTabBar::tab:selected {
     background: #ffffff;
     color: #1f2b44;
 }

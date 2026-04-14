@@ -2,17 +2,37 @@ import time
 from dataclasses import replace
 
 from PySide6.QtGui import QColor, QGuiApplication, QImage
-from PySide6.QtWidgets import QFrame, QLabel, QScrollArea
+from PySide6.QtWidgets import QFrame, QLabel, QMessageBox, QScrollArea, QWidget
+from PySide6.QtCore import Qt
 
 from strawberry_order_management.models import ParsedOrder, ProcurementItem
 from strawberry_order_management import app as app_module
 from strawberry_order_management.ui.pages.intake_page import IntakePage
+from strawberry_order_management.ui.theme import APP_STYLESHEET
 from strawberry_order_management.ui.widgets.address_extractor_widget import (
     AddressExtractorWidget,
 )
 from strawberry_order_management.ui.widgets.screenshot_input_widget import (
     ScreenshotInputWidget,
 )
+
+
+def test_intake_page_uses_three_column_workspace_shell(qtbot):
+    page = IntakePage(use_background_thread=False)
+    qtbot.addWidget(page)
+
+    assert page.findChild(QFrame, "EntryActionBar") is not None
+    assert page.findChild(QWidget, "EntryLeftRail") is not None
+    assert page.findChild(QScrollArea, "EntryFormRail") is not None
+    assert page.findChild(QWidget, "EntryRightRail") is not None
+    assert page.findChild(QFrame, "EntryCaptureCard") is not None
+    assert page.findChild(QFrame, "EntryExtractorInputCard") is not None
+    assert page.findChild(QFrame, "EntryExtractorResultCard") is not None
+    assert page.findChild(QScrollArea, "EntryFormRail").horizontalScrollBarPolicy() == Qt.ScrollBarPolicy.ScrollBarAsNeeded
+
+
+def test_intake_theme_includes_financial_section_card_selector():
+    assert "QFrame#FinancialSectionCard" in APP_STYLESHEET
 
 
 def test_intake_page_shows_order_card_after_pipeline_result(qtbot):
@@ -45,7 +65,7 @@ def test_intake_page_shows_order_card_after_pipeline_result(qtbot):
     assert page.order_card_widget.phone_number_edit.text() == "15781304332"
     assert page.order_card_widget.code_edit.text() == "3612"
     assert page.order_card_widget.address_edit.toPlainText() == "四川省成都市金牛区营门口街道友谊花园9-2304"
-    assert page.order_card_widget.delivery_note_edit.toPlainText() == "请电话送货上门谢谢【3612】"
+    assert page.order_card_widget.delivery_note_edit.toPlainText() == ""
     assert isinstance(page.address_widget, AddressExtractorWidget)
     assert page.submit_button.text() == "确认写入飞书"
     assert submitted_orders == [
@@ -53,6 +73,7 @@ def test_intake_page_shows_order_card_after_pipeline_result(qtbot):
             "shop_name": "乐宝零食店",
             "order": replace(
                 order,
+                delivery_note="",
                 platform_fee_rate="0.06",
                 platform_fee_amount="9.72",
                 gross_profit="152.28",
@@ -60,6 +81,90 @@ def test_intake_page_shows_order_card_after_pipeline_result(qtbot):
             ),
         }
     ]
+
+
+def test_intake_page_preserves_custom_delivery_note(qtbot):
+    page = IntakePage(use_background_thread=False)
+    qtbot.addWidget(page)
+
+    order = ParsedOrder(
+        order_id="1",
+        placed_at="2026-04-11 20:57:15",
+        order_status="已发货",
+        product_name="商品",
+        quantity="1",
+        order_amount="10.00",
+        income_amount="8.00",
+        recipient_name="何女士",
+        phone_number="15781304332",
+        code="3612",
+        address="重庆市",
+        delivery_note="请尽快发货",
+    )
+
+    page.show_order(order)
+
+    assert page.order_card_widget.delivery_note_edit.toPlainText() == "请尽快发货"
+
+
+def test_intake_page_submits_procurement_tracking_number(qtbot):
+    submitted_orders = []
+    page = IntakePage(on_submit=submitted_orders.append, use_background_thread=False)
+    qtbot.addWidget(page)
+
+    order = ParsedOrder(
+        order_id="1",
+        placed_at="2026-04-11 20:57:15",
+        order_status="已发货",
+        product_name="商品",
+        quantity="1",
+        order_amount="10.00",
+        income_amount="8.00",
+        recipient_name="何女士",
+        phone_number="15781304332",
+        code="3612",
+        address="重庆市",
+        delivery_note="备注",
+    )
+
+    page.show_order(order)
+    page.shop_selector.addItems(["乐宝零食店"])
+    page.shop_selector.setCurrentText("乐宝零食店")
+    page.order_card_widget.procurement_tracking_number_1_edit.setText("YT99887766")
+
+    page.submit_button.click()
+
+    assert submitted_orders[0]["order"].procurement_tracking_number == "YT99887766"
+    assert submitted_orders[0]["order"].procurement_items[0].tracking_number == "YT99887766"
+
+
+def test_intake_page_keeps_blank_procurement_slots_blank_when_submitting(qtbot):
+    submitted_orders = []
+    page = IntakePage(on_submit=submitted_orders.append, use_background_thread=False)
+    qtbot.addWidget(page)
+
+    order = ParsedOrder(
+        order_id="1",
+        placed_at="2026-04-11 20:57:15",
+        order_status="已发货",
+        product_name="商品",
+        quantity="1",
+        order_amount="10.00",
+        income_amount="8.00",
+        recipient_name="何女士",
+        phone_number="15781304332",
+        code="3612",
+        address="重庆市",
+        delivery_note="备注",
+    )
+
+    page.show_order(order)
+    page.shop_selector.addItems(["乐宝零食店"])
+    page.shop_selector.setCurrentText("乐宝零食店")
+    page.submit_button.click()
+
+    assert submitted_orders[0]["order"].procurement_items[1] == ProcurementItem("", "", "", "")
+    assert submitted_orders[0]["order"].procurement_items[2] == ProcurementItem("", "", "", "")
 
 
 def test_intake_page_defaults_platform_to_douyin_and_supports_wechat(qtbot):
@@ -308,16 +413,16 @@ def test_order_card_autofills_procurement_cost_from_selected_preset(qtbot):
             address="四川省成都市金牛区营门口街道友谊花园9-2304",
             delivery_note="请电话送货上门谢谢【3612】",
             procurement_items=(
-                ProcurementItem("", "1", ""),
-                ProcurementItem("", "1", ""),
-                ProcurementItem("", "1", ""),
+                ProcurementItem("", "", ""),
+                ProcurementItem("", "", ""),
+                ProcurementItem("", "", ""),
             ),
         )
     )
 
     page.order_card_widget.procurement_product_1_combo.setCurrentText("澳洲婴儿水")
 
-    assert page.order_card_widget.procurement_quantity_1_edit.text() == "1"
+    assert page.order_card_widget.procurement_quantity_1_edit.text() == ""
     assert page.order_card_widget.procurement_cost_1_edit.text() == "18.50"
 
 
@@ -346,6 +451,7 @@ def test_intake_page_groups_order_entry_into_sections(qtbot):
     assert "采购1" in [label.text() for label in procurement_card.findChildren(QLabel)]
     assert "采购2" in [label.text() for label in procurement_card.findChildren(QLabel)]
     assert "采购3" in [label.text() for label in procurement_card.findChildren(QLabel)]
+    assert "订单编号" not in [label.text() for label in page.order_card_widget.findChildren(QLabel)]
 
 
 def test_intake_page_emits_procurement_slots_with_order_payload(qtbot):
@@ -419,6 +525,128 @@ def test_order_card_can_request_saving_manual_product_to_library(qtbot):
     page.order_card_widget.procurement_save_1_button.click()
 
     assert saved_products == [("新商品", "12.60")]
+
+
+def test_order_card_can_request_saving_spec_template_to_library(qtbot):
+    saved_templates = []
+    page = IntakePage(use_background_thread=False)
+    qtbot.addWidget(page)
+    page.procurement_template_requested.connect(saved_templates.append)
+    page.show_order(
+        ParsedOrder(
+            order_id="6952003434324366473",
+            placed_at="2026-04-11 20:57:15",
+            order_status="已发货",
+            product_name="澳大利亚进口婴儿水",
+            specification="1L/桶*12袋(赵露思同款 澳洲版)",
+            quantity="1",
+            order_amount="405.00",
+            income_amount="162.00",
+            recipient_name="何女士",
+            phone_number="15781304332",
+            code="3612",
+            address="四川省成都市金牛区营门口街道友谊花园9-2304",
+            delivery_note="请电话送货上门谢谢【3612】",
+        )
+    )
+
+    page.order_card_widget.procurement_product_1_combo.setEditText("27000-澳洲版-1升装")
+    page.order_card_widget.procurement_quantity_1_edit.setText("2")
+    page.order_card_widget.procurement_cost_1_edit.setText("109")
+    page.order_card_widget.procurement_tracking_number_1_edit.setText("SF123")
+    page.order_card_widget.procurement_save_1_button.click()
+
+    assert saved_templates == [
+        {
+            "specification": "1L/桶*12袋(赵露思同款 澳洲版)",
+            "procurement_items": [
+                {
+                    "product_name": "27000-澳洲版-1升装",
+                    "quantity": "2",
+                    "cost": "109",
+                    "tracking_number": "",
+                },
+                {"product_name": "", "quantity": "", "cost": "", "tracking_number": ""},
+                {"product_name": "", "quantity": "", "cost": "", "tracking_number": ""},
+            ],
+        }
+    ]
+
+
+def test_order_card_prefills_procurement_items_from_matching_specification_template(qtbot):
+    page = IntakePage(use_background_thread=False)
+    qtbot.addWidget(page)
+    page.set_product_presets([{"name": "27000-澳洲版-1升装", "default_cost": "109"}])
+    page.set_procurement_templates(
+        [
+            {
+                "specification": "1L/桶*12袋(赵露思同款 澳洲版)",
+                "procurement_items": [
+                    {
+                        "product_name": "27000-澳洲版-1升装",
+                        "quantity": "2",
+                        "cost": "109",
+                    },
+                    {"product_name": "康兴-瓶盖-粉色", "quantity": "1", "cost": "13.8"},
+                    {"product_name": "", "quantity": "1", "cost": ""},
+                ],
+            }
+        ]
+    )
+
+    page.show_order(
+        ParsedOrder(
+            order_id="6952003434324366473",
+            placed_at="2026-04-11 20:57:15",
+            order_status="已发货",
+            product_name="澳大利亚进口婴儿水",
+            specification="1L/桶*12袋(赵露思同款 澳洲版)",
+            quantity="1",
+            order_amount="405.00",
+            income_amount="162.00",
+            recipient_name="何女士",
+            phone_number="15781304332",
+            code="3612",
+            address="四川省成都市金牛区营门口街道友谊花园9-2304",
+            delivery_note="请电话送货上门谢谢【3612】",
+        )
+    )
+
+    assert page.order_card_widget.procurement_product_1_combo.currentText() == "27000-澳洲版-1升装"
+    assert page.order_card_widget.procurement_quantity_1_edit.text() == "2"
+    assert page.order_card_widget.procurement_cost_1_edit.text() == "109"
+    assert page.order_card_widget.procurement_tracking_number_1_edit.text() == ""
+
+
+def test_intake_page_warns_when_order_quantity_is_greater_than_one(qtbot, monkeypatch):
+    warnings = []
+    monkeypatch.setattr(
+        QMessageBox,
+        "warning",
+        lambda *args: warnings.append(args[1:3]) or QMessageBox.StandardButton.Ok,
+    )
+    page = IntakePage(use_background_thread=False)
+    qtbot.addWidget(page)
+    page.show()
+
+    page.show_order(
+        ParsedOrder(
+            order_id="6952003434324366999",
+            placed_at="2026-04-12 09:15:00",
+            order_status="待发货",
+            product_name="云南蓝莓",
+            quantity="2",
+            order_amount="88.00",
+            income_amount="44.00",
+            recipient_name="王先生",
+            phone_number="13900001111",
+            code="8899",
+            address="广东省深圳市南山区科技园",
+            delivery_note="请尽快发货",
+        )
+    )
+
+    assert warnings == [("数量提醒", "当前订单数量大于 1，请确认采购数量不要和实际订单数量不一致。")]
 
 
 def test_order_card_computes_fee_total_cost_and_gross_profit(qtbot):

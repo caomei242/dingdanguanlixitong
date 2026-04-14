@@ -1,13 +1,17 @@
 import time
 from pathlib import Path
+import re
 from typing import Optional
 
-from PySide6.QtWidgets import QMessageBox
+from PySide6.QtWidgets import QFrame, QLabel, QMessageBox, QWidget
 
 from strawberry_order_management.config import ConfigStore
 from strawberry_order_management.history import HistoryStore
 from strawberry_order_management.models import ParsedOrder, ProcurementItem
 from strawberry_order_management.ui.main_window import MainWindow
+
+
+_DEFAULT_DELIVERY_NOTE_PATTERN = re.compile(r"^请电话送货上门谢谢【\d+】$")
 
 
 def _sample_order(platform: str = "抖店") -> ParsedOrder:
@@ -171,7 +175,12 @@ def _assert_rich_history_snapshot(
     assert order_snapshot["phone_number"] == order.phone_number
     assert order_snapshot["code"] == order.code
     assert order_snapshot["address"] == order.address
-    assert order_snapshot["delivery_note"] == order.delivery_note
+    expected_delivery_note = (
+        ""
+        if _DEFAULT_DELIVERY_NOTE_PATTERN.match(order.delivery_note)
+        else order.delivery_note
+    )
+    assert order_snapshot["delivery_note"] == expected_delivery_note
     if expected_procurement_items is not None:
         for index, (product_name, quantity, cost) in expected_procurement_items.items():
             assert order_snapshot["procurement_items"][index]["product_name"] == product_name
@@ -181,6 +190,27 @@ def _assert_rich_history_snapshot(
     address_snapshot = record["address_snapshot"]
     assert address_snapshot["output_one"].strip()
     assert address_snapshot["output_two"].strip()
+
+
+def test_main_window_wraps_pages_in_mac_style_shell(qtbot, tmp_path):
+    window = MainWindow(config_store=ConfigStore(tmp_path / "config.json"), history_store=HistoryStore(tmp_path / "history.json"))
+    qtbot.addWidget(window)
+
+    assert window.findChild(QFrame, "WindowShell") is not None
+    assert window.findChild(QFrame, "WindowChromeBar") is not None
+    assert window.findChild(QWidget, "TrafficLights") is not None
+    assert window.findChild(QFrame, "WindowSidebar") is not None
+    assert window.findChild(QFrame, "WindowContentShell") is not None
+    assert window.nav.count() == 4
+    assert [window.nav.item(index).text() for index in range(window.nav.count())] == [
+        "订单录入",
+        "历史订单",
+        "财务报表",
+        "设置",
+    ]
+    title = window.findChild(QLabel, "WindowChromeTitle")
+    assert title is not None
+    assert title.text() == "草莓订单管理系统"
 
 
 def test_main_window_builds_history_snapshot_with_spec_sku_and_image(qtbot, tmp_path):
@@ -755,6 +785,78 @@ def test_main_window_save_history_edit_recreates_when_feishu_record_missing(qtbo
     assert updated_row["message"] == "原记录不存在，已自动新建"
 
 
+def test_main_window_save_history_edit_can_clear_feishu_remark(qtbot, tmp_path, monkeypatch):
+    config_store = ConfigStore(tmp_path / "config.json")
+    history_store = HistoryStore(tmp_path / "history.json")
+    config_store.save(_settings_payload())
+
+    captured: dict[str, object] = {"updated": []}
+
+    class FakeFeishuClient:
+        def __init__(self, app_id: str, app_secret: str, table_app_token: str, table_id: str):
+            pass
+
+        def get_tenant_access_token(self) -> str:
+            return "tenant_token_123"
+
+        def update_record(self, access_token: str, record_id: str, fields: dict) -> dict:
+            captured["updated"].append(
+                {
+                    "access_token": access_token,
+                    "record_id": record_id,
+                    "fields": fields,
+                }
+            )
+            return {"data": {"record_id": record_id}}
+
+        def create_record(self, access_token: str, fields: dict) -> dict:
+            raise AssertionError("save history edit should update existing feishu record")
+
+    monkeypatch.setattr("strawberry_order_management.ui.main_window.FeishuClient", FakeFeishuClient)
+
+    window = MainWindow(config_store=config_store, history_store=history_store)
+    qtbot.addWidget(window)
+
+    selected_row = history_store.append(
+        window._build_history_snapshot(
+            {"shop_name": "乐宝零食店", "order": _alternate_order()},
+            "确认写入飞书",
+            "已写入飞书",
+            "写入成功",
+            {"data": {"record_id": "rec_existing"}},
+        )
+    )
+    window.history_page.load_rows(history_store.list_items())
+    window.history_page.list_widget.setCurrentRow(0)
+
+    window.history_page.delivery_note_value.setPlainText("")
+    window.history_page.save_button.click()
+
+    qtbot.waitUntil(lambda: len(captured["updated"]) == 1, timeout=3000)
+
+    assert captured["updated"][0]["record_id"] == "rec_existing"
+    assert "备注" in captured["updated"][0]["fields"]
+    assert captured["updated"][0]["fields"]["备注"] == ""
+    assert history_store.get(selected_row["record_id"])["order_snapshot"]["delivery_note"] == ""
+
+
+def test_main_window_backfills_latest_update_log_entry(qtbot, tmp_path):
+    config_store = ConfigStore(tmp_path / "config.json")
+    history_store = HistoryStore(tmp_path / "history.json")
+    payload = _settings_payload()
+    payload["update_logs_initialized"] = True
+    payload["update_logs"] = []
+    config_store.save(payload)
+
+    window = MainWindow(config_store=config_store, history_store=history_store)
+    qtbot.addWidget(window)
+
+    saved_payload = config_store.load()
+    titles = [item.get("title") for item in saved_payload.get("update_logs", [])]
+
+    assert "修复历史备注清空与界面整理" in titles
+
+
 def test_main_window_extracts_feishu_record_id_from_nested_record_payload(qtbot, tmp_path):
     config_store = ConfigStore(tmp_path / "config.json")
     history_store = HistoryStore(tmp_path / "history.json")
@@ -823,7 +925,7 @@ def test_main_window_resubmits_selected_history_row_in_place(qtbot, tmp_path, mo
     window.history_page.load_rows(history_store.list_items())
     window.history_page.list_widget.setCurrentRow(1)
 
-    window.history_page.resubmit_button.click()
+    window.history_page.save_button.click()
 
     qtbot.waitUntil(
         lambda: window.intake_page.capture_widget.status_label.text() == "已写入飞书：乐宝零食店",
@@ -847,7 +949,9 @@ def test_main_window_resubmits_selected_history_row_in_place(qtbot, tmp_path, mo
     assert rows[1]["status"] == "已写入飞书"
     assert rows[1]["message"] == "已保存并同步飞书"
     assert rows[1]["feishu_result"] == {"data": {"record_id": "rec_1"}}
-    assert config_store.load()["product_presets"] == initial_product_presets
+    saved_product_presets = config_store.load()["product_presets"]
+    assert initial_product_presets[0] in saved_product_presets
+    assert any(item["name"] == "蓝莓" and item["default_cost"] == "12.50" for item in saved_product_presets)
 
 
 def test_main_window_resubmits_history_using_edited_snapshot(qtbot, tmp_path, monkeypatch):
@@ -906,7 +1010,7 @@ def test_main_window_resubmits_history_using_edited_snapshot(qtbot, tmp_path, mo
     window.history_page.save_button.click()
     qtbot.waitUntil(lambda: len(captured["updates"]) == 1, timeout=3000)
 
-    window.history_page.resubmit_button.click()
+    window.history_page.save_button.click()
     qtbot.waitUntil(lambda: len(captured["updates"]) == 2, timeout=3000)
 
     qtbot.waitUntil(

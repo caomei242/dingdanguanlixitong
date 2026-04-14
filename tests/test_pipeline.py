@@ -6,7 +6,7 @@ import base64
 import pytest
 import requests
 
-from strawberry_order_management.models import ParsedOrder
+from strawberry_order_management.models import ParsedOrder, ProcurementItem
 from strawberry_order_management.services.feishu_client import FeishuClient
 from strawberry_order_management.services.helper_client import HelperClient
 from strawberry_order_management.services.ocr_client import OCRClient
@@ -159,6 +159,118 @@ def test_build_feishu_payload_supports_specification_and_sku_fields():
 
     assert payload["规格"] == "1L/桶*12袋(赵露思同款 澳洲版)"
     assert payload["SKU"] == "27000-澳洲版-1升装"
+
+
+def test_build_feishu_payload_supports_procurement_tracking_number():
+    order = ParsedOrder(
+        order_id="1",
+        placed_at="2026-04-13 12:00:00",
+        order_status="已发货",
+        product_name="测试商品",
+        quantity="1",
+        order_amount="100.00",
+        income_amount="80.00",
+        recipient_name="张三",
+        phone_number="13800138000",
+        code="9527",
+        address="上海市浦东新区测试路 1 号",
+        delivery_note="请电话联系",
+        procurement_tracking_number="SF1234567890",
+    )
+
+    payload = build_feishu_payload(
+        order,
+        {
+            "采购快递单号": "采购快递单号",
+        },
+    )
+
+    assert payload["采购快递单号"] == "SF1234567890"
+
+
+def test_build_feishu_payload_supports_three_procurement_tracking_number_fields():
+    order = ParsedOrder(
+        order_id="1",
+        placed_at="2026-04-13 12:00:00",
+        order_status="已发货",
+        product_name="测试商品",
+        quantity="1",
+        order_amount="100.00",
+        income_amount="80.00",
+        recipient_name="张三",
+        phone_number="13800138000",
+        code="9527",
+        address="上海市浦东新区测试路 1 号",
+        delivery_note="请电话联系",
+        procurement_tracking_number="SF1234567890 / YT99887766 / ZTO55667788",
+        procurement_items=(
+            ProcurementItem("采购1", "1", "10", tracking_number="SF1234567890"),
+            ProcurementItem("采购2", "1", "20", tracking_number="YT99887766"),
+            ProcurementItem("采购3", "1", "30", tracking_number="ZTO55667788"),
+        ),
+    )
+
+    payload = build_feishu_payload(
+        order,
+        {
+            "采购快递单号": "采购快递单号",
+            "采购快递单号1": "采购快递单号1",
+            "采购快递单号2": "采购快递单号2",
+            "采购快递单号3": "采购快递单号3",
+        },
+    )
+
+    assert payload["采购快递单号"] == "SF1234567890 / YT99887766 / ZTO55667788"
+    assert payload["采购快递单号1"] == "SF1234567890"
+    assert payload["采购快递单号2"] == "YT99887766"
+    assert payload["采购快递单号3"] == "ZTO55667788"
+
+
+def test_build_feishu_payload_skips_blank_procurement_slots():
+    order = ParsedOrder(
+        order_id="1",
+        placed_at="2026-04-13 12:00:00",
+        order_status="已发货",
+        product_name="测试商品",
+        quantity="1",
+        order_amount="100.00",
+        income_amount="80.00",
+        recipient_name="张三",
+        phone_number="13800138000",
+        code="9527",
+        address="上海市浦东新区测试路 1 号",
+        delivery_note="请电话联系",
+        procurement_items=(
+            ProcurementItem("采购1", "2", "10"),
+            ProcurementItem("", "", "", ""),
+            ProcurementItem("", "", "", ""),
+        ),
+    )
+
+    payload = build_feishu_payload(
+        order,
+        {
+            "采购商品1": "采购商品1",
+            "采购数量1": "采购数量1",
+            "采购成本1": "采购成本1",
+            "采购商品2": "采购商品2",
+            "采购数量2": "采购数量2",
+            "采购成本2": "采购成本2",
+            "采购商品3": "采购商品3",
+            "采购数量3": "采购数量3",
+            "采购成本3": "采购成本3",
+        },
+    )
+
+    assert payload["采购商品1"] == "采购1"
+    assert payload["采购数量1"] == "2"
+    assert payload["采购成本1"] == "10"
+    assert "采购商品2" not in payload
+    assert "采购数量2" not in payload
+    assert "采购成本2" not in payload
+    assert "采购商品3" not in payload
+    assert "采购数量3" not in payload
+    assert "采购成本3" not in payload
 
 
 def test_build_feishu_payload_emits_local_image_reference_for_sku_image_field(tmp_path: Path):
@@ -775,6 +887,49 @@ def test_feishu_client_lists_table_field_names(monkeypatch: pytest.MonkeyPatch):
     assert captured["headers"] == {"Authorization": "Bearer tenant_token_123"}
     assert captured["params"] == {"page_size": 500}
     assert captured["timeout"] == 30
+
+
+def test_feishu_client_retries_without_image_field_when_text_field_conversion_fails(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    requests_seen: list[dict[str, object]] = []
+
+    def fake_request(method, url, headers=None, json=None, params=None, timeout=None):
+        requests_seen.append({"method": method, "url": url, "json": json})
+        if len(requests_seen) == 1:
+            return FakeResponse({"code": 1254068, "msg": "TextFieldConvFail"})
+        return FakeResponse({"code": 0, "msg": "ok", "data": {"record": {"record_id": "rec_123"}}})
+
+    monkeypatch.setattr(
+        "strawberry_order_management.services.feishu_client.requests.request", fake_request
+    )
+    monkeypatch.setattr(
+        FeishuClient,
+        "upload_bitable_image",
+        lambda self, access_token, image_path: "file_token_123",
+    )
+
+    client = FeishuClient("app", "secret", "app_token", "tbl_1")
+    result = client.create_record(
+        "tenant_token_123",
+        {
+            "商品名称": "测试商品",
+            "SKU图片": [{"local_path": "/tmp/sku.png"}],
+        },
+    )
+
+    assert result == {"code": 0, "msg": "ok", "data": {"record": {"record_id": "rec_123"}}}
+    assert requests_seen[0]["json"] == {
+        "fields": {
+            "商品名称": "测试商品",
+            "SKU图片": [{"file_token": "file_token_123"}],
+        }
+    }
+    assert requests_seen[1]["json"] == {
+        "fields": {
+            "商品名称": "测试商品",
+        }
+    }
 
 
 def test_build_feishu_payload_rejects_invalid_placed_at_format():

@@ -17,8 +17,12 @@ _RECIPIENT_PATTERN = re.compile(
 )
 _SKU_PATTERN = re.compile(r"(?:SKU|sku|货号|商家编码)\s*[:：]\s*(.+)", re.I)
 _IGNORED_PRODUCT_LINE_PATTERN = re.compile(r"^(?:商品(?:单)?ID|商品id|item id)\s*[:：]", re.I)
+_INLINE_SPECIFICATION_PATTERN = re.compile(
+    r"^(?P<name>.+?)\s+(?P<spec>\d+(?:\.\d+)?\s*(?:ML|ml|mL|L|l|升|g|kg|KG|斤)[^\n]*)$"
+)
 _ORDER_STATUS_ALIASES = {
     "未发货": "待发货",
+    "已下单未发货": "已拍单未发货",
 }
 
 
@@ -81,7 +85,10 @@ def _parse_product_block(raw_block: str) -> tuple[str, str, str]:
     if not lines:
         return "", "", ""
     product_name = lines[0]
+    product_name, inline_specification = _split_inline_specification(product_name)
     specification_lines: list[str] = []
+    if inline_specification:
+        specification_lines.append(inline_specification)
     sku = ""
     for line in lines[1:]:
         sku_match = _SKU_PATTERN.search(line)
@@ -93,3 +100,11 @@ def _parse_product_block(raw_block: str) -> tuple[str, str, str]:
         specification_lines.append(line)
     specification = " ".join(specification_lines).strip()
     return product_name, specification, sku
+
+
+def _split_inline_specification(product_name: str) -> tuple[str, str]:
+    cleaned = " ".join(str(product_name).split()).strip()
+    match = _INLINE_SPECIFICATION_PATTERN.match(cleaned)
+    if not match:
+        return cleaned, ""
+    return match.group("name").strip(), match.group("spec").strip()

@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import Optional
 
 from PySide6.QtCore import QObject, QThread, Signal
+from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -27,8 +28,26 @@ from strawberry_order_management.services.ocr_client import OCRClient
 from strawberry_order_management.services.pipeline import OrderPipeline, build_feishu_payload
 from strawberry_order_management.ui.pages.history_page import HistoryPage
 from strawberry_order_management.ui.pages.intake_page import IntakePage
+from strawberry_order_management.ui.pages.profit_page import ProfitPage
 from strawberry_order_management.ui.pages.settings_page import SettingsPage
 from strawberry_order_management.ui.theme import apply_theme
+
+
+class _WindowTrafficLights(QWidget):
+    def __init__(self) -> None:
+        super().__init__()
+        self.setObjectName("TrafficLights")
+        self.setFixedSize(54, 14)
+
+    def paintEvent(self, _event) -> None:  # noqa: N802
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        colors = ["#ff5f56", "#ffbd2e", "#27c93f"]
+        borders = ["#e0443e", "#dea123", "#1aab29"]
+        for index, (fill, border) in enumerate(zip(colors, borders)):
+            painter.setPen(QPen(QColor(border), 1))
+            painter.setBrush(QColor(fill))
+            painter.drawEllipse(1 + index * 18, 1, 12, 12)
 
 
 class _SubmitWorker(QObject):
@@ -56,6 +75,45 @@ class _SubmitWorker(QObject):
 
 
 class MainWindow(QMainWindow):
+    AUTO_UPDATE_LOG_BACKFILLS = (
+        {
+            "module": "UI重构",
+            "title": "全局壳子升级为 Mac 视窗风格",
+            "content": "正式系统新增顶栏、红黄绿控制点、浅灰蓝背景和白卡内容外壳，主导航与业务逻辑保持不变。",
+            "created_at": "2026-04-14 20:40:00",
+        },
+        {
+            "module": "订单录入",
+            "title": "录单页升级为三栏工作台",
+            "content": "订单录入改为左侧识别与输入、中间主表单、右侧结果区的三栏布局，保留全部字段、按钮和提交逻辑。",
+            "created_at": "2026-04-14 21:05:00",
+        },
+        {
+            "module": "历史",
+            "title": "修复历史备注清空与界面整理",
+            "content": "历史页隐藏 SKU 文本字段；历史编辑时允许用空备注覆盖飞书备注列；并补齐本轮修复的更新日志记录。",
+            "created_at": "2026-04-14 23:10:00",
+        },
+        {
+            "module": "利润计算",
+            "title": "利润页升级为双 Tab 驾驶舱",
+            "content": "正式利润页重构为大盘和每日账目明细双 Tab，补齐趋势卡、洞察卡和每日行式明细结构，同时保留原有计算逻辑与筛选联动。",
+            "created_at": "2026-04-14 23:35:00",
+        },
+        {
+            "module": "设置",
+            "title": "设置页升级为左导航工作台",
+            "content": "设置页改为顶部固定保存区、左侧分区导航、右侧内容堆栈，店铺映射区压缩为三列布局，保留原有保存、检测和更新日志逻辑。",
+            "created_at": "2026-04-14 23:55:00",
+        },
+        {
+            "module": "UI重构",
+            "title": "补齐侧栏命名与财务大盘分层",
+            "content": "主导航改为历史订单和财务报表；利润大盘拆出月级别与当日级别概览；录单页恢复横向滚动；并排查正式页白卡对象名遗漏问题。",
+            "created_at": "2026-04-15 00:10:00",
+        },
+    )
+
     def __init__(
         self,
         on_settings_save=None,
@@ -73,8 +131,8 @@ class MainWindow(QMainWindow):
         self._submit_worker = None
 
         self.nav = QListWidget()
-        self.nav.addItems(["订单录入", "历史", "设置"])
-        self.nav.setFixedWidth(118)
+        self.nav.addItems(["订单录入", "历史订单", "财务报表", "设置"])
+        self.nav.setFixedWidth(148)
 
         self.stack = QStackedWidget()
         self.intake_page = IntakePage(
@@ -83,14 +141,17 @@ class MainWindow(QMainWindow):
             on_save_history=self._handle_save_history_request,
         )
         self.history_page = HistoryPage()
+        self.profit_page = ProfitPage()
         self.settings_page = SettingsPage(
             on_resolve_shop_link=self._resolve_shop_link,
             on_inspect_table_fields=self._inspect_total_table_fields,
         )
         self.stack.addWidget(self.intake_page)
         self.stack.addWidget(self.history_page)
+        self.stack.addWidget(self.profit_page)
         self.stack.addWidget(self.settings_page)
         self.intake_page.product_library_requested.connect(self._handle_product_library_request)
+        self.intake_page.procurement_template_requested.connect(self._handle_procurement_template_request)
         self.history_page.save_requested.connect(self._handle_history_save_request)
         self.history_page.delete_requested.connect(self._handle_history_delete_request)
         self.history_page.resubmit_requested.connect(self._handle_history_resubmit_request)
@@ -106,24 +167,55 @@ class MainWindow(QMainWindow):
         brand_box.addWidget(brand_title)
         brand_box.addWidget(brand_subtitle)
 
+        title_bar = QFrame()
+        title_bar.setObjectName("WindowChromeBar")
+        title_bar_layout = QHBoxLayout(title_bar)
+        title_bar_layout.setContentsMargins(16, 10, 16, 10)
+        title_bar_layout.setSpacing(12)
+        title_bar_layout.addWidget(_WindowTrafficLights(), 0)
+        chrome_title = QLabel("草莓订单管理系统")
+        chrome_title.setObjectName("WindowChromeTitle")
+        chrome_title.setAlignment(chrome_title.alignment())
+        title_bar_layout.addStretch(1)
+        title_bar_layout.addWidget(chrome_title, 0)
+        title_bar_layout.addStretch(1)
+        title_bar_layout.addSpacing(54)
+
         sidebar = QFrame()
-        sidebar.setObjectName("ShellFrame")
+        sidebar.setObjectName("WindowSidebar")
         sidebar_layout = QVBoxLayout(sidebar)
-        sidebar_layout.setContentsMargins(14, 14, 14, 14)
-        sidebar_layout.setSpacing(12)
+        sidebar_layout.setContentsMargins(18, 18, 18, 18)
+        sidebar_layout.setSpacing(16)
         sidebar_layout.addLayout(brand_box)
         sidebar_layout.addWidget(self.nav)
         sidebar_layout.addStretch(1)
 
         content = QFrame()
-        content.setObjectName("ShellFrame")
+        content.setObjectName("WindowContentShell")
         content_layout = QVBoxLayout(content)
+        content_layout.setContentsMargins(0, 0, 0, 0)
         content_layout.addWidget(self.stack)
 
+        body = QWidget()
+        body_layout = QHBoxLayout(body)
+        body_layout.setContentsMargins(0, 0, 0, 0)
+        body_layout.setSpacing(0)
+        body_layout.addWidget(sidebar, 0)
+        body_layout.addWidget(content, 1)
+
+        shell = QFrame()
+        shell.setObjectName("WindowShell")
+        shell_layout = QVBoxLayout(shell)
+        shell_layout.setContentsMargins(0, 0, 0, 0)
+        shell_layout.setSpacing(0)
+        shell_layout.addWidget(title_bar)
+        shell_layout.addWidget(body, 1)
+
         root = QWidget()
-        layout = QHBoxLayout(root)
-        layout.addWidget(sidebar, 0)
-        layout.addWidget(content, 1)
+        layout = QVBoxLayout(root)
+        layout.setContentsMargins(18, 18, 18, 18)
+        layout.setSpacing(0)
+        layout.addWidget(shell)
         self.setCentralWidget(root)
 
         self.nav.currentRowChanged.connect(self.stack.setCurrentIndex)
@@ -133,6 +225,7 @@ class MainWindow(QMainWindow):
         if self._config_store is not None:
             payload = self._config_store.load()
             self.settings_page.load_payload(payload)
+            self._backfill_runtime_update_logs(payload)
         self._sync_shop_selector(self.settings_page.to_payload())
         if self._history_store is not None:
             self._reload_history_page()
@@ -212,11 +305,19 @@ class MainWindow(QMainWindow):
                 "code": order.code,
                 "address": order.address,
                 "delivery_note": order.delivery_note,
+                "procurement_tracking_number": order.procurement_tracking_number,
                 "procurement_items": [
                     {
-                        "product_name": item.product_name,
-                        "quantity": item.quantity,
-                        "cost": item.cost,
+                        **{
+                            "product_name": item.product_name,
+                            "quantity": item.quantity,
+                            "cost": item.cost,
+                        },
+                        **(
+                            {"tracking_number": item.tracking_number}
+                            if str(item.tracking_number).strip()
+                            else {}
+                        ),
                     }
                     for item in order.procurement_items
                 ],
@@ -253,7 +354,9 @@ class MainWindow(QMainWindow):
     def _reload_history_page(self) -> None:
         if self._history_store is None:
             return
-        self.history_page.load_rows(self._history_store.list_items())
+        rows = self._history_store.list_items()
+        self.history_page.load_rows(rows)
+        self.profit_page.load_rows(rows)
 
     def _handle_history_save_request(self, record_id: str, patch: dict) -> None:
         if self._history_store is None:
@@ -262,6 +365,7 @@ class MainWindow(QMainWindow):
         if row is None:
             return
         payload = self._build_payload_from_history_row(row)
+        payload["blank_source_fields"] = {"备注"}
         self._sync_products_from_order(payload["order"])
         try:
             task = self._build_feishu_submission_task(payload)
@@ -342,6 +446,7 @@ class MainWindow(QMainWindow):
             return
 
         payload = self._build_payload_from_history_row(row)
+        payload["blank_source_fields"] = {"备注"}
         try:
             task = self._build_feishu_submission_task(payload)
         except Exception as exc:
@@ -377,6 +482,7 @@ class MainWindow(QMainWindow):
             product_presets = payload.get("global_product_library", [])
         self.intake_page.set_product_presets(product_presets)
         self.history_page.set_product_presets(product_presets)
+        self.intake_page.set_procurement_templates(payload.get("procurement_templates", []))
         self.intake_page.set_custom_cost_labels(payload.get("custom_cost_labels") or ["", "", ""])
         shop_names = []
         for shop in payload.get("shops", []):
@@ -388,6 +494,7 @@ class MainWindow(QMainWindow):
             shop_names,
             str(payload.get("selected_shop_name", "")).strip() or None,
         )
+        self.profit_page.set_shop_names(shop_names)
 
     def _handle_product_library_request(self, product_name: str, default_cost: str) -> None:
         if self.settings_page.upsert_product_preset(product_name, default_cost):
@@ -395,6 +502,14 @@ class MainWindow(QMainWindow):
             self._persist_settings_payload(payload)
             self.intake_page.set_product_presets(payload.get("product_presets", []))
             self.intake_page.capture_widget.status_label.setText(f"已加入商品库：{product_name}")
+
+    def _handle_procurement_template_request(self, template: dict) -> None:
+        if self.settings_page.upsert_procurement_template(
+            str(template.get("specification", "")).strip(),
+            list(template.get("procurement_items") or []),
+        ):
+            payload = self.settings_page.to_payload()
+            self._persist_settings_payload(payload)
 
     def _sync_products_from_order(self, order) -> None:
         changed = False
@@ -413,6 +528,34 @@ class MainWindow(QMainWindow):
         self._sync_shop_selector(payload)
         if self._on_settings_save is not None:
             self._on_settings_save(payload)
+
+    def _backfill_runtime_update_logs(self, loaded_payload: dict | None = None) -> None:
+        payload = loaded_payload or {}
+        if "update_logs_initialized" not in payload and "update_logs" not in payload:
+            return
+        changed = False
+        existing_keys = {
+            (
+                str(item.get("module", "")).strip(),
+                str(item.get("title", "")).strip(),
+            )
+            for item in self.settings_page.to_payload().get("update_logs", [])
+            if isinstance(item, dict)
+        }
+        for item in self.AUTO_UPDATE_LOG_BACKFILLS:
+            key = (item["module"], item["title"])
+            if key in existing_keys:
+                continue
+            if self.settings_page.append_update_log(
+                item["module"],
+                item["title"],
+                item["content"],
+                created_at=item["created_at"],
+            ):
+                changed = True
+                existing_keys.add(key)
+        if changed:
+            self._persist_settings_payload(self.settings_page.to_payload())
 
     def _extract_order_from_image(self, image_bytes: bytes):
         payload = self.settings_page.to_payload()
@@ -514,6 +657,7 @@ class MainWindow(QMainWindow):
                 sync_source="确认写入飞书",
                 sync_status="已写入飞书",
                 sync_message="写入成功",
+                blank_source_fields=set(payload.get("blank_source_fields") or []),
             ),
         }
 
@@ -524,15 +668,24 @@ class MainWindow(QMainWindow):
         for item in order_snapshot.get("procurement_items", []):
             if not isinstance(item, dict):
                 continue
+            product_name = str(item.get("product_name", "")).strip()
+            quantity = str(item.get("quantity", "")).strip()
+            cost = str(item.get("cost", "")).strip()
+            tracking_number = str(item.get("tracking_number", "")).strip()
             procurement_items.append(
                 ProcurementItem(
-                    str(item.get("product_name", "")).strip(),
-                    str(item.get("quantity", "")).strip() or "1",
-                    str(item.get("cost", "")).strip(),
+                    product_name,
+                    (
+                        quantity
+                        if quantity != "1" or any((product_name, cost, tracking_number))
+                        else ""
+                    ) or ("1" if any((product_name, cost, tracking_number)) else ""),
+                    cost,
+                    tracking_number,
                 )
             )
         while len(procurement_items) < 3:
-            procurement_items.append(ProcurementItem("", "1", ""))
+            procurement_items.append(ProcurementItem("", "", "", ""))
 
         return {
             "shop_name": row.get("shop_name", ""),
@@ -567,6 +720,9 @@ class MainWindow(QMainWindow):
                 code=str(order_snapshot.get("code", "")).strip(),
                 address=str(order_snapshot.get("address", "")).strip(),
                 delivery_note=str(order_snapshot.get("delivery_note", "")).strip(),
+                procurement_tracking_number=str(
+                    order_snapshot.get("procurement_tracking_number", "")
+                ).strip(),
                 procurement_items=tuple(procurement_items[:3]),
             ),
         }

@@ -53,9 +53,10 @@ def test_intake_page_shows_order_card_after_pipeline_result(qtbot):
             "shop_name": "乐宝零食店",
             "order": replace(
                 order,
-                platform_fee_amount="0.00",
+                platform_fee_rate="0.06",
+                platform_fee_amount="9.72",
+                gross_profit="152.28",
                 procurement_total_cost="0.00",
-                gross_profit="162.00",
             ),
         }
     ]
@@ -96,12 +97,43 @@ def test_intake_page_defaults_platform_to_douyin_and_supports_wechat(qtbot):
             "order": replace(
                 order,
                 platform="微信小店",
-                platform_fee_amount="0.00",
+                platform_fee_rate="0.06",
+                platform_fee_amount="0.48",
                 procurement_total_cost="0.00",
-                gross_profit="8.00",
+                gross_profit="7.52",
             ),
         }
     ]
+
+
+def test_intake_page_defaults_fee_rate_to_point_zero_six_and_uses_fixed_status_options(qtbot):
+    page = IntakePage(use_background_thread=False)
+    qtbot.addWidget(page)
+
+    order = ParsedOrder(
+        order_id="1",
+        placed_at="2026-04-11 20:57:15",
+        order_status="已下单未发货",
+        product_name="商品",
+        quantity="1",
+        order_amount="10.00",
+        income_amount="8.00",
+        recipient_name="何女士",
+        phone_number="15781304332",
+        code="3612",
+        address="重庆市",
+        delivery_note="备注",
+    )
+
+    page.show_order(order)
+
+    assert page.order_card_widget.platform_fee_rate_edit.text() == "0.06"
+    assert page.order_card_widget.platform_fee_amount_edit.text() == "0.48"
+    assert page.order_card_widget.order_status_edit.currentText() == "已下单未发货"
+    assert [
+        page.order_card_widget.order_status_edit.itemText(index)
+        for index in range(page.order_card_widget.order_status_edit.count())
+    ] == ["已发货", "待发货", "已下单未发货"]
 
 
 def test_screenshot_input_widget_reads_image_from_clipboard(qtbot):

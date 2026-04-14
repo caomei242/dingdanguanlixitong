@@ -1,4 +1,5 @@
 import time
+from pathlib import Path
 from typing import Optional
 
 from PySide6.QtWidgets import QMessageBox
@@ -15,6 +16,8 @@ def _sample_order(platform: str = "抖店") -> ParsedOrder:
         placed_at="2026-04-11 20:57:15",
         order_status="已发货",
         product_name="澳大利亚进口婴儿水",
+        specification="1L/桶*12袋(赵露思同款 澳洲版)",
+        sku="27000-澳洲版-1升装",
         quantity="1",
         order_amount="405.00",
         income_amount="162.00",
@@ -45,6 +48,8 @@ def _alternate_order(platform: str = "抖店") -> ParsedOrder:
         placed_at="2026-04-12 09:15:00",
         order_status="待发货",
         product_name="云南蓝莓",
+        specification="125g*4盒",
+        sku="YUNNAN-BLUEBERRY-125",
         quantity="2",
         order_amount="88.00",
         income_amount="44.00",
@@ -140,6 +145,9 @@ def _assert_rich_history_snapshot(
     assert order_snapshot["platform"] == order.platform
     assert order_snapshot["order_status"] == order.order_status
     assert order_snapshot["product_name"] == order.product_name
+    assert order_snapshot["specification"] == order.specification
+    assert order_snapshot["sku"] == order.sku
+    assert order_snapshot["sku_image_path"] == order.sku_image_path
     assert order_snapshot["quantity"] == order.quantity
     assert order_snapshot["order_amount"] == order.order_amount
     assert order_snapshot["income_amount"] == order.income_amount
@@ -173,6 +181,32 @@ def _assert_rich_history_snapshot(
     address_snapshot = record["address_snapshot"]
     assert address_snapshot["output_one"].strip()
     assert address_snapshot["output_two"].strip()
+
+
+def test_main_window_builds_history_snapshot_with_spec_sku_and_image(qtbot, tmp_path):
+    history_store = HistoryStore(tmp_path / "history.json")
+    window = MainWindow(config_store=ConfigStore(tmp_path / "config.json"), history_store=history_store)
+    qtbot.addWidget(window)
+
+    image_path = tmp_path / "sku.png"
+    image_path.write_bytes(b"fake-image")
+    order = _sample_order()
+    order = ParsedOrder(
+        **{
+            **order.__dict__,
+            "sku_image_path": str(image_path),
+        }
+    )
+    window.intake_page.show_order(order)
+    snapshot = window._build_history_snapshot(
+        {"shop_name": "乐宝零食店", "order": order},
+        "仅存历史",
+        "仅存历史",
+    )
+
+    assert snapshot["order_snapshot"]["specification"] == "1L/桶*12袋(赵露思同款 澳洲版)"
+    assert snapshot["order_snapshot"]["sku"] == "27000-澳洲版-1升装"
+    assert snapshot["order_snapshot"]["sku_image_path"] == str(image_path)
 
 
 def test_main_window_submits_order_to_total_table_with_shop_field(qtbot, tmp_path, monkeypatch):

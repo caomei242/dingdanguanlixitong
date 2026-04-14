@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from decimal import Decimal, ROUND_HALF_UP
 from functools import partial
+from pathlib import Path
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QComboBox,
     QFrame,
@@ -27,14 +29,25 @@ from strawberry_order_management.models import ParsedOrder, ProcurementItem
 
 class OrderCardWidget(QWidget):
     product_library_requested = Signal(str, str)
+    ORDER_STATUS_OPTIONS = ("已发货", "待发货", "已下单未发货")
+    DEFAULT_PLATFORM_FEE_RATE = "0.06"
 
     def __init__(self) -> None:
         super().__init__()
         self._product_presets: list[dict[str, str]] = []
         self.order_id_edit = self._build_line_edit()
         self.placed_at_edit = self._build_line_edit()
-        self.order_status_edit = self._build_line_edit()
+        self.order_status_edit = QComboBox()
+        self.order_status_edit.addItems(list(self.ORDER_STATUS_OPTIONS))
+        self.order_status_edit.setObjectName("OrderValueEdit")
+        self.order_status_edit.setMinimumHeight(36)
         self.product_name_edit = self._build_text_edit("HighlightedValueEdit")
+        self.specification_edit = self._build_line_edit()
+        self.sku_edit = self._build_line_edit()
+        self.sku_image_label = QLabel("暂无 SKU 图片")
+        self.sku_image_label.setObjectName("MutedText")
+        self.sku_image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.sku_image_label.setMinimumSize(92, 92)
         self.quantity_edit = self._build_line_edit()
         self.order_amount_edit = self._build_line_edit()
         self.income_amount_edit = self._build_line_edit()
@@ -149,8 +162,10 @@ class OrderCardWidget(QWidget):
         self._suspend_financial_recalculation = True
         self.order_id_edit.setText(self._to_text(order.order_id))
         self.placed_at_edit.setText(self._to_text(order.placed_at))
-        self.order_status_edit.setText(self._to_text(order.order_status))
+        self._set_status_text(self._to_text(order.order_status))
         self.product_name_edit.setPlainText(self._to_text(order.product_name))
+        self.specification_edit.setText(self._to_text(getattr(order, "specification", "")))
+        self.sku_edit.setText(self._to_text(getattr(order, "sku", "")))
         self.quantity_edit.setText(self._to_text(order.quantity))
         self.order_amount_edit.setText(self._to_text(order.order_amount))
         self.income_amount_edit.setText(self._to_text(order.income_amount))
@@ -159,7 +174,9 @@ class OrderCardWidget(QWidget):
         self.code_edit.setText(self._to_text(order.code))
         self.address_edit.setPlainText(self._to_text(order.address))
         self.delivery_note_edit.setPlainText(self._to_text(order.delivery_note))
-        self.platform_fee_rate_edit.setText(self._to_text(order.platform_fee_rate))
+        self._load_sku_image(self._to_text(getattr(order, "sku_image_path", "")))
+        fee_rate_value = self._to_text(order.platform_fee_rate).strip() or self.DEFAULT_PLATFORM_FEE_RATE
+        self.platform_fee_rate_edit.setText(fee_rate_value)
         self.platform_fee_amount_edit.setText(self._to_text(order.platform_fee_amount))
         self.other_cost_edit.setText(self._to_text(order.other_cost))
         self.procurement_total_cost_edit.setText(self._to_text(order.procurement_total_cost))
@@ -189,8 +206,11 @@ class OrderCardWidget(QWidget):
         return ParsedOrder(
             order_id=self.order_id_edit.text().strip(),
             placed_at=self.placed_at_edit.text().strip(),
-            order_status=self.order_status_edit.text().strip(),
+            order_status=self.order_status_edit.currentText().strip(),
             product_name=self.product_name_edit.toPlainText().strip(),
+            specification=self.specification_edit.text().strip(),
+            sku=self.sku_edit.text().strip(),
+            sku_image_path=self._to_text(self.sku_image_label.property("imagePath")).strip(),
             quantity=self.quantity_edit.text().strip(),
             order_amount=self.order_amount_edit.text().strip(),
             income_amount=self.income_amount_edit.text().strip(),
@@ -236,8 +256,11 @@ class OrderCardWidget(QWidget):
         grid.addWidget(self._field_block("订单状态", self.order_status_edit), 1, 0)
         grid.addWidget(self._field_block("数量", self.quantity_edit), 1, 1)
         grid.addWidget(self._field_block("商品名称", self.product_name_edit), 2, 0, 1, 2)
-        grid.addWidget(self._field_block("订单金额", self.order_amount_edit), 3, 0)
-        grid.addWidget(self._field_block("商家收入", self.income_amount_edit), 3, 1)
+        grid.addWidget(self._field_block("规格", self.specification_edit), 3, 0)
+        grid.addWidget(self._field_block("SKU", self.sku_edit), 3, 1)
+        grid.addWidget(self._field_block("SKU 图片", self.sku_image_label), 4, 0)
+        grid.addWidget(self._field_block("订单金额", self.order_amount_edit), 4, 1)
+        grid.addWidget(self._field_block("商家收入", self.income_amount_edit), 5, 0, 1, 2)
         return body
 
     def _build_shipping_body(self) -> QWidget:
@@ -478,6 +501,37 @@ class OrderCardWidget(QWidget):
         widget.setObjectName(object_name)
         widget.setMaximumHeight(84)
         return widget
+
+    def _set_status_text(self, value: str) -> None:
+        status = value.strip() or "待发货"
+        if status == "未发货":
+            status = "待发货"
+        index = self.order_status_edit.findText(status)
+        if index < 0:
+            index = self.order_status_edit.findText("待发货")
+        self.order_status_edit.setCurrentIndex(max(index, 0))
+
+    def _load_sku_image(self, image_path: str) -> None:
+        normalized = image_path.strip()
+        self.sku_image_label.setProperty("imagePath", normalized)
+        if not normalized or not Path(normalized).exists():
+            self.sku_image_label.setPixmap(QPixmap())
+            self.sku_image_label.setText("暂无 SKU 图片")
+            return
+        pixmap = QPixmap(normalized)
+        if pixmap.isNull():
+            self.sku_image_label.setPixmap(QPixmap())
+            self.sku_image_label.setText("暂无 SKU 图片")
+            return
+        self.sku_image_label.setText("")
+        self.sku_image_label.setPixmap(
+            pixmap.scaled(
+                88,
+                88,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+        )
 
     @staticmethod
     def _label(text: str) -> QLabel:

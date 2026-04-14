@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import mimetypes
 from urllib.parse import parse_qs, urlparse
 
 import requests
@@ -26,6 +27,7 @@ class FeishuClient:
         return tenant_access_token
 
     def create_record(self, access_token: str, fields: dict) -> dict:
+        prepared_fields = self._materialize_fields(access_token, fields)
         return self._request_json(
             "POST",
             "https://open.feishu.cn/open-apis/bitable/v1/apps/"
@@ -34,11 +36,12 @@ class FeishuClient:
                 "Authorization": f"Bearer {access_token}",
                 "Content-Type": "application/json; charset=utf-8",
             },
-            json_body={"fields": fields},
+            json_body={"fields": prepared_fields},
             error_prefix="飞书写入失败",
         )
 
     def update_record(self, access_token: str, record_id: str, fields: dict) -> dict:
+        prepared_fields = self._materialize_fields(access_token, fields)
         return self._request_json(
             "PUT",
             "https://open.feishu.cn/open-apis/bitable/v1/apps/"
@@ -47,7 +50,7 @@ class FeishuClient:
                 "Authorization": f"Bearer {access_token}",
                 "Content-Type": "application/json; charset=utf-8",
             },
-            json_body={"fields": fields},
+            json_body={"fields": prepared_fields},
             error_prefix="飞书写入失败",
         )
 
@@ -120,6 +123,47 @@ class FeishuClient:
             "table_id": table_id,
             "wiki_url": cleaned_url,
         }
+
+    def _materialize_fields(self, access_token: str, fields: dict) -> dict:
+        prepared: dict = {}
+        for key, value in dict(fields).items():
+            if isinstance(value, list) and value and all(isinstance(item, dict) for item in value):
+                local_paths = [str(item.get("local_path", "")).strip() for item in value if item.get("local_path")]
+                if local_paths:
+                    file_tokens = [
+                        {"file_token": self.upload_bitable_image(access_token, image_path)}
+                        for image_path in local_paths
+                    ]
+                    if file_tokens:
+                        prepared[key] = file_tokens
+                    continue
+            prepared[key] = value
+        return prepared
+
+    def upload_bitable_image(self, access_token: str, image_path: str) -> str:
+        mime_type = mimetypes.guess_type(image_path)[0] or "image/png"
+        with open(image_path, "rb") as handle:
+            file_bytes = handle.read()
+        response = requests.post(
+            "https://open.feishu.cn/open-apis/drive/v1/medias/upload_all",
+            headers={"Authorization": f"Bearer {access_token}"},
+            data={
+                "file_name": image_path.rsplit("/", 1)[-1],
+                "parent_type": "bitable_image",
+                "parent_node": self.table_app_token,
+                "size": str(len(file_bytes)),
+            },
+            files={"file": (image_path.rsplit("/", 1)[-1], file_bytes, mime_type)},
+            timeout=30,
+        )
+        payload = self._parse_response_payload(response, "飞书图片上传失败")
+        data = payload.get("data", {})
+        if not isinstance(data, dict):
+            raise ValueError("飞书图片上传失败：响应里缺少文件信息")
+        file_token = str(data.get("file_token", "")).strip() or str(data.get("token", "")).strip()
+        if not file_token:
+            raise ValueError("飞书图片上传失败：响应里缺少 file_token")
+        return file_token
 
     @staticmethod
     def _request_json(

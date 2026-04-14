@@ -23,6 +23,8 @@ def _row(
             "platform": "抖店",
             "order_status": "已发货",
             "product_name": "澳大利亚进口婴儿水",
+            "specification": "1L/桶*12袋(赵露思同款 澳洲版)",
+            "sku": "27000-澳洲版-1升装",
             "quantity": "1",
             "order_amount": "405.00",
             "income_amount": "162.00",
@@ -333,6 +335,30 @@ def test_history_page_treats_decimal_fee_rate_as_direct_multiplier(qtbot):
     assert emitted[0][1]["order_snapshot"]["platform_fee_amount"] == "9.72"
 
 
+def test_history_page_defaults_blank_fee_rate_to_point_zero_six(qtbot):
+    page = HistoryPage()
+    qtbot.addWidget(page)
+    rows = [
+        _row(
+            "record-1",
+            "乐宝零食店",
+            "确认写入飞书",
+            "已写入飞书",
+            "6952003434324366473",
+            "何女士",
+            "何女士15781304332四川省成都市",
+            "请电话送货上门谢谢【3612】",
+        )
+    ]
+    rows[0]["order_snapshot"]["platform_fee_rate"] = ""
+    rows[0]["order_snapshot"]["platform_fee_amount"] = ""
+
+    page.load_rows(rows)
+
+    assert page.platform_fee_rate_value.toPlainText() == "0.06"
+    assert page.platform_fee_amount_value.toPlainText() == "9.72"
+
+
 def test_history_page_directly_edits_fields_and_emits_save_patch(qtbot):
     page = HistoryPage()
     qtbot.addWidget(page)
@@ -399,3 +425,56 @@ def test_history_page_save_button_stays_near_detail_header(qtbot):
 
     assert page.header_actions_widget.isHidden() is False
     assert page.left_column_widget.layout().count() == 1
+
+
+def test_history_page_filters_by_quick_range_shop_status_and_specific_date(qtbot):
+    page = HistoryPage()
+    qtbot.addWidget(page)
+    rows = [
+        _row(
+            "record-today",
+            "乐宝零食店",
+            "确认写入飞书",
+            "已写入飞书",
+            "6952003434324366473",
+            "何女士",
+            "何女士15781304332四川省成都市",
+            "请电话送货上门谢谢【3612】",
+        ),
+        _row(
+            "record-yesterday",
+            "欢宝零食店",
+            "仅存历史",
+            "写入失败",
+            "6952003434324366111",
+            "田宝山",
+            "田宝山15784081541山东省德州市",
+            "请放门口",
+        ),
+    ]
+    rows[0]["order_snapshot"]["placed_at"] = "2026-04-14 09:00:00"
+    rows[0]["order_snapshot"]["order_status"] = "已发货"
+    rows[1]["order_snapshot"]["placed_at"] = "2026-04-13 10:30:00"
+    rows[1]["order_snapshot"]["order_status"] = "待发货"
+
+    page.load_rows(rows)
+
+    page.quick_filter_buttons["今天"].click()
+    assert page.list_widget.count() == 1
+    assert "record-today" in page._filtered_rows[0]["record_id"]
+
+    page.shop_filter_combo.setCurrentText("欢宝零食店")
+    page.status_filter_combo.setCurrentText("待发货")
+    page.apply_filters_button.click()
+    assert page.list_widget.count() == 0
+
+    page.quick_filter_buttons["全部"].click()
+    page.date_filter_edit.setDate(page.date_filter_edit.date().fromString("2026-04-13", "yyyy-MM-dd"))
+    page.shop_filter_combo.setCurrentText("欢宝零食店")
+    page.status_filter_combo.setCurrentText("待发货")
+    page.apply_filters_button.click()
+    assert page.list_widget.count() == 1
+    assert page.detail_title_label.text() == "欢宝零食店"
+
+    page.clear_filters_button.click()
+    assert page.list_widget.count() == 2

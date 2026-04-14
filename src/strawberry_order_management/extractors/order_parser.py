@@ -15,6 +15,11 @@ _RECIPIENT_PATTERN = re.compile(
     r"收货信息\s*(.+?)\s*\[\s*(\d+)\s*\]\s*(\d{11})\s*(.+?)\s*\[\s*\2\s*\]",
     re.S,
 )
+_SKU_PATTERN = re.compile(r"(?:SKU|sku|货号|商家编码)\s*[:：]\s*(.+)", re.I)
+_IGNORED_PRODUCT_LINE_PATTERN = re.compile(r"^(?:商品(?:单)?ID|商品id|item id)\s*[:：]", re.I)
+_ORDER_STATUS_ALIASES = {
+    "未发货": "待发货",
+}
 
 
 def _search(pattern: re.Pattern[str], raw_text: str) -> re.Match[str]:
@@ -27,8 +32,12 @@ def _search(pattern: re.Pattern[str], raw_text: str) -> re.Match[str]:
 def parse_order_text(raw_text: str) -> ParsedOrder:
     order_id = _search(_ORDER_ID_PATTERN, raw_text).group(1)
     placed_at = _search(_PLACED_AT_PATTERN, raw_text).group(1).strip()
-    order_status = " ".join(_search(_ORDER_STATUS_PATTERN, raw_text).group(1).split()).strip()
-    product_name = " ".join(_search(_PRODUCT_NAME_PATTERN, raw_text).group(1).split()).strip()
+    order_status = _normalize_order_status(
+        " ".join(_search(_ORDER_STATUS_PATTERN, raw_text).group(1).split()).strip()
+    )
+    product_name, specification, sku = _parse_product_block(
+        _search(_PRODUCT_NAME_PATTERN, raw_text).group(1)
+    )
     quantity = _search(_QUANTITY_PATTERN, raw_text).group(2)
     order_amount = _search(_ORDER_AMOUNT_PATTERN, raw_text).group(1)
     income_amount = _search(_INCOME_AMOUNT_PATTERN, raw_text).group(1)
@@ -45,6 +54,8 @@ def parse_order_text(raw_text: str) -> ParsedOrder:
         placed_at=placed_at,
         order_status=order_status,
         product_name=product_name,
+        specification=specification,
+        sku=sku,
         quantity=quantity,
         order_amount=order_amount,
         income_amount=income_amount,
@@ -54,3 +65,31 @@ def parse_order_text(raw_text: str) -> ParsedOrder:
         address=address,
         delivery_note=delivery_note,
     )
+
+
+def _normalize_order_status(value: str) -> str:
+    cleaned = str(value).strip()
+    return _ORDER_STATUS_ALIASES.get(cleaned, cleaned)
+
+
+def _parse_product_block(raw_block: str) -> tuple[str, str, str]:
+    lines = [
+        " ".join(line.split()).strip()
+        for line in str(raw_block).splitlines()
+        if " ".join(line.split()).strip()
+    ]
+    if not lines:
+        return "", "", ""
+    product_name = lines[0]
+    specification_lines: list[str] = []
+    sku = ""
+    for line in lines[1:]:
+        sku_match = _SKU_PATTERN.search(line)
+        if sku_match and not sku:
+            sku = " ".join(sku_match.group(1).split()).strip()
+            continue
+        if _IGNORED_PRODUCT_LINE_PATTERN.match(line):
+            continue
+        specification_lines.append(line)
+    specification = " ".join(specification_lines).strip()
+    return product_name, specification, sku

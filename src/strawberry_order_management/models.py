@@ -24,6 +24,9 @@ class ParsedOrder:
     code: str
     address: str
     delivery_note: str
+    specification: str = ""
+    sku: str = ""
+    sku_image_path: str = ""
     platform: str = "抖店"
     platform_fee_rate: str = ""
     platform_fee_amount: str = ""

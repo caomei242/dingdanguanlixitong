@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime
 from typing import Optional
 
@@ -17,6 +18,7 @@ from PySide6.QtWidgets import (
 )
 
 from strawberry_order_management.history import HistoryStore
+from strawberry_order_management.media import crop_sku_image_from_order_screenshot
 from strawberry_order_management.models import ParsedOrder, ProcurementItem
 from strawberry_order_management.services.feishu_client import FeishuClient
 from strawberry_order_management.services.helper_client import HelperClient
@@ -192,6 +194,9 @@ class MainWindow(QMainWindow):
                 "platform": order.platform,
                 "order_status": order.order_status,
                 "product_name": order.product_name,
+                "specification": order.specification,
+                "sku": order.sku,
+                "sku_image_path": order.sku_image_path,
                 "quantity": order.quantity,
                 "order_amount": order.order_amount,
                 "income_amount": order.income_amount,
@@ -424,7 +429,9 @@ class MainWindow(QMainWindow):
             raise ValueError(f"请先在设置页填写：{'、'.join(missing)}")
 
         pipeline = self._order_pipeline_factory(payload)
-        return pipeline.extract_order(image_bytes)
+        order = pipeline.extract_order(image_bytes)
+        sku_image_path = crop_sku_image_from_order_screenshot(image_bytes, order_id=order.order_id)
+        return replace(order, sku_image_path=sku_image_path)
 
     def _resolve_shop_link(self, wiki_url: str) -> dict[str, str]:
         settings_payload = self.settings_page.to_payload()
@@ -534,10 +541,13 @@ class MainWindow(QMainWindow):
                 platform=str(order_snapshot.get("platform", "抖店")).strip() or "抖店",
                 order_status=str(order_snapshot.get("order_status", "")).strip(),
                 product_name=str(order_snapshot.get("product_name", "")).strip(),
+                specification=str(order_snapshot.get("specification", "")).strip(),
+                sku=str(order_snapshot.get("sku", "")).strip(),
+                sku_image_path=str(order_snapshot.get("sku_image_path", "")).strip(),
                 quantity=str(order_snapshot.get("quantity", "")).strip(),
                 order_amount=str(order_snapshot.get("order_amount", "")).strip(),
                 income_amount=str(order_snapshot.get("income_amount", "")).strip(),
-                platform_fee_rate=str(order_snapshot.get("platform_fee_rate", "")).strip(),
+                platform_fee_rate=str(order_snapshot.get("platform_fee_rate", "")).strip() or "0.06",
                 platform_fee_amount=str(order_snapshot.get("platform_fee_amount", "")).strip(),
                 other_cost=str(order_snapshot.get("other_cost", "")).strip(),
                 procurement_total_cost=str(order_snapshot.get("procurement_total_cost", "")).strip(),

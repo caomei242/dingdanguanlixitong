@@ -130,6 +130,63 @@ def test_build_feishu_payload_includes_financial_fields_and_custom_costs():
     assert payload["赠品"] == "2.5"
 
 
+def test_build_feishu_payload_supports_specification_and_sku_fields():
+    order = ParsedOrder(
+        order_id="1",
+        placed_at="2026-04-13 12:00:00",
+        order_status="已发货",
+        product_name="测试商品",
+        specification="1L/桶*12袋(赵露思同款 澳洲版)",
+        sku="27000-澳洲版-1升装",
+        quantity="1",
+        order_amount="100.00",
+        income_amount="80.00",
+        recipient_name="张三",
+        phone_number="13800138000",
+        code="9527",
+        address="上海市浦东新区测试路 1 号",
+        delivery_note="请电话联系",
+    )
+
+    payload = build_feishu_payload(
+        order,
+        {
+            "规格": "规格",
+            "SKU": "SKU",
+        },
+        shop_name="乐宝零食店",
+    )
+
+    assert payload["规格"] == "1L/桶*12袋(赵露思同款 澳洲版)"
+    assert payload["SKU"] == "27000-澳洲版-1升装"
+
+
+def test_build_feishu_payload_emits_local_image_reference_for_sku_image_field(tmp_path: Path):
+    image_path = tmp_path / "sku.png"
+    image_path.write_bytes(b"fake-image")
+    order = ParsedOrder(
+        order_id="1",
+        placed_at="2026-04-13 12:00:00",
+        order_status="已发货",
+        product_name="测试商品",
+        specification="1L/桶*12袋(赵露思同款 澳洲版)",
+        sku="27000-澳洲版-1升装",
+        sku_image_path=str(image_path),
+        quantity="1",
+        order_amount="100.00",
+        income_amount="80.00",
+        recipient_name="张三",
+        phone_number="13800138000",
+        code="9527",
+        address="上海市浦东新区测试路 1 号",
+        delivery_note="请电话联系",
+    )
+
+    payload = build_feishu_payload(order, {"SKU 图片": "SKU图片"})
+
+    assert payload["SKU图片"] == [{"local_path": str(image_path)}]
+
+
 def test_order_pipeline_extracts_order_from_ocr_then_helper_text():
     raw_text = Path("tests/fixtures/ocr/jd_order_01.txt").read_text(encoding="utf-8")
     calls: list[str] = []
@@ -470,6 +527,56 @@ def test_feishu_client_updates_record_with_put(monkeypatch: pytest.MonkeyPatch):
     }
     assert captured["json"] == {"fields": {"备注": "ok"}}
     assert captured["timeout"] == 30
+
+
+def test_feishu_client_uploads_local_images_before_create(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    image_path = tmp_path / "sku.png"
+    image_path.write_bytes(b"image-bytes")
+    captured: dict[str, object] = {"uploads": []}
+
+    def fake_request(method, url, headers=None, json=None, timeout=None, params=None):
+        captured["method"] = method
+        captured["url"] = url
+        captured["headers"] = headers
+        captured["json"] = json
+        captured["timeout"] = timeout
+        return FakeResponse({"data": {"record_id": "rec_1"}})
+
+    def fake_post(url, headers=None, data=None, files=None, timeout=None):
+        captured["uploads"].append(
+            {
+                "url": url,
+                "headers": headers,
+                "data": data,
+                "files": files,
+                "timeout": timeout,
+            }
+        )
+        return FakeResponse({"data": {"file_token": "file_123"}})
+
+    monkeypatch.setattr("strawberry_order_management.services.feishu_client.requests.request", fake_request)
+    monkeypatch.setattr("strawberry_order_management.services.feishu_client.requests.post", fake_post)
+
+    client = FeishuClient("app", "secret", "app_token", "tbl_1")
+
+    result = client.create_record(
+        "access_token",
+        {
+            "备注": "ok",
+            "SKU图片": [{"local_path": str(image_path)}],
+        },
+    )
+
+    assert result == {"data": {"record_id": "rec_1"}}
+    assert captured["uploads"][0]["url"] == "https://open.feishu.cn/open-apis/drive/v1/medias/upload_all"
+    assert captured["uploads"][0]["data"]["parent_type"] == "bitable_image"
+    assert captured["uploads"][0]["data"]["parent_node"] == "app_token"
+    assert captured["json"] == {
+        "fields": {
+            "备注": "ok",
+            "SKU图片": [{"file_token": "file_123"}],
+        }
+    }
 
 
 def test_feishu_client_deletes_record_with_delete(monkeypatch: pytest.MonkeyPatch):

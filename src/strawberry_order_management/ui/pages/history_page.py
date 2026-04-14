@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 from decimal import Decimal, ROUND_HALF_UP
+from datetime import date, datetime, timedelta
 import json
 from typing import Any
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QDate, Qt, Signal
+from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtWidgets import (
+    QComboBox,
+    QDateEdit,
     QFormLayout,
     QFrame,
     QGridLayout,
@@ -32,6 +36,9 @@ _ORDER_SNAPSHOT_KEYS = (
     "platform",
     "order_status",
     "product_name",
+    "specification",
+    "sku",
+    "sku_image_path",
     "quantity",
     "order_amount",
     "income_amount",
@@ -48,6 +55,9 @@ _ORDER_SNAPSHOT_KEYS = (
     "custom_cost_labels",
     "custom_cost_values",
 )
+_FIXED_ORDER_STATUS_OPTIONS = ("已发货", "待发货", "已下单未发货")
+_ORDER_STATUS_ALIASES = {"未发货": "待发货"}
+_DEFAULT_PLATFORM_FEE_RATE = "0.06"
 
 
 class HistoryPage(QWidget):
@@ -59,12 +69,23 @@ class HistoryPage(QWidget):
     def __init__(self) -> None:
         super().__init__()
         self.setObjectName("HistoryPage")
-        self._rows: list[dict[str, Any]] = []
+        self._all_rows: list[dict[str, Any]] = []
+        self._filtered_rows: list[dict[str, Any]] = []
+        self._active_quick_filter = "全部"
+        self._specific_date_active = False
 
         title = QLabel("历史工作台")
         title.setObjectName("SectionTitle")
-        subtitle = QLabel("左侧浏览历史记录，右侧查看完整订单快照、同步信息并支持原地编辑")
-        subtitle.setObjectName("MutedText")
+        self.quick_filter_buttons: dict[str, QPushButton] = {}
+        self.shop_filter_combo = QComboBox()
+        self.status_filter_combo = QComboBox()
+        self.date_filter_edit = QDateEdit()
+        self.date_filter_edit.setCalendarPopup(True)
+        self.date_filter_edit.setDisplayFormat("yyyy-MM-dd")
+        self.date_filter_edit.setDate(QDate.currentDate())
+        self.apply_filters_button = QPushButton("应用筛选")
+        self.clear_filters_button = QPushButton("清空")
+        filter_bar = self._build_filter_bar()
 
         self.summary_label = QLabel("暂无记录")
         self.summary_label.setObjectName("MutedText")
@@ -103,8 +124,17 @@ class HistoryPage(QWidget):
         self.order_id_value = self._build_text_value(minimum_height=36)
         self.placed_at_value = self._build_text_value(minimum_height=36)
         self.platform_value = self._build_text_value(minimum_height=36)
-        self.order_status_value = self._build_text_value(minimum_height=36)
+        self.order_status_value = QComboBox()
+        self.order_status_value.setObjectName("OrderValueEdit")
+        self.order_status_value.setMinimumHeight(36)
+        self.order_status_value.addItems(list(_FIXED_ORDER_STATUS_OPTIONS))
         self.product_name_value = self._build_text_value(minimum_height=52)
+        self.specification_value = self._build_text_value(minimum_height=36)
+        self.sku_value = self._build_text_value(minimum_height=36)
+        self.sku_image_value = QLabel("暂无 SKU 图片")
+        self.sku_image_value.setObjectName("MutedText")
+        self.sku_image_value.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.sku_image_value.setMinimumSize(92, 92)
         self.quantity_value = self._build_text_value(minimum_height=36)
         self.order_amount_value = self._build_text_value(minimum_height=36)
         self.income_amount_value = self._build_text_value(minimum_height=36)
@@ -133,6 +163,9 @@ class HistoryPage(QWidget):
         order_form.addRow("平台", self.platform_value)
         order_form.addRow("订单状态", self.order_status_value)
         order_form.addRow("商品名称", self.product_name_value)
+        order_form.addRow("规格", self.specification_value)
+        order_form.addRow("SKU", self.sku_value)
+        order_form.addRow("SKU 图片", self.sku_image_value)
         order_form.addRow("数量", self.quantity_value)
         order_form.addRow("订单金额", self.order_amount_value)
         order_form.addRow("收入", self.income_amount_value)
@@ -305,15 +338,16 @@ class HistoryPage(QWidget):
 
         root = QVBoxLayout(self)
         root.addWidget(title)
-        root.addWidget(subtitle)
+        root.addWidget(filter_bar)
         root.addWidget(scroll_area)
 
         self._editable_widgets = [
             self.order_id_value,
             self.placed_at_value,
             self.platform_value,
-            self.order_status_value,
             self.product_name_value,
+            self.specification_value,
+            self.sku_value,
             self.quantity_value,
             self.order_amount_value,
             self.income_amount_value,
@@ -343,23 +377,33 @@ class HistoryPage(QWidget):
 
         self._set_widgets_read_only(False)
         self._update_action_state()
+        self._wire_filter_events()
 
     def load_rows(self, rows: list[dict[str, Any]]) -> None:
         previous_record_id, previous_index = self._current_selection()
-        self._rows = [self._normalize_row(row) for row in rows]
+        self._all_rows = [self._normalize_row(row) for row in rows]
+        self._refresh_shop_filter_options()
+        self._apply_filters(previous_record_id, previous_index)
+
+    def _apply_filters(self, previous_record_id: str | None = None, previous_index: int | None = None) -> None:
+        self._filtered_rows = [row for row in self._all_rows if self._row_matches_filters(row)]
         self._update_stats()
         self.list_widget.blockSignals(True)
         self.list_widget.clear()
-        self.summary_label.setText(f"共 {len(self._rows)} 条记录")
-        if not self._rows:
-            self.list_widget.addItem("暂无历史记录")
+        self.summary_label.setText(f"共 {len(self._filtered_rows)} 条记录")
+        if not self._filtered_rows:
             self.list_widget.blockSignals(False)
             self._show_empty_detail()
             self._update_action_state()
             return
 
-        for row in self._rows:
-            self.list_widget.addItem(self._build_row_text(row))
+        for row in self._filtered_rows:
+            item_text = self._build_row_text(row)
+            self.list_widget.addItem(item_text)
+            image_path = self._text_value((row.get("order_snapshot") or {}).get("sku_image_path"))
+            if image_path:
+                item = self.list_widget.item(self.list_widget.count() - 1)
+                item.setIcon(QIcon(image_path))
 
         self.list_widget.blockSignals(False)
         selected_index = self._restore_selection(previous_record_id, previous_index)
@@ -413,11 +457,11 @@ class HistoryPage(QWidget):
         signal.emit(record_id)
 
     def _show_row(self, row_index: int) -> None:
-        if row_index < 0 or row_index >= len(self._rows):
+        if row_index < 0 or row_index >= len(self._filtered_rows):
             self._show_empty_detail()
             return
 
-        row = self._rows[row_index]
+        row = self._filtered_rows[row_index]
         order_snapshot = row.get("order_snapshot") or {}
         address_snapshot = row.get("address_snapshot") or {}
 
@@ -429,8 +473,11 @@ class HistoryPage(QWidget):
         self.order_id_value.setPlainText(self._text_value(order_snapshot.get("order_id")))
         self.placed_at_value.setPlainText(self._text_value(order_snapshot.get("placed_at")))
         self.platform_value.setPlainText(self._text_value(order_snapshot.get("platform")) or "抖店")
-        self.order_status_value.setPlainText(self._text_value(order_snapshot.get("order_status")))
+        self._set_order_status_value(self._text_value(order_snapshot.get("order_status")))
         self.product_name_value.setPlainText(self._text_value(order_snapshot.get("product_name")))
+        self.specification_value.setPlainText(self._text_value(order_snapshot.get("specification")))
+        self.sku_value.setPlainText(self._text_value(order_snapshot.get("sku")))
+        self._set_sku_image(self._text_value(order_snapshot.get("sku_image_path")))
         self.quantity_value.setPlainText(self._text_value(order_snapshot.get("quantity")))
         self.order_amount_value.setPlainText(self._text_value(order_snapshot.get("order_amount")))
         self.income_amount_value.setPlainText(self._text_value(order_snapshot.get("income_amount")))
@@ -491,8 +538,9 @@ class HistoryPage(QWidget):
             self.order_id_value,
             self.placed_at_value,
             self.platform_value,
-            self.order_status_value,
             self.product_name_value,
+            self.specification_value,
+            self.sku_value,
             self.quantity_value,
             self.order_amount_value,
             self.income_amount_value,
@@ -525,6 +573,8 @@ class HistoryPage(QWidget):
             self.sync_message_value,
         ):
             widget.setPlainText("")
+        self._set_order_status_value("")
+        self._set_sku_image("")
         self.custom_cost_label_1.setText("")
         self.custom_cost_label_2.setText("")
         self.custom_cost_label_3.setText("")
@@ -544,8 +594,11 @@ class HistoryPage(QWidget):
                 "order_id": self._text_value(self.order_id_value.toPlainText()),
                 "placed_at": self._text_value(self.placed_at_value.toPlainText()),
                 "platform": self._text_value(self.platform_value.toPlainText()) or "抖店",
-                "order_status": self._text_value(self.order_status_value.toPlainText()),
+                "order_status": self._normalize_order_status(self.order_status_value.currentText()),
                 "product_name": self._text_value(self.product_name_value.toPlainText()),
+                "specification": self._text_value(self.specification_value.toPlainText()),
+                "sku": self._text_value(self.sku_value.toPlainText()),
+                "sku_image_path": self._text_value(self.sku_image_value.property("imagePath")),
                 "quantity": self._text_value(self.quantity_value.toPlainText()),
                 "order_amount": self._text_value(self.order_amount_value.toPlainText()),
                 "income_amount": self._text_value(self.income_amount_value.toPlainText()),
@@ -621,6 +674,8 @@ class HistoryPage(QWidget):
             if key in ("custom_cost_labels", "custom_cost_values"):
                 continue
             order_snapshot[key] = self._text_value(order_snapshot.get(key))
+        if not order_snapshot.get("platform_fee_rate"):
+            order_snapshot["platform_fee_rate"] = _DEFAULT_PLATFORM_FEE_RATE
         custom_cost_labels = order_snapshot.get("custom_cost_labels")
         if not isinstance(custom_cost_labels, list):
             custom_cost_labels = ["", "", ""]
@@ -664,6 +719,7 @@ class HistoryPage(QWidget):
         address_snapshot["output_one"] = self._text_value(address_snapshot.get("output_one"))
         address_snapshot["output_two"] = self._text_value(address_snapshot.get("output_two"))
 
+        order_snapshot = self._recalculate_financial_snapshot(order_snapshot)
         normalized["order_snapshot"] = order_snapshot
         normalized["address_snapshot"] = address_snapshot
         normalized["sync_source"] = self._display_value(normalized.get("sync_source"))
@@ -692,34 +748,35 @@ class HistoryPage(QWidget):
 
     def _current_row(self) -> dict[str, Any] | None:
         index = self.list_widget.currentRow()
-        if 0 <= index < len(self._rows):
-            return self._rows[index]
-        if self._rows:
-            return self._rows[0]
+        if 0 <= index < len(self._filtered_rows):
+            return self._filtered_rows[index]
+        if self._filtered_rows:
+            return self._filtered_rows[0]
         return None
 
     def _current_selection(self) -> tuple[str | None, int | None]:
         index = self.list_widget.currentRow()
-        if 0 <= index < len(self._rows):
-            record_id = self._text_value(self._rows[index].get("record_id"))
+        if 0 <= index < len(self._filtered_rows):
+            record_id = self._text_value(self._filtered_rows[index].get("record_id"))
             if record_id:
                 return record_id, index
         return None, None
 
     def _restore_selection(self, previous_record_id: str | None, previous_index: int | None) -> int | None:
-        if not self._rows:
+        if not self._filtered_rows:
             return None
         if previous_record_id:
-            for index, row in enumerate(self._rows):
+            for index, row in enumerate(self._filtered_rows):
                 if self._text_value(row.get("record_id")) == previous_record_id:
                     return index
         if previous_index is not None:
-            return min(previous_index, len(self._rows) - 1)
+            return min(previous_index, len(self._filtered_rows) - 1)
         return 0
 
     def _set_widgets_read_only(self, read_only: bool) -> None:
         for widget in self._editable_widgets:
             widget.setReadOnly(read_only)
+        self.order_status_value.setEnabled(not read_only)
 
     def _update_action_state(self) -> None:
         has_row = self._current_row() is not None
@@ -730,10 +787,10 @@ class HistoryPage(QWidget):
         self.header_actions_widget.setHidden(not has_row)
 
     def _update_stats(self) -> None:
-        total = len(self._rows)
-        written = sum(1 for row in self._rows if self._display_value(row.get("status")) == "已写入飞书")
-        draft = sum(1 for row in self._rows if self._display_value(row.get("status")) == "仅存历史")
-        failed = sum(1 for row in self._rows if self._display_value(row.get("status")) == "写入失败")
+        total = len(self._filtered_rows)
+        written = sum(1 for row in self._filtered_rows if self._display_value(row.get("status")) == "已写入飞书")
+        draft = sum(1 for row in self._filtered_rows if self._display_value(row.get("status")) == "仅存历史")
+        failed = sum(1 for row in self._filtered_rows if self._display_value(row.get("status")) == "写入失败")
         self.total_count_value.setText(str(total))
         self.written_count_value.setText(str(written))
         self.draft_count_value.setText(str(draft))
@@ -758,6 +815,161 @@ class HistoryPage(QWidget):
         self.summary_product_value.setText(self._text_value(order_snapshot.get("product_name")) or "-")
         self.summary_procurement_value.setText(procurement_text)
 
+    def _build_filter_bar(self) -> QWidget:
+        container = QFrame()
+        container.setObjectName("HistoryFilterBar")
+        layout = QHBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+
+        for label in ("今天", "昨天", "近7天", "全部"):
+            button = QPushButton(label)
+            button.setCheckable(True)
+            button.setObjectName("SecondaryActionButton")
+            self.quick_filter_buttons[label] = button
+            layout.addWidget(button)
+
+        self.quick_filter_buttons["全部"].setChecked(True)
+        layout.addWidget(self._label("日期"))
+        layout.addWidget(self.date_filter_edit)
+        layout.addWidget(self._label("店铺"))
+        self.shop_filter_combo.addItem("全部店铺")
+        layout.addWidget(self.shop_filter_combo)
+        layout.addWidget(self._label("状态"))
+        self.status_filter_combo.addItems(["全部状态", *_FIXED_ORDER_STATUS_OPTIONS])
+        layout.addWidget(self.status_filter_combo)
+        layout.addWidget(self.apply_filters_button)
+        layout.addWidget(self.clear_filters_button)
+        layout.addStretch(1)
+        return container
+
+    def _wire_filter_events(self) -> None:
+        for label, button in self.quick_filter_buttons.items():
+            button.clicked.connect(lambda checked=False, name=label: self._set_quick_filter(name))
+        self.apply_filters_button.clicked.connect(self._apply_filters_from_ui)
+        self.clear_filters_button.clicked.connect(self._clear_filters)
+        self.date_filter_edit.dateChanged.connect(self._mark_specific_date_active)
+
+    def _mark_specific_date_active(self, _date: QDate) -> None:
+        self._specific_date_active = True
+
+    def _set_quick_filter(self, name: str) -> None:
+        self._active_quick_filter = name
+        for label, button in self.quick_filter_buttons.items():
+            button.blockSignals(True)
+            button.setChecked(label == name)
+            button.blockSignals(False)
+        today = QDate.currentDate()
+        if name == "今天":
+            self._specific_date_active = True
+            self.date_filter_edit.setDate(today)
+        elif name == "昨天":
+            self._specific_date_active = True
+            self.date_filter_edit.setDate(today.addDays(-1))
+        elif name == "全部":
+            self._specific_date_active = False
+        else:
+            self._specific_date_active = False
+        self._apply_filters()
+
+    def _clear_filters(self) -> None:
+        self.shop_filter_combo.setCurrentIndex(0)
+        self.status_filter_combo.setCurrentIndex(0)
+        self._active_quick_filter = "全部"
+        for label, button in self.quick_filter_buttons.items():
+            button.blockSignals(True)
+            button.setChecked(label == "全部")
+            button.blockSignals(False)
+        self.date_filter_edit.blockSignals(True)
+        self.date_filter_edit.setDate(QDate.currentDate())
+        self.date_filter_edit.blockSignals(False)
+        self._specific_date_active = False
+        self._apply_filters()
+
+    def _apply_filters_from_ui(self) -> None:
+        self._apply_filters()
+
+    def _refresh_shop_filter_options(self) -> None:
+        current = self.shop_filter_combo.currentText()
+        shop_names = ["全部店铺"]
+        seen: set[str] = set()
+        for row in self._all_rows:
+            name = self._display_value(row.get("shop_name"))
+            if name != "-" and name not in seen:
+                seen.add(name)
+                shop_names.append(name)
+        self.shop_filter_combo.blockSignals(True)
+        self.shop_filter_combo.clear()
+        self.shop_filter_combo.addItems(shop_names)
+        index = self.shop_filter_combo.findText(current)
+        self.shop_filter_combo.setCurrentIndex(index if index >= 0 else 0)
+        self.shop_filter_combo.blockSignals(False)
+
+    def _row_matches_filters(self, row: dict[str, Any]) -> bool:
+        order_snapshot = row.get("order_snapshot") or {}
+        shop_filter = self.shop_filter_combo.currentText().strip()
+        if shop_filter and shop_filter != "全部店铺":
+            if self._display_value(row.get("shop_name")) != shop_filter:
+                return False
+        status_filter = self.status_filter_combo.currentText().strip()
+        normalized_status = self._normalize_order_status(self._text_value(order_snapshot.get("order_status")))
+        if status_filter and status_filter != "全部状态":
+            if normalized_status != status_filter:
+                return False
+        placed_date = self._extract_row_date(order_snapshot)
+        if self._specific_date_active:
+            selected = self.date_filter_edit.date().toPython()
+            return placed_date == selected
+        if self._active_quick_filter == "今天":
+            return placed_date == date.today()
+        if self._active_quick_filter == "昨天":
+            return placed_date == date.today() - timedelta(days=1)
+        if self._active_quick_filter == "近7天":
+            return placed_date >= date.today() - timedelta(days=6)
+        return True
+
+    @staticmethod
+    def _extract_row_date(order_snapshot: dict[str, Any]) -> date:
+        placed_at = str(order_snapshot.get("placed_at", "")).strip()
+        try:
+            return datetime.strptime(placed_at, "%Y-%m-%d %H:%M:%S").date()
+        except ValueError:
+            return date.min
+
+    @staticmethod
+    def _normalize_order_status(value: str) -> str:
+        cleaned = str(value or "").strip()
+        return _ORDER_STATUS_ALIASES.get(cleaned, cleaned)
+
+    def _set_order_status_value(self, value: str) -> None:
+        normalized = self._normalize_order_status(value) or "待发货"
+        index = self.order_status_value.findText(normalized)
+        if index < 0:
+            index = self.order_status_value.findText("待发货")
+        self.order_status_value.setCurrentIndex(max(index, 0))
+
+    def _set_sku_image(self, image_path: str) -> None:
+        normalized = self._text_value(image_path)
+        self.sku_image_value.setProperty("imagePath", normalized)
+        if not normalized:
+            self.sku_image_value.setPixmap(QPixmap())
+            self.sku_image_value.setText("暂无 SKU 图片")
+            return
+        pixmap = QPixmap(normalized)
+        if pixmap.isNull():
+            self.sku_image_value.setPixmap(QPixmap())
+            self.sku_image_value.setText("暂无 SKU 图片")
+            return
+        self.sku_image_value.setText("")
+        self.sku_image_value.setPixmap(
+            pixmap.scaled(
+                88,
+                88,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+        )
+
     def _set_custom_cost_row(
         self,
         label_widget: QLabel,
@@ -776,6 +988,8 @@ class HistoryPage(QWidget):
     def _recalculate_financial_snapshot(self, order_snapshot: dict[str, Any]) -> dict[str, Any]:
         snapshot = dict(order_snapshot)
         income = parse_decimal(snapshot.get("income_amount"))
+        if not self._text_value(snapshot.get("platform_fee_rate")):
+            snapshot["platform_fee_rate"] = _DEFAULT_PLATFORM_FEE_RATE
         fee_amount = parse_decimal(
             calculate_platform_fee_amount(snapshot.get("income_amount"), snapshot.get("platform_fee_rate"))
         )
@@ -854,6 +1068,12 @@ class HistoryPage(QWidget):
         layout.addWidget(title_label)
         layout.addWidget(value_label)
         return card, value_label
+
+    @staticmethod
+    def _label(text: str) -> QLabel:
+        label = QLabel(text)
+        label.setObjectName("OrderFieldLabel")
+        return label
 
     @staticmethod
     def _text_value(value: Any) -> str:

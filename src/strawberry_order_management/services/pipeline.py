@@ -15,6 +15,9 @@ DEFAULT_FEISHU_FIELD_MAPPING = {
     "下单时间": "下单时间",
     "订单状态": "订单状态",
     "商品名称": "",
+    "规格": "",
+    "SKU": "",
+    "SKU 图片": "",
     "数量": "",
     "收件人": "",
     "手机号": "",
@@ -54,7 +57,7 @@ def build_feishu_payload(
     sync_source: str = "",
     sync_status: str = "",
     sync_message: str = "",
-) -> dict[str, str]:
+) -> dict[str, object]:
     try:
         placed_at = datetime.strptime(order.placed_at, "%Y-%m-%d %H:%M:%S")
     except ValueError as exc:
@@ -72,6 +75,9 @@ def build_feishu_payload(
         "下单时间": placed_at.strftime("%H:%M:%S"),
         "订单状态": order.order_status,
         "商品名称": order.product_name,
+        "规格": order.specification,
+        "SKU": order.sku,
+        "SKU 图片": order.sku_image_path,
         "数量": order.quantity,
         "收件人": order.recipient_name,
         "手机号": order.phone_number,
@@ -97,11 +103,19 @@ def build_feishu_payload(
         source_fields[f"采购数量{index}"] = item.quantity
         source_fields[f"采购成本{index}"] = item.cost
 
-    payload: dict[str, str] = {}
+    payload: dict[str, object] = {}
     for source_name, value in source_fields.items():
         target_name = str(mapping.get(source_name, "")).strip()
+        if not target_name:
+            continue
+        if source_name == "SKU 图片":
+            image_path = str(value).strip()
+            if not image_path:
+                continue
+            payload[target_name] = [{"local_path": image_path}]
+            continue
         text_value = str(value).strip()
-        if not target_name or not text_value:
+        if not text_value:
             continue
         payload[target_name] = text_value
     return payload

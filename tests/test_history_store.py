@@ -99,3 +99,22 @@ def test_history_store_normalizes_legacy_flat_rows(tmp_path: Path):
     assert row["address_snapshot"]["output_one"] == ""
     assert row["address_snapshot"]["output_two"] == ""
     assert row["sync_source"] == "-"
+
+
+def test_history_store_backfills_feishu_record_id_from_nested_feishu_result(tmp_path: Path):
+    store = HistoryStore(tmp_path / "history.json")
+
+    row = store.append(
+        {
+            "shop_name": "乐宝零食店",
+            "status": "已写入飞书",
+            "message": "写入成功",
+            "feishu_result": {"code": 0, "data": {"record": {"record_id": "rec_nested_1"}}},
+            "order_snapshot": {"order_id": "order-1"},
+            "address_snapshot": {"output_one": "", "output_two": ""},
+        }
+    )
+
+    loaded = store.get(row["record_id"])
+
+    assert loaded["feishu_record_id"] == "rec_nested_1"

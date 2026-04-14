@@ -114,6 +114,13 @@ class HistoryStore:
                 data = feishu_result.get("data")
                 if isinstance(data, dict):
                     feishu_record_id = str(data.get("record_id", "")).strip()
+                    if not feishu_record_id:
+                        record = data.get("record")
+                        if isinstance(record, dict):
+                            feishu_record_id = (
+                                str(record.get("record_id", "")).strip()
+                                or str(record.get("id", "")).strip()
+                            )
         if feishu_record_id:
             normalized["feishu_record_id"] = feishu_record_id
         return normalized

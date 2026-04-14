@@ -721,6 +721,25 @@ def test_main_window_save_history_edit_recreates_when_feishu_record_missing(qtbo
     assert updated_row["message"] == "原记录不存在，已自动新建"
 
 
+def test_main_window_extracts_feishu_record_id_from_nested_record_payload(qtbot, tmp_path):
+    config_store = ConfigStore(tmp_path / "config.json")
+    history_store = HistoryStore(tmp_path / "history.json")
+    config_store.save(_settings_payload())
+
+    window = MainWindow(config_store=config_store, history_store=history_store)
+    qtbot.addWidget(window)
+
+    snapshot = window._build_history_snapshot(
+        {"shop_name": "乐宝零食店", "order": _sample_order()},
+        "确认写入飞书",
+        "已写入飞书",
+        "写入成功",
+        {"code": 0, "data": {"record": {"record_id": "rec_nested_1"}}},
+    )
+
+    assert snapshot["feishu_record_id"] == "rec_nested_1"
+
+
 def test_main_window_resubmits_selected_history_row_in_place(qtbot, tmp_path, monkeypatch):
     config_store = ConfigStore(tmp_path / "config.json")
     history_store = HistoryStore(tmp_path / "history.json")

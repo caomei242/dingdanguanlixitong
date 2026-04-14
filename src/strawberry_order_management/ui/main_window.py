@@ -688,7 +688,13 @@ class MainWindow(QMainWindow):
         data = response.get("data")
         if not isinstance(data, dict):
             return ""
-        return str(data.get("record_id", "")).strip()
+        record_id = str(data.get("record_id", "")).strip()
+        if record_id:
+            return record_id
+        record = data.get("record")
+        if not isinstance(record, dict):
+            return ""
+        return str(record.get("record_id", "")).strip() or str(record.get("id", "")).strip()
 
     @staticmethod
     def _is_missing_record_error(message: str) -> bool:

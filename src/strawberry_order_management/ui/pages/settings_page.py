@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import shlex
+import shutil
+from pathlib import Path
+
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -16,6 +20,34 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
+
+def _preferred_mcp_command() -> str:
+    local_binary = shutil.which("minimax-coding-plan-mcp")
+    if local_binary:
+        return local_binary
+    return "uvx minimax-coding-plan-mcp -y"
+
+
+def _is_legacy_uvx_command(command: str) -> bool:
+    try:
+        args = shlex.split(command)
+    except ValueError:
+        return False
+    if len(args) < 2:
+        return False
+    return Path(args[0]).name == "uvx" and args[1] == "minimax-coding-plan-mcp"
+
+
+def _normalize_mcp_command(command: str) -> str:
+    cleaned = command.strip()
+    if not cleaned:
+        return _preferred_mcp_command()
+    if _is_legacy_uvx_command(cleaned):
+        preferred = _preferred_mcp_command()
+        if preferred:
+            return preferred
+    return cleaned
 
 
 class SettingsPage(QWidget):
@@ -179,7 +211,7 @@ class SettingsPage(QWidget):
         self.show_enabled_only_checkbox = QCheckBox("仅显示启用字段")
         self._on_resolve_shop_link = on_resolve_shop_link
         self._on_inspect_table_fields = on_inspect_table_fields
-        self.ocr_mcp_command_edit.setText("uvx minimax-coding-plan-mcp -y")
+        self.ocr_mcp_command_edit.setText(_preferred_mcp_command())
         self._product_presets: list[dict[str, str]] = []
         self._shops: list[dict[str, str]] = [
             {"name": name} for name in self.DEFAULT_SHOPS
@@ -306,7 +338,7 @@ class SettingsPage(QWidget):
     def to_payload(self) -> dict:
         return {
             "ocr_use_mcp": self.ocr_use_mcp_checkbox.isChecked(),
-            "ocr_mcp_command": self.ocr_mcp_command_edit.text().strip(),
+            "ocr_mcp_command": _normalize_mcp_command(self.ocr_mcp_command_edit.text()),
             "ocr_base_url": self.ocr_base_url_edit.text().strip(),
             "ocr_api_key": self.ocr_api_key_edit.text().strip(),
             "helper_base_url": self.helper_base_url_edit.text().strip(),
@@ -328,10 +360,7 @@ class SettingsPage(QWidget):
 
     def load_payload(self, payload: dict) -> None:
         self.ocr_use_mcp_checkbox.setChecked(bool(payload.get("ocr_use_mcp")))
-        self.ocr_mcp_command_edit.setText(
-            self._clean_text(payload.get("ocr_mcp_command"))
-            or "uvx minimax-coding-plan-mcp -y"
-        )
+        self.ocr_mcp_command_edit.setText(_normalize_mcp_command(self._clean_text(payload.get("ocr_mcp_command"))))
         self.ocr_base_url_edit.setText(self._clean_text(payload.get("ocr_base_url")))
         self.ocr_api_key_edit.setText(self._clean_text(payload.get("ocr_api_key")))
         self.helper_base_url_edit.setText(self._clean_text(payload.get("helper_base_url")))

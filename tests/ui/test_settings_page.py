@@ -2,7 +2,7 @@ from PySide6.QtWidgets import QFrame, QScrollArea, QTabWidget
 
 from strawberry_order_management.ui.main_window import MainWindow
 from strawberry_order_management.ui.pages.history_page import HistoryPage
-from strawberry_order_management.ui.pages.settings_page import SettingsPage
+from strawberry_order_management.ui.pages.settings_page import SettingsPage, _preferred_mcp_command
 from strawberry_order_management.models import ParsedOrder
 
 
@@ -82,6 +82,19 @@ def test_settings_page_load_payload_preserves_global_product_library_and_total_t
     assert page.shop_mapping_edits["purchase_cost_1"].text() == "采购成本1"
     assert page.shop_mapping_edits["purchase_cost_2"].text() == "采购成本2"
     assert page.shop_mapping_edits["purchase_cost_3"].text() == "采购成本3"
+
+
+def test_settings_page_upgrades_legacy_uvx_command_to_local_mcp_binary(qtbot, monkeypatch):
+    monkeypatch.setattr(
+        "strawberry_order_management.ui.pages.settings_page._preferred_mcp_command",
+        lambda: "/tmp/minimax-coding-plan-mcp",
+    )
+    page = SettingsPage()
+    qtbot.addWidget(page)
+
+    page.load_payload({"ocr_mcp_command": "uvx minimax-coding-plan-mcp -y"})
+
+    assert page.ocr_mcp_command_edit.text() == "/tmp/minimax-coding-plan-mcp"
 
 
 def test_settings_page_to_payload_persists_global_product_library_and_total_table_mapping(qtbot):
@@ -166,7 +179,7 @@ def test_settings_page_collects_api_configuration(qtbot):
     payload = page.to_payload()
 
     assert payload["ocr_use_mcp"] is True
-    assert payload["ocr_mcp_command"] == "uvx minimax-coding-plan-mcp -y"
+    assert payload["ocr_mcp_command"] == _preferred_mcp_command()
     assert payload["ocr_base_url"] == "https://ocr.example.com"
     assert payload["ocr_api_key"] == "ocr-key"
     assert payload["helper_base_url"] == "https://helper.example.com"
@@ -216,7 +229,7 @@ def test_settings_page_load_payload_and_save_requested(qtbot):
     page.save_button.click()
 
     assert page.ocr_use_mcp_checkbox.isChecked() is True
-    assert page.ocr_mcp_command_edit.text() == "uvx minimax-coding-plan-mcp -y"
+    assert page.ocr_mcp_command_edit.text() == _preferred_mcp_command()
     assert page.ocr_base_url_edit.text() == "https://ocr.example.com"
     assert page.ocr_api_key_edit.text() == "ocr-key"
     assert page.helper_base_url_edit.text() == "https://helper.example.com"
@@ -650,7 +663,11 @@ def test_main_window_uses_current_settings_to_process_images(qtbot):
     assert window.intake_page.order_card_widget.order_id_edit.text() == "6952003434324366473"
 
 
-def test_main_window_uses_default_mcp_command_when_enabled(qtbot):
+def test_main_window_uses_default_mcp_command_when_enabled(qtbot, monkeypatch):
+    monkeypatch.setattr(
+        "strawberry_order_management.ui.pages.settings_page._preferred_mcp_command",
+        lambda: "/tmp/minimax-coding-plan-mcp",
+    )
     captured_payloads = []
 
     def pipeline_factory(payload):
@@ -693,4 +710,4 @@ def test_main_window_uses_default_mcp_command_when_enabled(qtbot):
 
     window.intake_page.process_image_bytes(b"image-bytes", "剪贴板截图")
 
-    assert captured_payloads[0]["ocr_mcp_command"] == "uvx minimax-coding-plan-mcp -y"
+    assert captured_payloads[0]["ocr_mcp_command"] == "/tmp/minimax-coding-plan-mcp"

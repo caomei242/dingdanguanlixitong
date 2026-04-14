@@ -113,7 +113,7 @@ def test_intake_page_defaults_fee_rate_to_point_zero_six_and_uses_fixed_status_o
     order = ParsedOrder(
         order_id="1",
         placed_at="2026-04-11 20:57:15",
-        order_status="已下单未发货",
+        order_status="已拍单未发货",
         product_name="商品",
         quantity="1",
         order_amount="10.00",
@@ -129,11 +129,11 @@ def test_intake_page_defaults_fee_rate_to_point_zero_six_and_uses_fixed_status_o
 
     assert page.order_card_widget.platform_fee_rate_edit.text() == "0.06"
     assert page.order_card_widget.platform_fee_amount_edit.text() == "0.48"
-    assert page.order_card_widget.order_status_edit.currentText() == "已下单未发货"
+    assert page.order_card_widget.order_status_edit.currentText() == "已拍单未发货"
     assert [
         page.order_card_widget.order_status_edit.itemText(index)
         for index in range(page.order_card_widget.order_status_edit.count())
-    ] == ["已发货", "待发货", "已下单未发货"]
+    ] == ["已发货", "待发货", "已拍单未发货"]
 
 
 def test_screenshot_input_widget_reads_image_from_clipboard(qtbot):

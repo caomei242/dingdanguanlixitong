@@ -37,10 +37,16 @@ QFrame#HistoryDetailCard,
 QFrame#HistoryActionCard,
 QFrame#HistorySummaryCard,
 QFrame#HistoryStatCard,
-QFrame#HistoryMiniSummaryCard {
+QFrame#HistoryMiniSummaryCard,
+QFrame#HistoryStatusCard {
     background: rgba(255, 255, 255, 0.98);
     border: 1px solid #dbe4f2;
     border-radius: 22px;
+}
+
+QFrame#HistoryStatusCard[active="true"] {
+    background: #eef4ff;
+    border: 1px solid #bdd0ff;
 }
 
 QLabel#BrandTitle {

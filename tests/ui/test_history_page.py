@@ -1,3 +1,5 @@
+from PySide6.QtCore import Qt
+
 from strawberry_order_management.ui.pages.history_page import HistoryPage
 
 
@@ -131,9 +133,9 @@ def test_history_page_renders_list_and_loads_first_then_current_item(qtbot):
     assert page.recipient_name_value.toPlainText() == "田宝山"
     assert page.address_output_one.toPlainText() == "田宝山15784081541山东省德州市"
     assert page.address_output_two.toPlainText() == "请放门口"
-    assert page.total_count_value.text() == "2"
-    assert page.written_count_value.text() == "1"
-    assert page.failed_count_value.text() == "1"
+    assert page.status_summary_buttons["全部订单"].value_label.text() == "2"
+    assert page.status_summary_buttons["已发货"].value_label.text() == "2"
+    assert page.status_summary_buttons["待发货"].value_label.text() == "0"
     assert page.header_actions_widget.isHidden() is False
     assert page.left_column_widget.layout().count() == 1
     assert page.detail_summary_card.isHidden() is False
@@ -291,12 +293,12 @@ def test_history_page_loads_and_saves_financial_fields(qtbot):
     emitted = []
     page.save_requested.connect(lambda record_id, patch: emitted.append((record_id, patch)))
 
-    assert page.platform_fee_rate_value.toPlainText() == "10"
-    assert page.platform_fee_amount_value.toPlainText() == "16.20"
-    assert page.gross_profit_value.toPlainText() == "101.80"
-    assert page.custom_cost_value_1.toPlainText() == "1.00"
+    assert page.platform_fee_rate_value.text() == "10"
+    assert page.platform_fee_amount_value.text() == "16.20"
+    assert page.gross_profit_value.text() == "101.80"
+    assert page.custom_cost_value_1.text() == "1.00"
 
-    page.platform_fee_rate_value.setPlainText("12")
+    page.platform_fee_rate_value.setText("12")
     page.save_button.click()
 
     assert emitted[0][0] == "record-1"
@@ -329,7 +331,7 @@ def test_history_page_treats_decimal_fee_rate_as_direct_multiplier(qtbot):
     emitted = []
     page.save_requested.connect(lambda record_id, patch: emitted.append((record_id, patch)))
 
-    page.platform_fee_rate_value.setPlainText("0.06")
+    page.platform_fee_rate_value.setText("0.06")
     page.save_button.click()
 
     assert emitted[0][1]["order_snapshot"]["platform_fee_amount"] == "9.72"
@@ -355,8 +357,8 @@ def test_history_page_defaults_blank_fee_rate_to_point_zero_six(qtbot):
 
     page.load_rows(rows)
 
-    assert page.platform_fee_rate_value.toPlainText() == "0.06"
-    assert page.platform_fee_amount_value.toPlainText() == "9.72"
+    assert page.platform_fee_rate_value.text() == "0.06"
+    assert page.platform_fee_amount_value.text() == "9.72"
 
 
 def test_history_page_directly_edits_fields_and_emits_save_patch(qtbot):
@@ -386,9 +388,9 @@ def test_history_page_directly_edits_fields_and_emits_save_patch(qtbot):
     page.save_requested.connect(lambda record_id, patch: emitted.append((record_id, patch)))
 
     page.product_name_value.setPlainText("改后商品")
-    page.procurement_product_1_value.setPlainText("改后采购")
-    page.procurement_quantity_1_value.setPlainText("3")
-    page.procurement_cost_1_value.setPlainText("21.50")
+    page.procurement_product_1_combo.setCurrentText("改后采购")
+    page.procurement_quantity_1_value.setText("3")
+    page.procurement_cost_1_value.setText("21.50")
     page.save_button.click()
 
     assert emitted[0][0] == "record-1"
@@ -478,3 +480,113 @@ def test_history_page_filters_by_quick_range_shop_status_and_specific_date(qtbot
 
     page.clear_filters_button.click()
     assert page.list_widget.count() == 2
+
+
+def test_history_page_defaults_fee_rate_to_point_zero_six_when_empty(qtbot):
+    page = HistoryPage()
+    qtbot.addWidget(page)
+
+    assert page.platform_fee_rate_value.text() == "0.06"
+
+
+def test_history_page_uses_product_presets_for_procurement_editing(qtbot):
+    page = HistoryPage()
+    qtbot.addWidget(page)
+    page.set_product_presets(
+        [
+            {"name": "27000-澳洲版-1升装", "default_cost": "109"},
+            {"name": "康兴-瓶盖-粉色", "default_cost": "13.80"},
+        ]
+    )
+    page.load_rows(
+        [
+            _row(
+                "record-1",
+                "乐宝零食店",
+                "确认写入飞书",
+                "已写入飞书",
+                "6952003434324366473",
+                "何女士",
+                "何女士15781304332四川省成都市",
+                "请电话送货上门谢谢【3612】",
+            )
+        ]
+    )
+    emitted = []
+    page.save_requested.connect(lambda record_id, patch: emitted.append((record_id, patch)))
+
+    assert page.procurement_product_1_combo.currentText() == "澳洲婴儿水"
+    page.procurement_product_2_combo.setCurrentText("康兴-瓶盖-粉色")
+
+    assert page.procurement_cost_2_value.text() == "13.80"
+    assert page.procurement_quantity_2_value.text() == "1"
+
+    page.save_button.click()
+
+    assert emitted[0][1]["order_snapshot"]["procurement_items"][1] == {
+        "product_name": "康兴-瓶盖-粉色",
+        "quantity": "1",
+        "cost": "13.80",
+    }
+
+
+def test_history_page_status_cards_show_counts_and_filter_rows(qtbot):
+    page = HistoryPage()
+    qtbot.addWidget(page)
+    rows = [
+        _row(
+            "record-shipped",
+            "乐宝零食店",
+            "确认写入飞书",
+            "已写入飞书",
+            "6952003434324366473",
+            "何女士",
+            "何女士15781304332四川省成都市",
+            "请电话送货上门谢谢【3612】",
+        ),
+        _row(
+            "record-pending",
+            "欢宝零食店",
+            "仅存历史",
+            "仅存历史",
+            "6952003434324366111",
+            "田宝山",
+            "田宝山15784081541山东省德州市",
+            "请放门口",
+        ),
+        _row(
+            "record-shot",
+            "灵宝零食店",
+            "确认写入飞书",
+            "已写入飞书",
+            "6952003434324366999",
+            "王先生",
+            "王先生13900001111广东省深圳市",
+            "请尽快发货",
+        ),
+    ]
+    rows[0]["order_snapshot"]["placed_at"] = "2026-04-14 09:00:00"
+    rows[0]["order_snapshot"]["order_status"] = "已发货"
+    rows[1]["order_snapshot"]["placed_at"] = "2026-04-14 10:30:00"
+    rows[1]["order_snapshot"]["order_status"] = "待发货"
+    rows[2]["order_snapshot"]["placed_at"] = "2026-04-14 11:30:00"
+    rows[2]["order_snapshot"]["order_status"] = "已拍单未发货"
+
+    page.load_rows(rows)
+
+    assert page.status_summary_buttons["已发货"].value_label.text() == "1"
+    assert page.status_summary_buttons["待发货"].value_label.text() == "1"
+    assert page.status_summary_buttons["已拍单未发货"].value_label.text() == "1"
+
+    qtbot.mouseClick(page.status_summary_buttons["待发货"], Qt.MouseButton.LeftButton)
+
+    assert page.status_filter_combo.currentText() == "待发货"
+    assert page.list_widget.count() == 1
+    assert page.detail_title_label.text() == "欢宝零食店"
+
+
+def test_history_page_keeps_left_column_compact(qtbot):
+    page = HistoryPage()
+    qtbot.addWidget(page)
+
+    assert page.left_column_widget.maximumWidth() <= 460

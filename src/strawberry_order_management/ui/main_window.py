@@ -262,6 +262,7 @@ class MainWindow(QMainWindow):
         if row is None:
             return
         payload = self._build_payload_from_history_row(row)
+        self._sync_products_from_order(payload["order"])
         try:
             task = self._build_feishu_submission_task(payload)
         except Exception as exc:
@@ -375,6 +376,7 @@ class MainWindow(QMainWindow):
         if not product_presets:
             product_presets = payload.get("global_product_library", [])
         self.intake_page.set_product_presets(product_presets)
+        self.history_page.set_product_presets(product_presets)
         self.intake_page.set_custom_cost_labels(payload.get("custom_cost_labels") or ["", "", ""])
         shop_names = []
         for shop in payload.get("shops", []):

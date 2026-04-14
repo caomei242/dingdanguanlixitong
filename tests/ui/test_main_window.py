@@ -622,9 +622,9 @@ def test_main_window_saves_history_edit_in_place_and_keeps_selection(qtbot, tmp_
     window.history_page.phone_number_value.setPlainText("18800001111")
     window.history_page.address_value.setPlainText("上海市徐汇区漕河泾")
     window.history_page.product_name_value.setPlainText("改后商品")
-    window.history_page.procurement_product_1_value.setPlainText("改后采购")
-    window.history_page.procurement_quantity_1_value.setPlainText("5")
-    window.history_page.procurement_cost_1_value.setPlainText("23.60")
+    window.history_page.procurement_product_1_combo.setCurrentText("改后采购")
+    window.history_page.procurement_quantity_1_value.setText("5")
+    window.history_page.procurement_cost_1_value.setText("23.60")
     window.history_page.save_button.click()
 
     target_row = history_store.get(first_row["record_id"])
@@ -900,9 +900,9 @@ def test_main_window_resubmits_history_using_edited_snapshot(qtbot, tmp_path, mo
     window.history_page.address_value.setPlainText("上海市闵行区万源路")
     window.history_page.delivery_note_value.setPlainText("改后备注")
     window.history_page.income_amount_value.setPlainText("55.00")
-    window.history_page.procurement_product_1_value.setPlainText("改后蓝莓")
-    window.history_page.procurement_quantity_1_value.setPlainText("4")
-    window.history_page.procurement_cost_1_value.setPlainText("13.20")
+    window.history_page.procurement_product_1_combo.setCurrentText("改后蓝莓")
+    window.history_page.procurement_quantity_1_value.setText("4")
+    window.history_page.procurement_cost_1_value.setText("13.20")
     window.history_page.save_button.click()
     qtbot.waitUntil(lambda: len(captured["updates"]) == 1, timeout=3000)
 
@@ -929,6 +929,59 @@ def test_main_window_resubmits_history_using_edited_snapshot(qtbot, tmp_path, mo
     assert updated_row["order_snapshot"]["delivery_note"] == "改后备注"
     assert updated_row["order_snapshot"]["income_amount"] == "55.00"
     assert updated_row["feishu_result"] == {"data": {"record_id": "rec_1"}}
+
+
+def test_main_window_auto_persists_history_edited_products_to_library(qtbot, tmp_path, monkeypatch):
+    config_store = ConfigStore(tmp_path / "config.json")
+    history_store = HistoryStore(tmp_path / "history.json")
+    config_store.save(_settings_payload())
+
+    class FakeFeishuClient:
+        def __init__(self, app_id: str, app_secret: str, table_app_token: str, table_id: str):
+            pass
+
+        def get_tenant_access_token(self) -> str:
+            return "tenant_token_123"
+
+        def create_record(self, access_token: str, fields: dict) -> dict:
+            return {"data": {"record_id": "rec_1"}}
+
+        def update_record(self, access_token: str, record_id: str, fields: dict) -> dict:
+            return {"data": {"record_id": record_id}}
+
+    monkeypatch.setattr("strawberry_order_management.ui.main_window.FeishuClient", FakeFeishuClient)
+
+    window = MainWindow(config_store=config_store, history_store=history_store)
+    qtbot.addWidget(window)
+
+    selected_row = history_store.append(
+        window._build_history_snapshot(
+            {"shop_name": "乐宝零食店", "order": _alternate_order()},
+            "确认写入飞书",
+            "已写入飞书",
+            "写入成功",
+            {"data": {"record_id": "rec_1"}},
+        )
+    )
+    window.history_page.load_rows(history_store.list_items())
+    window.history_page.list_widget.setCurrentRow(0)
+
+    window.history_page.procurement_product_2_combo.setCurrentText("历史补录商品")
+    window.history_page.procurement_cost_2_value.setText("7.50")
+    window.history_page.save_button.click()
+
+    qtbot.waitUntil(lambda: window._submit_thread is None, timeout=3000)
+
+    assert any(
+        item["name"] == "历史补录商品" and item["default_cost"] == "7.50"
+        for item in config_store.load()["product_presets"]
+    )
+    updated_row = history_store.get(selected_row["record_id"])
+    assert updated_row["order_snapshot"]["procurement_items"][1] == {
+        "product_name": "历史补录商品",
+        "quantity": "1",
+        "cost": "7.50",
+    }
 
 
 def test_main_window_can_save_manual_product_into_global_library(qtbot, tmp_path):

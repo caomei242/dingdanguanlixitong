@@ -29,7 +29,7 @@ from strawberry_order_management.models import ParsedOrder, ProcurementItem
 
 class OrderCardWidget(QWidget):
     product_library_requested = Signal(str, str)
-    ORDER_STATUS_OPTIONS = ("已发货", "待发货", "已下单未发货")
+    ORDER_STATUS_OPTIONS = ("已发货", "待发货", "已拍单未发货")
     DEFAULT_PLATFORM_FEE_RATE = "0.06"
 
     def __init__(self) -> None:
@@ -506,6 +506,8 @@ class OrderCardWidget(QWidget):
         status = value.strip() or "待发货"
         if status == "未发货":
             status = "待发货"
+        if status == "已下单未发货":
+            status = "已拍单未发货"
         index = self.order_status_edit.findText(status)
         if index < 0:
             index = self.order_status_edit.findText("待发货")

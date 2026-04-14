@@ -417,20 +417,22 @@ def test_helper_client_raises_readable_error_when_minimax_choices_missing(
 def test_feishu_client_posts_fields_and_returns_response(monkeypatch: pytest.MonkeyPatch):
     captured: dict[str, object] = {}
 
-    def fake_post(url, headers=None, json=None, timeout=None):
+    def fake_request(method, url, headers=None, json=None, timeout=None, params=None):
+        captured["method"] = method
         captured["url"] = url
         captured["headers"] = headers
         captured["json"] = json
         captured["timeout"] = timeout
         return FakeResponse({"data": {"record_id": "rec_1"}})
 
-    monkeypatch.setattr("strawberry_order_management.services.feishu_client.requests.post", fake_post)
+    monkeypatch.setattr("strawberry_order_management.services.feishu_client.requests.request", fake_request)
 
     client = FeishuClient("app", "secret", "app_token", "tbl_1")
 
     result = client.create_record("access_token", {"备注": "ok"})
 
     assert result == {"data": {"record_id": "rec_1"}}
+    assert captured["method"] == "POST"
     assert captured["url"] == "https://open.feishu.cn/open-apis/bitable/v1/apps/app_token/tables/tbl_1/records"
     assert captured["headers"] == {
         "Authorization": "Bearer access_token",
@@ -440,12 +442,71 @@ def test_feishu_client_posts_fields_and_returns_response(monkeypatch: pytest.Mon
     assert captured["timeout"] == 30
 
 
+def test_feishu_client_updates_record_with_put(monkeypatch: pytest.MonkeyPatch):
+    captured: dict[str, object] = {}
+
+    def fake_request(method, url, headers=None, json=None, timeout=None, params=None):
+        captured["method"] = method
+        captured["url"] = url
+        captured["headers"] = headers
+        captured["json"] = json
+        captured["timeout"] = timeout
+        return FakeResponse({"data": {"record_id": "rec_1"}})
+
+    monkeypatch.setattr("strawberry_order_management.services.feishu_client.requests.request", fake_request)
+
+    client = FeishuClient("app", "secret", "app_token", "tbl_1")
+
+    result = client.update_record("access_token", "rec_1", {"备注": "ok"})
+
+    assert result == {"data": {"record_id": "rec_1"}}
+    assert captured["method"] == "PUT"
+    assert captured["url"] == (
+        "https://open.feishu.cn/open-apis/bitable/v1/apps/app_token/tables/tbl_1/records/rec_1"
+    )
+    assert captured["headers"] == {
+        "Authorization": "Bearer access_token",
+        "Content-Type": "application/json; charset=utf-8",
+    }
+    assert captured["json"] == {"fields": {"备注": "ok"}}
+    assert captured["timeout"] == 30
+
+
+def test_feishu_client_deletes_record_with_delete(monkeypatch: pytest.MonkeyPatch):
+    captured: dict[str, object] = {}
+
+    def fake_request(method, url, headers=None, json=None, timeout=None, params=None):
+        captured["method"] = method
+        captured["url"] = url
+        captured["headers"] = headers
+        captured["timeout"] = timeout
+        return FakeResponse({"data": {"record_id": "rec_1"}})
+
+    monkeypatch.setattr("strawberry_order_management.services.feishu_client.requests.request", fake_request)
+
+    client = FeishuClient("app", "secret", "app_token", "tbl_1")
+
+    result = client.delete_record("access_token", "rec_1")
+
+    assert result == {"data": {"record_id": "rec_1"}}
+    assert captured["method"] == "DELETE"
+    assert captured["url"] == (
+        "https://open.feishu.cn/open-apis/bitable/v1/apps/app_token/tables/tbl_1/records/rec_1"
+    )
+    assert captured["headers"] == {
+        "Authorization": "Bearer access_token",
+        "Content-Type": "application/json; charset=utf-8",
+    }
+    assert captured["timeout"] == 30
+
+
 def test_feishu_client_fetches_tenant_access_token_from_app_credentials(
     monkeypatch: pytest.MonkeyPatch,
 ):
     captured: dict[str, object] = {}
 
-    def fake_post(url, headers=None, json=None, timeout=None):
+    def fake_request(method, url, headers=None, json=None, timeout=None, params=None):
+        captured["method"] = method
         captured["url"] = url
         captured["headers"] = headers
         captured["json"] = json
@@ -459,13 +520,14 @@ def test_feishu_client_fetches_tenant_access_token_from_app_credentials(
             }
         )
 
-    monkeypatch.setattr("strawberry_order_management.services.feishu_client.requests.post", fake_post)
+    monkeypatch.setattr("strawberry_order_management.services.feishu_client.requests.request", fake_request)
 
     client = FeishuClient("app", "secret", "app_token", "tbl_1")
 
     tenant_access_token = client.get_tenant_access_token()
 
     assert tenant_access_token == "tenant_token"
+    assert captured["method"] == "POST"
     assert captured["url"] == "https://open.feishu.cn/open-apis/auth/v3/app_access_token/internal"
     assert captured["headers"] == {"Content-Type": "application/json; charset=utf-8"}
     assert captured["json"] == {"app_id": "app", "app_secret": "secret"}
@@ -475,10 +537,12 @@ def test_feishu_client_fetches_tenant_access_token_from_app_credentials(
 def test_feishu_client_raises_readable_error_on_business_error(
     monkeypatch: pytest.MonkeyPatch,
 ):
-    def fake_post(url, headers=None, json=None, timeout=None):
+    def fake_request(method, url, headers=None, json=None, params=None, timeout=None):
         return FakeResponse({"code": 99991663, "msg": "invalid app credentials"})
 
-    monkeypatch.setattr("strawberry_order_management.services.feishu_client.requests.post", fake_post)
+    monkeypatch.setattr(
+        "strawberry_order_management.services.feishu_client.requests.request", fake_request
+    )
 
     client = FeishuClient("app", "secret", "app_token", "tbl_1")
 
@@ -489,10 +553,10 @@ def test_feishu_client_raises_readable_error_on_business_error(
 def test_feishu_client_resolves_bitable_tokens_from_wiki_url(
     monkeypatch: pytest.MonkeyPatch,
 ):
-    captured_calls: list[tuple[str, dict | None, dict | None]] = []
+    captured_calls: list[tuple[str, str, dict | None, dict | None]] = []
 
-    def fake_get(url, headers=None, params=None, timeout=None):
-        captured_calls.append((url, headers, params))
+    def fake_request(method, url, headers=None, json=None, params=None, timeout=None):
+        captured_calls.append((method, url, headers, params))
         return FakeResponse(
             {
                 "code": 0,
@@ -506,7 +570,9 @@ def test_feishu_client_resolves_bitable_tokens_from_wiki_url(
             }
         )
 
-    monkeypatch.setattr("strawberry_order_management.services.feishu_client.requests.get", fake_get)
+    monkeypatch.setattr(
+        "strawberry_order_management.services.feishu_client.requests.request", fake_request
+    )
 
     client = FeishuClient("app", "secret", "app_token", "tbl_1")
 
@@ -522,6 +588,7 @@ def test_feishu_client_resolves_bitable_tokens_from_wiki_url(
     }
     assert captured_calls == [
         (
+            "GET",
             "https://open.feishu.cn/open-apis/wiki/v2/spaces/get_node",
             {"Authorization": "Bearer tenant_token_123"},
             {"token": "QTXMwCDpQi9n6VkfDxJc5mNTnjh"},
@@ -541,7 +608,7 @@ def test_feishu_client_rejects_wiki_url_without_table_id():
 def test_feishu_client_surfaces_json_message_on_wiki_resolution_http_error(
     monkeypatch: pytest.MonkeyPatch,
 ):
-    def fake_get(url, headers=None, params=None, timeout=None):
+    def fake_request(method, url, headers=None, json=None, params=None, timeout=None):
         return JsonHttpErrorResponse(
             400,
             {
@@ -551,7 +618,9 @@ def test_feishu_client_surfaces_json_message_on_wiki_resolution_http_error(
             },
         )
 
-    monkeypatch.setattr("strawberry_order_management.services.feishu_client.requests.get", fake_get)
+    monkeypatch.setattr(
+        "strawberry_order_management.services.feishu_client.requests.request", fake_request
+    )
 
     client = FeishuClient("app", "secret", "app_token", "tbl_1")
 
@@ -565,7 +634,8 @@ def test_feishu_client_surfaces_json_message_on_wiki_resolution_http_error(
 def test_feishu_client_lists_table_field_names(monkeypatch: pytest.MonkeyPatch):
     captured: dict[str, object] = {}
 
-    def fake_get(url, headers=None, params=None, timeout=None):
+    def fake_request(method, url, headers=None, json=None, params=None, timeout=None):
+        captured["method"] = method
         captured["url"] = url
         captured["headers"] = headers
         captured["params"] = params
@@ -584,13 +654,16 @@ def test_feishu_client_lists_table_field_names(monkeypatch: pytest.MonkeyPatch):
             }
         )
 
-    monkeypatch.setattr("strawberry_order_management.services.feishu_client.requests.get", fake_get)
+    monkeypatch.setattr(
+        "strawberry_order_management.services.feishu_client.requests.request", fake_request
+    )
 
     client = FeishuClient("app", "secret", "app_token", "tbl_1")
 
     result = client.list_field_names("tenant_token_123")
 
     assert result == {"店铺", "平台", "收入"}
+    assert captured["method"] == "GET"
     assert captured["url"] == "https://open.feishu.cn/open-apis/bitable/v1/apps/app_token/tables/tbl_1/fields"
     assert captured["headers"] == {"Authorization": "Bearer tenant_token_123"}
     assert captured["params"] == {"page_size": 500}

@@ -13,7 +13,8 @@ class FeishuClient:
         self.table_id = table_id
 
     def get_tenant_access_token(self) -> str:
-        payload = self._post_json(
+        payload = self._request_json(
+            "POST",
             "https://open.feishu.cn/open-apis/auth/v3/app_access_token/internal",
             headers={"Content-Type": "application/json; charset=utf-8"},
             json_body={"app_id": self.app_id, "app_secret": self.app_secret},
@@ -25,7 +26,8 @@ class FeishuClient:
         return tenant_access_token
 
     def create_record(self, access_token: str, fields: dict) -> dict:
-        return self._post_json(
+        return self._request_json(
+            "POST",
             "https://open.feishu.cn/open-apis/bitable/v1/apps/"
             f"{self.table_app_token}/tables/{self.table_id}/records",
             headers={
@@ -36,8 +38,34 @@ class FeishuClient:
             error_prefix="飞书写入失败",
         )
 
+    def update_record(self, access_token: str, record_id: str, fields: dict) -> dict:
+        return self._request_json(
+            "PUT",
+            "https://open.feishu.cn/open-apis/bitable/v1/apps/"
+            f"{self.table_app_token}/tables/{self.table_id}/records/{record_id}",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json; charset=utf-8",
+            },
+            json_body={"fields": fields},
+            error_prefix="飞书写入失败",
+        )
+
+    def delete_record(self, access_token: str, record_id: str) -> dict:
+        return self._request_json(
+            "DELETE",
+            "https://open.feishu.cn/open-apis/bitable/v1/apps/"
+            f"{self.table_app_token}/tables/{self.table_id}/records/{record_id}",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json; charset=utf-8",
+            },
+            error_prefix="飞书删除失败",
+        )
+
     def list_field_names(self, access_token: str) -> set[str]:
-        payload = self._get_json(
+        payload = self._request_json(
+            "GET",
             "https://open.feishu.cn/open-apis/bitable/v1/apps/"
             f"{self.table_app_token}/tables/{self.table_id}/fields",
             headers={"Authorization": f"Bearer {access_token}"},
@@ -74,7 +102,8 @@ class FeishuClient:
             raise ValueError("链接里缺少 wiki token")
 
         tenant_token = access_token or self.get_tenant_access_token()
-        payload = self._get_json(
+        payload = self._request_json(
+            "GET",
             "https://open.feishu.cn/open-apis/wiki/v2/spaces/get_node",
             headers={"Authorization": f"Bearer {tenant_token}"},
             params={"token": wiki_token},
@@ -93,20 +122,20 @@ class FeishuClient:
         }
 
     @staticmethod
-    def _post_json(url: str, headers: dict, json_body: dict, error_prefix: str) -> dict:
-        response = requests.post(
+    def _request_json(
+        method: str,
+        url: str,
+        *,
+        headers: dict,
+        error_prefix: str,
+        json_body: dict | None = None,
+        params: dict | None = None,
+    ) -> dict:
+        response = requests.request(
+            method,
             url,
             headers=headers,
             json=json_body,
-            timeout=30,
-        )
-        return FeishuClient._parse_response_payload(response, error_prefix)
-
-    @staticmethod
-    def _get_json(url: str, headers: dict, params: dict, error_prefix: str) -> dict:
-        response = requests.get(
-            url,
-            headers=headers,
             params=params,
             timeout=30,
         )

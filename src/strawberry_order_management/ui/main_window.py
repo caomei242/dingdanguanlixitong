@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QListWidget,
+    QMessageBox,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
@@ -220,6 +221,9 @@ class MainWindow(QMainWindow):
                 "output_two": self.intake_page.address_widget.output_two.toPlainText().strip(),
             },
         }
+        feishu_record_id = self._extract_feishu_record_id(feishu_result)
+        if feishu_record_id:
+            row["feishu_record_id"] = feishu_record_id
         if feishu_result is not None:
             row["feishu_result"] = feishu_result
         return row
@@ -249,15 +253,78 @@ class MainWindow(QMainWindow):
     def _handle_history_save_request(self, record_id: str, patch: dict) -> None:
         if self._history_store is None:
             return
-        self._update_history_snapshot(record_id, patch)
+        row = self._update_history_snapshot(record_id, patch)
+        if row is None:
+            return
+        payload = self._build_payload_from_history_row(row)
+        try:
+            task = self._build_feishu_submission_task(payload)
+        except Exception as exc:
+            message = str(exc)
+            self.intake_page.capture_widget.status_label.setText(message)
+            self._update_history_snapshot(
+                record_id,
+                {
+                    "status": "写入失败",
+                    "message": message,
+                    "feishu_result": {"error": message},
+                },
+            )
+            return
+
+        task["history_record_id"] = record_id
+        task["mode"] = "update_or_create"
+        task["feishu_record_id"] = str(row.get("feishu_record_id", "")).strip()
+        self.intake_page.capture_widget.status_label.setText("保存并同步飞书中...")
+        self.intake_page.set_submit_in_progress(True)
+        self._update_history_snapshot(record_id, {"status": "写入中", "message": ""})
+        self._start_submit_job(task)
 
     def _handle_history_delete_request(self, record_id: str) -> None:
         if self._history_store is None:
             return
         try:
+            row = self._history_store.get(record_id)
+        except KeyError:
+            return
+        first_confirm = QMessageBox.question(
+            self,
+            "删除订单",
+            "确定要删除这条订单吗？",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if first_confirm != QMessageBox.StandardButton.Yes:
+            return
+
+        delete_remote = False
+        if str(row.get("feishu_record_id", "")).strip():
+            second_confirm = QMessageBox.question(
+                self,
+                "删除飞书记录",
+                "是否同时删除飞书中的对应记录？",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            delete_remote = second_confirm == QMessageBox.StandardButton.Yes
+            if delete_remote:
+                try:
+                    self._delete_remote_history_record(row)
+                except ValueError as exc:
+                    if self._is_missing_record_error(str(exc)):
+                        self.intake_page.capture_widget.status_label.setText("飞书记录不存在，已删除本地历史")
+                    else:
+                        self.intake_page.capture_widget.status_label.setText(str(exc))
+                        return
+        try:
             self._history_store.delete(record_id)
         except KeyError:
             pass
+        else:
+            if delete_remote:
+                self.intake_page.capture_widget.status_label.setText("已删除本地历史和飞书记录")
+            else:
+                self.intake_page.capture_widget.status_label.setText("已删除本地历史")
         self._reload_history_page()
 
     def _handle_history_resubmit_request(self, record_id: str) -> None:
@@ -287,6 +354,8 @@ class MainWindow(QMainWindow):
         self.intake_page.capture_widget.status_label.setText("写入飞书中...")
         self.intake_page.set_submit_in_progress(True)
         task["history_record_id"] = record_id
+        task["mode"] = "update_or_create"
+        task["feishu_record_id"] = str(row.get("feishu_record_id", "")).strip()
         self._update_history_snapshot(
             record_id,
             {
@@ -427,6 +496,8 @@ class MainWindow(QMainWindow):
             "app_secret": str(settings_payload["feishu_app_secret"]).strip(),
             "app_token": table_app_token,
             "table_id": table_id,
+            "mode": str(payload.get("mode", "create")).strip() or "create",
+            "feishu_record_id": str(payload.get("feishu_record_id", "")).strip(),
             "fields": build_feishu_payload(
                 payload["order"],
                 field_mapping,
@@ -456,6 +527,7 @@ class MainWindow(QMainWindow):
 
         return {
             "shop_name": row.get("shop_name", ""),
+            "feishu_record_id": str(row.get("feishu_record_id", "")).strip(),
             "order": ParsedOrder(
                 order_id=str(order_snapshot.get("order_id", "")).strip(),
                 placed_at=str(order_snapshot.get("placed_at", "")).strip(),
@@ -520,18 +592,33 @@ class MainWindow(QMainWindow):
             task["table_id"],
         )
         access_token = client.get_tenant_access_token()
-        response = client.create_record(access_token, task["fields"])
+        sync_message = "写入成功"
+        feishu_record_id = str(task.get("feishu_record_id", "")).strip()
+        if task.get("mode") == "update_or_create" and feishu_record_id:
+            try:
+                response = client.update_record(access_token, feishu_record_id, task["fields"])
+                sync_message = "已保存并同步飞书"
+            except ValueError as exc:
+                if not MainWindow._is_missing_record_error(str(exc)):
+                    raise
+                response = client.create_record(access_token, task["fields"])
+                sync_message = "原记录不存在，已自动新建"
+        else:
+            response = client.create_record(access_token, task["fields"])
         return {
             "payload": task["payload"],
             "shop_name": task["shop_name"],
             "response": response,
             "history_record_id": task.get("history_record_id"),
+            "sync_message": sync_message,
+            "feishu_record_id": MainWindow._extract_feishu_record_id(response),
         }
 
     def _handle_submit_success(self, result: dict) -> None:
         payload = result["payload"]
         shop_name = result["shop_name"]
         history_record_id = result.get("history_record_id")
+        sync_message = str(result.get("sync_message", "")).strip() or "写入成功"
         self.intake_page.set_submit_in_progress(False)
         self.intake_page.capture_widget.status_label.setText(f"已写入飞书：{shop_name}")
         if history_record_id is not None:
@@ -539,8 +626,9 @@ class MainWindow(QMainWindow):
                 history_record_id,
                 {
                     "status": "已写入飞书",
-                    "message": "写入成功",
+                    "message": sync_message,
                     "feishu_result": result["response"],
+                    "feishu_record_id": result.get("feishu_record_id", ""),
                 },
             )
         else:
@@ -548,7 +636,7 @@ class MainWindow(QMainWindow):
                 payload,
                 "确认写入飞书",
                 "已写入飞书",
-                "写入成功",
+                sync_message,
                 result["response"],
             )
             self._save_history_snapshot(snapshot)
@@ -581,6 +669,39 @@ class MainWindow(QMainWindow):
     def _clear_submit_refs(self) -> None:
         self._submit_thread = None
         self._submit_worker = None
+
+    def _delete_remote_history_record(self, row: dict) -> None:
+        settings_payload = self.settings_page.to_payload()
+        client = FeishuClient(
+            str(settings_payload["feishu_app_id"]).strip(),
+            str(settings_payload["feishu_app_secret"]).strip(),
+            str(settings_payload["feishu_table_app_token"]).strip(),
+            str(settings_payload["feishu_table_id"]).strip(),
+        )
+        access_token = client.get_tenant_access_token()
+        client.delete_record(access_token, str(row.get("feishu_record_id", "")).strip())
+
+    @staticmethod
+    def _extract_feishu_record_id(response: Optional[dict]) -> str:
+        if not isinstance(response, dict):
+            return ""
+        data = response.get("data")
+        if not isinstance(data, dict):
+            return ""
+        return str(data.get("record_id", "")).strip()
+
+    @staticmethod
+    def _is_missing_record_error(message: str) -> bool:
+        text = str(message).lower()
+        return any(
+            token in text
+            for token in (
+                "record not found",
+                "recordidnotfound",
+                "记录不存在",
+                "该记录不存在",
+            )
+        )
 
     def _shutdown_submit_job(self) -> None:
         thread = self._submit_thread

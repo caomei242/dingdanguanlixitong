@@ -107,6 +107,15 @@ class HistoryStore:
         normalized["order_snapshot"] = order_snapshot
         normalized["address_snapshot"] = address_snapshot
         normalized["sync_source"] = str(normalized.get("sync_source", "")).strip() or "-"
+        feishu_record_id = str(normalized.get("feishu_record_id", "")).strip()
+        if not feishu_record_id:
+            feishu_result = normalized.get("feishu_result")
+            if isinstance(feishu_result, dict):
+                data = feishu_result.get("data")
+                if isinstance(data, dict):
+                    feishu_record_id = str(data.get("record_id", "")).strip()
+        if feishu_record_id:
+            normalized["feishu_record_id"] = feishu_record_id
         return normalized
 
 

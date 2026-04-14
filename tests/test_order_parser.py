@@ -1,0 +1,89 @@
+from pathlib import Path
+
+from strawberry_order_management.extractors.order_parser import parse_order_text
+
+
+def test_parses_jd_order_fixture_into_structured_order():
+    raw_text = Path("tests/fixtures/ocr/jd_order_01.txt").read_text(encoding="utf-8")
+
+    order = parse_order_text(raw_text)
+
+    assert order.order_id == "6952003434324366473"
+    assert order.placed_at == "2026-04-11 20:57:15"
+    assert order.order_status == "已发货"
+    assert order.recipient_name == "何女士"
+    assert order.phone_number == "15781304332"
+    assert order.code == "3612"
+    assert order.address == "四川省成都市金牛区营门口街道友谊花园9-2304"
+    assert order.product_name == "【明日达】赵露丝同款27000澳大利亚进口婴儿水宝宝水高偏矿泉水"
+    assert order.specification == "1L/桶*12袋"
+    assert order.quantity == "1"
+    assert order.order_amount == "405.00"
+    assert order.income_amount == "162.00"
+    assert order.delivery_note == "请电话送货上门谢谢【3612】"
+
+
+def test_parses_order_text_with_extra_spaces_and_newlines():
+    raw_text = """
+    订单编号   6952003434324366473
+
+    下单时间  2026-04-11 20:57:15
+    订单状态   已发货
+    商品信息
+      【明日达】赵露丝同款27000澳大利亚进口婴儿水宝宝水高偏矿泉水 1L/桶*12袋
+    单价/数量    ¥405.00   x  1
+    商家收入金额
+      ¥162.00
+    收货信息
+      何女士   [3612]
+      15781304332
+      四川省成都市金牛区营门口街道友谊花园9-2304   [3612]
+    """
+
+    order = parse_order_text(raw_text)
+
+    assert order.product_name == "【明日达】赵露丝同款27000澳大利亚进口婴儿水宝宝水高偏矿泉水"
+    assert order.specification == "1L/桶*12袋"
+    assert order.quantity == "1"
+    assert order.delivery_note == "请电话送货上门谢谢【3612】"
+
+
+def test_parses_specification_and_optional_sku_from_multiline_product_block():
+    raw_text = """
+    订单编号 6952003434324366473
+    下单时间 2026-04-11 20:57:15
+    订单状态 待发货
+    商品信息
+    【明日达】赵露丝同款27000澳大利亚进口婴儿水宝宝水高偏矿泉水
+    1L/桶*12袋(赵露思同款 澳洲版)
+    SKU：27000-澳洲版-1升装
+    商品ID:6952003434324366473
+    单价/数量 ¥405.00 x1
+    商家收入金额 ¥162.00
+    收货信息 团团 [8368] 17804499356 辽宁省大连市中山区海军广场街道港湾广场地铁站DD口丰悦城2号楼4单元1504 [8368]
+    """
+
+    order = parse_order_text(raw_text)
+
+    assert order.product_name == "【明日达】赵露丝同款27000澳大利亚进口婴儿水宝宝水高偏矿泉水"
+    assert order.specification == "1L/桶*12袋(赵露思同款 澳洲版)"
+    assert order.sku == "27000-澳洲版-1升装"
+    assert order.order_status == "待发货"
+
+
+def test_parses_inline_specification_when_it_is_on_same_product_line():
+    raw_text = """
+    订单编号 69525544900545379782
+    下单时间 2026-04-12 21:48:29
+    订单状态 已发货
+    商品信息
+    【明日达】赵露丝同款27000澳大利亚进口婴儿水宝宝水高偏矿泉水 1L/瓶*12袋(赵露思同款（含同款瓶盖）
+    单价/数量 ¥355.00 x1
+    商家收入金额 ¥142.00
+    收货信息 田宝山 [5842] 15784081541 山东省德州市齐河县晏城街道 玫瑰园4号楼（西北门超市） [5842]
+    """
+
+    order = parse_order_text(raw_text)
+
+    assert order.product_name == "【明日达】赵露丝同款27000澳大利亚进口婴儿水宝宝水高偏矿泉水"
+    assert order.specification == "1L/瓶*12袋(赵露思同款（含同款瓶盖）"

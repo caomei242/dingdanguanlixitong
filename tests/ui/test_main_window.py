@@ -1,0 +1,1152 @@
+import time
+from pathlib import Path
+import re
+from typing import Optional
+
+from PySide6.QtWidgets import QFrame, QLabel, QMessageBox, QWidget
+
+from strawberry_order_management.config import ConfigStore
+from strawberry_order_management.history import HistoryStore
+from strawberry_order_management.models import ParsedOrder, ProcurementItem
+from strawberry_order_management.ui.main_window import MainWindow
+
+
+_DEFAULT_DELIVERY_NOTE_PATTERN = re.compile(r"^请电话送货上门谢谢【\d+】$")
+
+
+def _sample_order(platform: str = "抖店") -> ParsedOrder:
+    return ParsedOrder(
+        order_id="6952003434324366473",
+        placed_at="2026-04-11 20:57:15",
+        order_status="已发货",
+        product_name="澳大利亚进口婴儿水",
+        specification="1L/桶*12袋(赵露思同款 澳洲版)",
+        sku="27000-澳洲版-1升装",
+        quantity="1",
+        order_amount="405.00",
+        income_amount="162.00",
+        recipient_name="何女士",
+        phone_number="15781304332",
+        code="3612",
+        address="四川省成都市金牛区营门口街道友谊花园9-2304",
+        delivery_note="请电话送货上门谢谢【3612】",
+        platform=platform,
+        platform_fee_rate="10",
+        platform_fee_amount="16.20",
+        other_cost="5.00",
+        procurement_total_cost="38.00",
+        gross_profit="101.80",
+        custom_cost_labels=("包装费", "", ""),
+        custom_cost_values=("1.00", "", ""),
+        procurement_items=(
+            ProcurementItem("澳洲婴儿水", "2", "19.00"),
+            ProcurementItem("", "1", ""),
+            ProcurementItem("", "1", ""),
+        ),
+    )
+
+
+def _alternate_order(platform: str = "抖店") -> ParsedOrder:
+    return ParsedOrder(
+        order_id="6952003434324366999",
+        placed_at="2026-04-12 09:15:00",
+        order_status="待发货",
+        product_name="云南蓝莓",
+        specification="125g*4盒",
+        sku="YUNNAN-BLUEBERRY-125",
+        quantity="2",
+        order_amount="88.00",
+        income_amount="44.00",
+        recipient_name="王先生",
+        phone_number="13900001111",
+        code="8899",
+        address="广东省深圳市南山区科技园",
+        delivery_note="请尽快发货",
+        platform=platform,
+        platform_fee_rate="5",
+        platform_fee_amount="2.20",
+        other_cost="1.00",
+        procurement_total_cost="25.00",
+        gross_profit="15.80",
+        custom_cost_labels=("包装费", "", ""),
+        custom_cost_values=("0.50", "", ""),
+        procurement_items=(
+            ProcurementItem("蓝莓", "2", "12.50"),
+            ProcurementItem("", "1", ""),
+            ProcurementItem("", "1", ""),
+        ),
+    )
+
+
+def _settings_payload() -> dict:
+    return {
+        "ocr_base_url": "https://api.minimaxi.com/v1",
+        "ocr_api_key": "ocr_key",
+        "helper_base_url": "https://api.minimaxi.com/v1",
+        "helper_api_key": "helper_key",
+        "feishu_app_id": "cli_app_123",
+        "feishu_app_secret": "secret_456",
+        "feishu_table_wiki_url": "https://my.feishu.cn/wiki/QTXMwCDpQi9n6VkfDxJc5mNTnjh?table=tbl_total",
+        "feishu_table_app_token": "app_token_total",
+        "feishu_table_id": "tbl_total",
+        "feishu_table_name": "订单总表",
+        "feishu_field_mapping": {
+            "店铺": "店铺",
+            "平台": "平台",
+            "订单编号": "订单编号",
+            "备注": "备注",
+            "订单日期": "订单日期",
+            "下单时间": "下单时间",
+            "订单状态": "订单状态",
+            "收入": "收入金额",
+            "平台扣点比例": "平台扣点比例",
+            "平台扣点金额": "平台扣点金额",
+            "其他成本": "其他成本",
+            "采购总成本": "采购总成本",
+            "毛利润": "毛利润",
+            "自定义字段1": "包装费",
+            "发货地址": "发货地址",
+            "价格": "",
+            "采购商品1": "采购商品1",
+            "采购数量1": "采购数量1",
+            "采购成本1": "采购成本1",
+            "采购商品2": "",
+            "采购数量2": "",
+            "采购成本2": "",
+            "采购商品3": "",
+            "采购数量3": "",
+            "采购成本3": "",
+        },
+        "product_presets": [{"name": "澳洲婴儿水", "default_cost": "18.50"}],
+        "shops": [
+            {
+                "name": "乐宝零食店",
+            },
+            {"name": "欢宝零食店"},
+        ],
+        "selected_shop_name": "乐宝零食店",
+    }
+
+
+def _assert_rich_history_snapshot(
+    record: dict,
+    order: ParsedOrder,
+    expected_sync_source: str,
+    expected_status: str,
+    expected_message: str,
+    expected_procurement_items: Optional[dict[int, tuple[str, str, str]]] = None,
+    expected_financial_snapshot: Optional[dict[str, object]] = None,
+) -> None:
+    assert record["shop_name"] == "乐宝零食店"
+    assert record["sync_source"] == expected_sync_source
+    assert record["status"] == expected_status
+    assert record["message"] == expected_message
+    assert isinstance(record["created_at"], str) and record["created_at"]
+
+    order_snapshot = record["order_snapshot"]
+    assert order_snapshot["order_id"] == order.order_id
+    assert order_snapshot["placed_at"] == order.placed_at
+    assert order_snapshot["platform"] == order.platform
+    assert order_snapshot["order_status"] == order.order_status
+    assert order_snapshot["product_name"] == order.product_name
+    assert order_snapshot["specification"] == order.specification
+    assert order_snapshot["sku"] == order.sku
+    assert order_snapshot["sku_image_path"] == order.sku_image_path
+    assert order_snapshot["quantity"] == order.quantity
+    assert order_snapshot["order_amount"] == order.order_amount
+    assert order_snapshot["income_amount"] == order.income_amount
+    expected_financial_snapshot = expected_financial_snapshot or {
+        "platform_fee_rate": order.platform_fee_rate,
+        "platform_fee_amount": order.platform_fee_amount,
+        "other_cost": order.other_cost,
+        "procurement_total_cost": order.procurement_total_cost,
+        "gross_profit": order.gross_profit,
+        "custom_cost_labels": list(order.custom_cost_labels),
+        "custom_cost_values": list(order.custom_cost_values),
+    }
+    assert order_snapshot["platform_fee_rate"] == expected_financial_snapshot["platform_fee_rate"]
+    assert order_snapshot["platform_fee_amount"] == expected_financial_snapshot["platform_fee_amount"]
+    assert order_snapshot["other_cost"] == expected_financial_snapshot["other_cost"]
+    assert order_snapshot["procurement_total_cost"] == expected_financial_snapshot["procurement_total_cost"]
+    assert order_snapshot["gross_profit"] == expected_financial_snapshot["gross_profit"]
+    assert order_snapshot["custom_cost_labels"] == expected_financial_snapshot["custom_cost_labels"]
+    assert order_snapshot["custom_cost_values"] == expected_financial_snapshot["custom_cost_values"]
+    assert order_snapshot["recipient_name"] == order.recipient_name
+    assert order_snapshot["phone_number"] == order.phone_number
+    assert order_snapshot["code"] == order.code
+    assert order_snapshot["address"] == order.address
+    expected_delivery_note = (
+        ""
+        if _DEFAULT_DELIVERY_NOTE_PATTERN.match(order.delivery_note)
+        else order.delivery_note
+    )
+    assert order_snapshot["delivery_note"] == expected_delivery_note
+    if expected_procurement_items is not None:
+        for index, (product_name, quantity, cost) in expected_procurement_items.items():
+            assert order_snapshot["procurement_items"][index]["product_name"] == product_name
+            assert order_snapshot["procurement_items"][index]["quantity"] == quantity
+            assert order_snapshot["procurement_items"][index]["cost"] == cost
+
+    address_snapshot = record["address_snapshot"]
+    assert address_snapshot["output_one"].strip()
+    assert address_snapshot["output_two"].strip()
+
+
+def test_main_window_wraps_pages_in_mac_style_shell(qtbot, tmp_path):
+    window = MainWindow(config_store=ConfigStore(tmp_path / "config.json"), history_store=HistoryStore(tmp_path / "history.json"))
+    qtbot.addWidget(window)
+
+    assert window.findChild(QFrame, "WindowShell") is not None
+    assert window.findChild(QFrame, "WindowChromeBar") is not None
+    assert window.findChild(QWidget, "TrafficLights") is not None
+    assert window.findChild(QFrame, "WindowSidebar") is not None
+    assert window.findChild(QFrame, "WindowContentShell") is not None
+    assert window.nav.count() == 4
+    assert [window.nav.item(index).text() for index in range(window.nav.count())] == [
+        "订单录入",
+        "历史订单",
+        "财务报表",
+        "设置",
+    ]
+    title = window.findChild(QLabel, "WindowChromeTitle")
+    assert title is not None
+    assert title.text() == "草莓订单管理系统"
+
+
+def test_main_window_builds_history_snapshot_with_spec_sku_and_image(qtbot, tmp_path):
+    history_store = HistoryStore(tmp_path / "history.json")
+    window = MainWindow(config_store=ConfigStore(tmp_path / "config.json"), history_store=history_store)
+    qtbot.addWidget(window)
+
+    image_path = tmp_path / "sku.png"
+    image_path.write_bytes(b"fake-image")
+    order = _sample_order()
+    order = ParsedOrder(
+        **{
+            **order.__dict__,
+            "sku_image_path": str(image_path),
+        }
+    )
+    window.intake_page.show_order(order)
+    snapshot = window._build_history_snapshot(
+        {"shop_name": "乐宝零食店", "order": order},
+        "仅存历史",
+        "仅存历史",
+    )
+
+    assert snapshot["order_snapshot"]["specification"] == "1L/桶*12袋(赵露思同款 澳洲版)"
+    assert snapshot["order_snapshot"]["sku"] == "27000-澳洲版-1升装"
+    assert snapshot["order_snapshot"]["sku_image_path"] == str(image_path)
+
+
+def test_main_window_submits_order_to_total_table_with_shop_field(qtbot, tmp_path, monkeypatch):
+    config_store = ConfigStore(tmp_path / "config.json")
+    history_store = HistoryStore(tmp_path / "history.json")
+    config_store.save(_settings_payload())
+
+    captured: dict[str, object] = {}
+
+    class FakeFeishuClient:
+        def __init__(self, app_id: str, app_secret: str, table_app_token: str, table_id: str):
+            captured["init"] = (app_id, app_secret, table_app_token, table_id)
+
+        def get_tenant_access_token(self) -> str:
+            captured["token_called"] = True
+            return "tenant_token_123"
+
+        def create_record(self, access_token: str, fields: dict) -> dict:
+            captured["create"] = (access_token, fields)
+            return {"data": {"record_id": "rec_123"}}
+
+    monkeypatch.setattr("strawberry_order_management.ui.main_window.FeishuClient", FakeFeishuClient)
+
+    window = MainWindow(config_store=config_store, history_store=history_store)
+    qtbot.addWidget(window)
+
+    window.intake_page.show_order(_sample_order())
+    window.intake_page.shop_selector.setCurrentText("乐宝零食店")
+    window.intake_page.platform_selector.setCurrentText("微信小店")
+    window.intake_page.order_card_widget.procurement_product_1_combo.setCurrentText("澳洲婴儿水")
+    window.intake_page.order_card_widget.procurement_quantity_1_edit.setText("2")
+    window.intake_page.order_card_widget.procurement_cost_1_edit.setText("19.00")
+
+    window.intake_page.submit_button.click()
+
+    qtbot.waitUntil(
+        lambda: window.intake_page.capture_widget.status_label.text() == "已写入飞书：乐宝零食店",
+        timeout=3000,
+    )
+
+    assert captured["init"] == (
+        "cli_app_123",
+        "secret_456",
+        "app_token_total",
+        "tbl_total",
+    )
+    assert captured["token_called"] is True
+    assert captured["create"][0] == "tenant_token_123"
+    assert captured["create"][1]["店铺"] == "乐宝零食店"
+    assert captured["create"][1]["平台"] == "微信小店"
+    assert captured["create"][1]["订单编号"] == "6952003434324366473"
+    assert captured["create"][1]["收入金额"] == "162.00"
+    assert captured["create"][1]["平台扣点比例"] == "10"
+    assert captured["create"][1]["平台扣点金额"] == "16.20"
+    assert captured["create"][1]["其他成本"] == "5.00"
+    assert captured["create"][1]["采购总成本"] == "38.00"
+    assert captured["create"][1]["毛利润"] == "101.80"
+    assert captured["create"][1]["包装费"] == "1.00"
+    assert captured["create"][1]["发货地址"].startswith("何女士 15781304332-3612")
+    assert captured["create"][1]["采购商品1"] == "澳洲婴儿水"
+    assert captured["create"][1]["采购数量1"] == "2"
+    assert captured["create"][1]["采购成本1"] == "19.00"
+    assert "价格" not in captured["create"][1]
+    assert len(history_store.list_items()) == 1
+    record = history_store.list_items()[0]
+    _assert_rich_history_snapshot(
+        record,
+        _sample_order(platform="微信小店"),
+        "确认写入飞书",
+        "已写入飞书",
+        "写入成功",
+        {0: ("澳洲婴儿水", "2", "19.00")},
+    )
+    assert record["status"] == "已写入飞书"
+    assert record["sync_source"] == "确认写入飞书"
+    assert record["feishu_result"] == {"data": {"record_id": "rec_123"}}
+    assert record["feishu_record_id"] == "rec_123"
+    assert window.intake_page.capture_widget.status_label.text() == "已写入飞书：乐宝零食店"
+    assert any(
+        item["name"] == "澳洲婴儿水" and item["default_cost"] == "19.00"
+        for item in config_store.load()["product_presets"]
+    )
+
+
+def test_main_window_records_failure_when_feishu_submit_errors(qtbot, tmp_path, monkeypatch):
+    config_store = ConfigStore(tmp_path / "config.json")
+    history_store = HistoryStore(tmp_path / "history.json")
+    config_store.save(_settings_payload())
+
+    class FakeFeishuClient:
+        def __init__(self, app_id: str, app_secret: str, table_app_token: str, table_id: str):
+            pass
+
+        def get_tenant_access_token(self) -> str:
+            return "tenant_token_123"
+
+        def create_record(self, access_token: str, fields: dict) -> dict:
+            raise ValueError("飞书写入失败：无权限编辑该表")
+
+    monkeypatch.setattr("strawberry_order_management.ui.main_window.FeishuClient", FakeFeishuClient)
+
+    window = MainWindow(config_store=config_store, history_store=history_store)
+    qtbot.addWidget(window)
+
+    window.intake_page.show_order(_sample_order())
+    window.intake_page.shop_selector.setCurrentText("乐宝零食店")
+
+    window.intake_page.submit_button.click()
+
+    qtbot.waitUntil(
+        lambda: window.intake_page.capture_widget.status_label.text() == "飞书写入失败：无权限编辑该表",
+        timeout=3000,
+    )
+
+    assert len(history_store.list_items()) == 1
+    record = history_store.list_items()[0]
+    _assert_rich_history_snapshot(
+        record,
+        _sample_order(),
+        "确认写入飞书",
+        "写入失败",
+        "飞书写入失败：无权限编辑该表",
+    )
+    assert record["status"] == "写入失败"
+    assert record["sync_source"] == "确认写入飞书"
+    assert record["message"] == "飞书写入失败：无权限编辑该表"
+    assert window.intake_page.capture_widget.status_label.text() == "飞书写入失败：无权限编辑该表"
+
+
+def test_main_window_submits_to_feishu_in_background(qtbot, tmp_path, monkeypatch):
+    config_store = ConfigStore(tmp_path / "config.json")
+    history_store = HistoryStore(tmp_path / "history.json")
+    config_store.save(_settings_payload())
+
+    class SlowFeishuClient:
+        def __init__(self, app_id: str, app_secret: str, table_app_token: str, table_id: str):
+            pass
+
+        def get_tenant_access_token(self) -> str:
+            time.sleep(0.05)
+            return "tenant_token_123"
+
+        def create_record(self, access_token: str, fields: dict) -> dict:
+            time.sleep(0.05)
+            return {"data": {"record_id": "rec_123"}}
+
+    monkeypatch.setattr("strawberry_order_management.ui.main_window.FeishuClient", SlowFeishuClient)
+
+    window = MainWindow(config_store=config_store, history_store=history_store)
+    qtbot.addWidget(window)
+
+    window.intake_page.show_order(_sample_order())
+    window.intake_page.shop_selector.setCurrentText("乐宝零食店")
+
+    window.intake_page.submit_button.click()
+
+    assert window.intake_page.capture_widget.status_label.text() == "写入飞书中..."
+    assert len(history_store.list_items()) == 1
+    pending_row = history_store.list_items()[0]
+    assert pending_row["status"] == "写入中"
+    assert pending_row["sync_source"] == "确认写入飞书"
+    assert window.nav.isEnabled() is True
+    assert window.intake_page.address_widget.isEnabled() is True
+
+    qtbot.waitUntil(
+        lambda: window.intake_page.capture_widget.status_label.text() == "已写入飞书：乐宝零食店",
+        timeout=3000,
+    )
+    qtbot.waitUntil(lambda: window._submit_thread is None, timeout=3000)
+    assert len(history_store.list_items()) == 1
+    completed_row = history_store.list_items()[0]
+    assert completed_row["record_id"] == pending_row["record_id"]
+    assert completed_row["status"] == "已写入飞书"
+    assert completed_row["message"] == "写入成功"
+    assert completed_row["feishu_result"] == {"data": {"record_id": "rec_123"}}
+
+
+def test_main_window_persists_submit_failure_before_worker_start(qtbot, tmp_path, monkeypatch):
+    config_store = ConfigStore(tmp_path / "config.json")
+    history_store = HistoryStore(tmp_path / "history.json")
+    config_store.save(_settings_payload())
+
+    window = MainWindow(config_store=config_store, history_store=history_store)
+    qtbot.addWidget(window)
+
+    window.intake_page.show_order(_sample_order())
+    window.intake_page.shop_selector.setCurrentText("乐宝零食店")
+
+    start_called = {"value": False}
+
+    def fake_start_submit_job(task: dict) -> None:
+        start_called["value"] = True
+
+    def fake_build_task(payload: dict) -> dict:
+        raise ValueError("请先在设置页填写：总表 Table ID")
+
+    monkeypatch.setattr(window, "_start_submit_job", fake_start_submit_job)
+    monkeypatch.setattr(window, "_build_feishu_submission_task", fake_build_task)
+
+    window.intake_page.submit_button.click()
+
+    assert start_called["value"] is False
+    assert window.intake_page.capture_widget.status_label.text() == "请先在设置页填写：总表 Table ID"
+    assert len(history_store.list_items()) == 1
+    record = history_store.list_items()[0]
+    assert record["status"] == "写入失败"
+    assert record["sync_source"] == "确认写入飞书"
+    assert record["message"] == "请先在设置页填写：总表 Table ID"
+    assert record["order_snapshot"]["order_id"] == _sample_order().order_id
+
+
+def test_main_window_ignores_missing_history_row_during_async_completion(qtbot, tmp_path):
+    config_store = ConfigStore(tmp_path / "config.json")
+    history_store = HistoryStore(tmp_path / "history.json")
+    config_store.save(_settings_payload())
+
+    window = MainWindow(config_store=config_store, history_store=history_store)
+    qtbot.addWidget(window)
+
+    window.intake_page.show_order(_sample_order())
+    window.intake_page.shop_selector.setCurrentText("乐宝零食店")
+
+    snapshot = window._build_history_snapshot(
+        {"shop_name": "乐宝零食店", "order": _sample_order()},
+        "确认写入飞书",
+        "写入中",
+    )
+    saved_row = history_store.append(snapshot)
+    history_store.delete(saved_row["record_id"])
+
+    window._handle_submit_success(
+        {
+            "payload": {"shop_name": "乐宝零食店", "order": _sample_order()},
+            "shop_name": "乐宝零食店",
+            "response": {"data": {"record_id": "rec_123"}},
+            "history_record_id": saved_row["record_id"],
+        }
+    )
+
+    assert history_store.list_items() == []
+    assert window.intake_page.capture_widget.status_label.text() == "已写入飞书：乐宝零食店"
+
+
+def test_main_window_deletes_selected_history_row_locally_when_remote_delete_not_confirmed(
+    qtbot, tmp_path, monkeypatch
+):
+    config_store = ConfigStore(tmp_path / "config.json")
+    history_store = HistoryStore(tmp_path / "history.json")
+    config_store.save(_settings_payload())
+
+    answers = iter([QMessageBox.StandardButton.Yes, QMessageBox.StandardButton.No])
+    monkeypatch.setattr(
+        "strawberry_order_management.ui.main_window.QMessageBox.question",
+        lambda *args, **kwargs: next(answers),
+    )
+
+    window = MainWindow(config_store=config_store, history_store=history_store)
+    qtbot.addWidget(window)
+
+    history_store.append(
+        window._build_history_snapshot(
+            {"shop_name": "乐宝零食店", "order": _sample_order()},
+            "确认写入飞书",
+            "已写入飞书",
+            "写入成功",
+            {"data": {"record_id": "rec_1"}},
+        )
+    )
+    kept_row = history_store.append(
+        window._build_history_snapshot(
+            {"shop_name": "欢宝零食店", "order": _alternate_order()},
+            "仅存历史",
+            "仅存历史",
+            "",
+        )
+    )
+    window.history_page.load_rows(history_store.list_items())
+    window.history_page.list_widget.setCurrentRow(1)
+
+    window.history_page.delete_button.click()
+
+    assert [row["record_id"] for row in history_store.list_items()] == [kept_row["record_id"]]
+    assert window.history_page.list_widget.count() == 1
+    assert window.history_page.detail_title_label.text() == "欢宝零食店"
+    assert window.history_page.order_id_value.toPlainText() == _alternate_order().order_id
+
+
+def test_main_window_deletes_selected_history_row_and_remote_record_after_double_confirm(
+    qtbot, tmp_path, monkeypatch
+):
+    config_store = ConfigStore(tmp_path / "config.json")
+    history_store = HistoryStore(tmp_path / "history.json")
+    config_store.save(_settings_payload())
+
+    answers = iter([QMessageBox.StandardButton.Yes, QMessageBox.StandardButton.Yes])
+    monkeypatch.setattr(
+        "strawberry_order_management.ui.main_window.QMessageBox.question",
+        lambda *args, **kwargs: next(answers),
+    )
+
+    captured: dict[str, object] = {"deleted": []}
+
+    class FakeFeishuClient:
+        def __init__(self, app_id: str, app_secret: str, table_app_token: str, table_id: str):
+            pass
+
+        def get_tenant_access_token(self) -> str:
+            return "tenant_token_123"
+
+        def delete_record(self, access_token: str, record_id: str) -> dict:
+            captured["deleted"].append((access_token, record_id))
+            return {"data": {"record_id": record_id}}
+
+    monkeypatch.setattr("strawberry_order_management.ui.main_window.FeishuClient", FakeFeishuClient)
+
+    window = MainWindow(config_store=config_store, history_store=history_store)
+    qtbot.addWidget(window)
+
+    removed_row = history_store.append(
+        window._build_history_snapshot(
+            {"shop_name": "乐宝零食店", "order": _sample_order()},
+            "确认写入飞书",
+            "已写入飞书",
+            "写入成功",
+            {"data": {"record_id": "rec_delete_1"}},
+        )
+    )
+    window.history_page.load_rows(history_store.list_items())
+    window.history_page.list_widget.setCurrentRow(0)
+
+    window.history_page.delete_button.click()
+
+    assert captured["deleted"] == [("tenant_token_123", "rec_delete_1")]
+    assert history_store.list_items() == []
+    assert window.intake_page.capture_widget.status_label.text() == "已删除本地历史和飞书记录"
+
+
+def test_main_window_deletes_local_history_when_remote_record_is_missing(
+    qtbot, tmp_path, monkeypatch
+):
+    config_store = ConfigStore(tmp_path / "config.json")
+    history_store = HistoryStore(tmp_path / "history.json")
+    config_store.save(_settings_payload())
+
+    answers = iter([QMessageBox.StandardButton.Yes, QMessageBox.StandardButton.Yes])
+    monkeypatch.setattr(
+        "strawberry_order_management.ui.main_window.QMessageBox.question",
+        lambda *args, **kwargs: next(answers),
+    )
+
+    class FakeFeishuClient:
+        def __init__(self, app_id: str, app_secret: str, table_app_token: str, table_id: str):
+            pass
+
+        def get_tenant_access_token(self) -> str:
+            return "tenant_token_123"
+
+        def delete_record(self, access_token: str, record_id: str) -> dict:
+            raise ValueError("飞书删除失败：record not found")
+
+    monkeypatch.setattr("strawberry_order_management.ui.main_window.FeishuClient", FakeFeishuClient)
+
+    window = MainWindow(config_store=config_store, history_store=history_store)
+    qtbot.addWidget(window)
+
+    history_store.append(
+        window._build_history_snapshot(
+            {"shop_name": "乐宝零食店", "order": _sample_order()},
+            "确认写入飞书",
+            "已写入飞书",
+            "写入成功",
+            {"data": {"record_id": "rec_delete_missing"}},
+        )
+    )
+    window.history_page.load_rows(history_store.list_items())
+    window.history_page.list_widget.setCurrentRow(0)
+
+    window.history_page.delete_button.click()
+
+    assert history_store.list_items() == []
+    assert window.intake_page.capture_widget.status_label.text() == "已删除本地历史和飞书记录"
+
+
+def test_main_window_saves_history_edit_in_place_and_keeps_selection(qtbot, tmp_path):
+    config_store = ConfigStore(tmp_path / "config.json")
+    history_store = HistoryStore(tmp_path / "history.json")
+    config_store.save(_settings_payload())
+
+    window = MainWindow(config_store=config_store, history_store=history_store)
+    qtbot.addWidget(window)
+
+    first_row = history_store.append(
+        window._build_history_snapshot(
+            {"shop_name": "乐宝零食店", "order": _sample_order()},
+            "确认写入飞书",
+            "已写入飞书",
+            "写入成功",
+            {"data": {"record_id": "rec_1"}},
+        )
+    )
+    history_store.append(
+        window._build_history_snapshot(
+            {"shop_name": "欢宝零食店", "order": _alternate_order()},
+            "仅存历史",
+            "仅存历史",
+            "",
+        )
+    )
+    window.history_page.load_rows(history_store.list_items())
+    window.history_page.list_widget.setCurrentRow(1)
+
+    window.history_page.recipient_name_value.setPlainText("改后收件人")
+    window.history_page.phone_number_value.setPlainText("18800001111")
+    window.history_page.address_value.setPlainText("上海市徐汇区漕河泾")
+    window.history_page.product_name_value.setPlainText("改后商品")
+    window.history_page.procurement_product_1_combo.setCurrentText("改后采购")
+    window.history_page.procurement_quantity_1_value.setText("5")
+    window.history_page.procurement_cost_1_value.setText("23.60")
+    window.history_page.save_button.click()
+
+    target_row = history_store.get(first_row["record_id"])
+    assert target_row["order_snapshot"]["recipient_name"] == "改后收件人"
+    assert target_row["order_snapshot"]["phone_number"] == "18800001111"
+    assert target_row["order_snapshot"]["address"] == "上海市徐汇区漕河泾"
+    assert target_row["order_snapshot"]["product_name"] == "改后商品"
+    assert target_row["order_snapshot"]["procurement_items"][0] == {
+        "product_name": "改后采购",
+        "quantity": "5",
+        "cost": "23.60",
+    }
+    assert window.history_page.list_widget.currentRow() == 1
+    assert window.history_page.detail_title_label.text() == "乐宝零食店"
+    assert window.history_page.recipient_name_value.toPlainText() == "改后收件人"
+    assert window.history_page.product_name_value.toPlainText() == "改后商品"
+
+
+def test_main_window_save_history_edit_updates_existing_feishu_record(qtbot, tmp_path, monkeypatch):
+    config_store = ConfigStore(tmp_path / "config.json")
+    history_store = HistoryStore(tmp_path / "history.json")
+    config_store.save(_settings_payload())
+
+    captured: dict[str, object] = {"updated": []}
+
+    class FakeFeishuClient:
+        def __init__(self, app_id: str, app_secret: str, table_app_token: str, table_id: str):
+            pass
+
+        def get_tenant_access_token(self) -> str:
+            return "tenant_token_123"
+
+        def update_record(self, access_token: str, record_id: str, fields: dict) -> dict:
+            captured["updated"].append(
+                {
+                    "access_token": access_token,
+                    "record_id": record_id,
+                    "fields": fields,
+                }
+            )
+            return {"data": {"record_id": record_id}}
+
+        def create_record(self, access_token: str, fields: dict) -> dict:
+            raise AssertionError("save history edit should update existing feishu record")
+
+    monkeypatch.setattr("strawberry_order_management.ui.main_window.FeishuClient", FakeFeishuClient)
+
+    window = MainWindow(config_store=config_store, history_store=history_store)
+    qtbot.addWidget(window)
+
+    selected_row = history_store.append(
+        window._build_history_snapshot(
+            {"shop_name": "乐宝零食店", "order": _alternate_order()},
+            "确认写入飞书",
+            "已写入飞书",
+            "写入成功",
+            {"data": {"record_id": "rec_existing"}},
+        )
+    )
+    window.history_page.load_rows(history_store.list_items())
+    window.history_page.list_widget.setCurrentRow(0)
+
+    window.history_page.recipient_name_value.setPlainText("改后王先生")
+    window.history_page.delivery_note_value.setPlainText("改后备注")
+    window.history_page.save_button.click()
+
+    qtbot.waitUntil(
+        lambda: len(captured["updated"]) == 1
+        and history_store.get(selected_row["record_id"])["message"] == "已保存并同步飞书",
+        timeout=3000,
+    )
+
+    assert captured["updated"][0]["access_token"] == "tenant_token_123"
+    assert captured["updated"][0]["record_id"] == "rec_existing"
+    assert captured["updated"][0]["fields"]["备注"] == "改后备注"
+    assert history_store.get(selected_row["record_id"])["message"] == "已保存并同步飞书"
+
+
+def test_main_window_save_history_edit_recreates_when_feishu_record_missing(qtbot, tmp_path, monkeypatch):
+    config_store = ConfigStore(tmp_path / "config.json")
+    history_store = HistoryStore(tmp_path / "history.json")
+    config_store.save(_settings_payload())
+
+    captured: dict[str, object] = {"create": []}
+
+    class FakeFeishuClient:
+        def __init__(self, app_id: str, app_secret: str, table_app_token: str, table_id: str):
+            pass
+
+        def get_tenant_access_token(self) -> str:
+            return "tenant_token_123"
+
+        def update_record(self, access_token: str, record_id: str, fields: dict) -> dict:
+            raise ValueError("飞书写入失败：record not found")
+
+        def create_record(self, access_token: str, fields: dict) -> dict:
+            captured["create"].append({"access_token": access_token, "fields": fields})
+            return {"data": {"record_id": "rec_new"}}
+
+    monkeypatch.setattr("strawberry_order_management.ui.main_window.FeishuClient", FakeFeishuClient)
+
+    window = MainWindow(config_store=config_store, history_store=history_store)
+    qtbot.addWidget(window)
+
+    selected_row = history_store.append(
+        window._build_history_snapshot(
+            {"shop_name": "乐宝零食店", "order": _alternate_order()},
+            "确认写入飞书",
+            "已写入飞书",
+            "写入成功",
+            {"data": {"record_id": "rec_missing"}},
+        )
+    )
+    window.history_page.load_rows(history_store.list_items())
+    window.history_page.list_widget.setCurrentRow(0)
+
+    window.history_page.delivery_note_value.setPlainText("改后备注")
+    window.history_page.save_button.click()
+
+    qtbot.waitUntil(
+        lambda: len(captured["create"]) == 1
+        and history_store.get(selected_row["record_id"])["message"] == "原记录不存在，已自动新建",
+        timeout=3000,
+    )
+
+    updated_row = history_store.get(selected_row["record_id"])
+    assert updated_row["feishu_record_id"] == "rec_new"
+    assert updated_row["message"] == "原记录不存在，已自动新建"
+
+
+def test_main_window_save_history_edit_can_clear_feishu_remark(qtbot, tmp_path, monkeypatch):
+    config_store = ConfigStore(tmp_path / "config.json")
+    history_store = HistoryStore(tmp_path / "history.json")
+    config_store.save(_settings_payload())
+
+    captured: dict[str, object] = {"updated": []}
+
+    class FakeFeishuClient:
+        def __init__(self, app_id: str, app_secret: str, table_app_token: str, table_id: str):
+            pass
+
+        def get_tenant_access_token(self) -> str:
+            return "tenant_token_123"
+
+        def update_record(self, access_token: str, record_id: str, fields: dict) -> dict:
+            captured["updated"].append(
+                {
+                    "access_token": access_token,
+                    "record_id": record_id,
+                    "fields": fields,
+                }
+            )
+            return {"data": {"record_id": record_id}}
+
+        def create_record(self, access_token: str, fields: dict) -> dict:
+            raise AssertionError("save history edit should update existing feishu record")
+
+    monkeypatch.setattr("strawberry_order_management.ui.main_window.FeishuClient", FakeFeishuClient)
+
+    window = MainWindow(config_store=config_store, history_store=history_store)
+    qtbot.addWidget(window)
+
+    selected_row = history_store.append(
+        window._build_history_snapshot(
+            {"shop_name": "乐宝零食店", "order": _alternate_order()},
+            "确认写入飞书",
+            "已写入飞书",
+            "写入成功",
+            {"data": {"record_id": "rec_existing"}},
+        )
+    )
+    window.history_page.load_rows(history_store.list_items())
+    window.history_page.list_widget.setCurrentRow(0)
+
+    window.history_page.delivery_note_value.setPlainText("")
+    window.history_page.save_button.click()
+
+    qtbot.waitUntil(lambda: len(captured["updated"]) == 1, timeout=3000)
+
+    assert captured["updated"][0]["record_id"] == "rec_existing"
+    assert "备注" in captured["updated"][0]["fields"]
+    assert captured["updated"][0]["fields"]["备注"] == ""
+    assert history_store.get(selected_row["record_id"])["order_snapshot"]["delivery_note"] == ""
+
+
+def test_main_window_backfills_latest_update_log_entry(qtbot, tmp_path):
+    config_store = ConfigStore(tmp_path / "config.json")
+    history_store = HistoryStore(tmp_path / "history.json")
+    payload = _settings_payload()
+    payload["update_logs_initialized"] = True
+    payload["update_logs"] = []
+    config_store.save(payload)
+
+    window = MainWindow(config_store=config_store, history_store=history_store)
+    qtbot.addWidget(window)
+
+    saved_payload = config_store.load()
+    titles = [item.get("title") for item in saved_payload.get("update_logs", [])]
+
+    assert "修复历史备注清空与界面整理" in titles
+
+
+def test_main_window_extracts_feishu_record_id_from_nested_record_payload(qtbot, tmp_path):
+    config_store = ConfigStore(tmp_path / "config.json")
+    history_store = HistoryStore(tmp_path / "history.json")
+    config_store.save(_settings_payload())
+
+    window = MainWindow(config_store=config_store, history_store=history_store)
+    qtbot.addWidget(window)
+
+    snapshot = window._build_history_snapshot(
+        {"shop_name": "乐宝零食店", "order": _sample_order()},
+        "确认写入飞书",
+        "已写入飞书",
+        "写入成功",
+        {"code": 0, "data": {"record": {"record_id": "rec_nested_1"}}},
+    )
+
+    assert snapshot["feishu_record_id"] == "rec_nested_1"
+
+
+def test_main_window_resubmits_selected_history_row_in_place(qtbot, tmp_path, monkeypatch):
+    config_store = ConfigStore(tmp_path / "config.json")
+    history_store = HistoryStore(tmp_path / "history.json")
+    config_store.save(_settings_payload())
+    initial_product_presets = config_store.load()["product_presets"]
+
+    captured: dict[str, object] = {}
+
+    class FakeFeishuClient:
+        def __init__(self, app_id: str, app_secret: str, table_app_token: str, table_id: str):
+            pass
+
+        def get_tenant_access_token(self) -> str:
+            return "tenant_token_123"
+
+        def update_record(self, access_token: str, record_id: str, fields: dict) -> dict:
+            captured["access_token"] = access_token
+            captured["record_id"] = record_id
+            captured["fields"] = fields
+            return {"data": {"record_id": record_id}}
+
+        def create_record(self, access_token: str, fields: dict) -> dict:
+            raise AssertionError("history resubmit should update existing feishu record")
+
+    monkeypatch.setattr("strawberry_order_management.ui.main_window.FeishuClient", FakeFeishuClient)
+
+    window = MainWindow(config_store=config_store, history_store=history_store)
+    qtbot.addWidget(window)
+
+    selected_row = history_store.append(
+        window._build_history_snapshot(
+            {"shop_name": "乐宝零食店", "order": _alternate_order()},
+            "确认写入飞书",
+            "已写入飞书",
+            "写入成功",
+            {"data": {"record_id": "rec_1"}},
+        )
+    )
+    other_row = history_store.append(
+        window._build_history_snapshot(
+            {"shop_name": "欢宝零食店", "order": _alternate_order()},
+            "仅存历史",
+            "仅存历史",
+            "",
+        )
+    )
+    window.history_page.load_rows(history_store.list_items())
+    window.history_page.list_widget.setCurrentRow(1)
+
+    window.history_page.save_button.click()
+
+    qtbot.waitUntil(
+        lambda: window.intake_page.capture_widget.status_label.text() == "已写入飞书：乐宝零食店",
+        timeout=3000,
+    )
+    qtbot.waitUntil(lambda: window._submit_thread is None, timeout=3000)
+
+    assert captured["access_token"] == "tenant_token_123"
+    assert captured["record_id"] == "rec_1"
+    assert captured["fields"]["备注"] == _alternate_order().delivery_note
+    assert captured["fields"]["发货地址"].startswith("王先生 13900001111-8899")
+    assert captured["fields"]["发货地址"] != "何女士 15781304332-3612 四川省成都市金牛区营门口街道友谊花园9-2304"
+    assert captured["fields"]["收入金额"] == _alternate_order().income_amount
+
+    rows = history_store.list_items()
+    assert len(rows) == 2
+    assert rows[0]["record_id"] == other_row["record_id"]
+    assert rows[0]["status"] == "仅存历史"
+    assert rows[0]["message"] == ""
+    assert rows[1]["record_id"] == selected_row["record_id"]
+    assert rows[1]["status"] == "已写入飞书"
+    assert rows[1]["message"] == "已保存并同步飞书"
+    assert rows[1]["feishu_result"] == {"data": {"record_id": "rec_1"}}
+    saved_product_presets = config_store.load()["product_presets"]
+    assert initial_product_presets[0] in saved_product_presets
+    assert any(item["name"] == "蓝莓" and item["default_cost"] == "12.50" for item in saved_product_presets)
+
+
+def test_main_window_resubmits_history_using_edited_snapshot(qtbot, tmp_path, monkeypatch):
+    config_store = ConfigStore(tmp_path / "config.json")
+    history_store = HistoryStore(tmp_path / "history.json")
+    config_store.save(_settings_payload())
+
+    captured: dict[str, object] = {"updates": []}
+
+    class FakeFeishuClient:
+        def __init__(self, app_id: str, app_secret: str, table_app_token: str, table_id: str):
+            pass
+
+        def get_tenant_access_token(self) -> str:
+            return "tenant_token_123"
+
+        def update_record(self, access_token: str, record_id: str, fields: dict) -> dict:
+            captured["updates"].append(
+                {
+                    "access_token": access_token,
+                    "record_id": record_id,
+                    "fields": fields,
+                }
+            )
+            return {"data": {"record_id": record_id}}
+
+        def create_record(self, access_token: str, fields: dict) -> dict:
+            raise AssertionError("edited history should keep updating the original feishu record")
+
+    monkeypatch.setattr("strawberry_order_management.ui.main_window.FeishuClient", FakeFeishuClient)
+
+    window = MainWindow(config_store=config_store, history_store=history_store)
+    qtbot.addWidget(window)
+
+    selected_row = history_store.append(
+        window._build_history_snapshot(
+            {"shop_name": "乐宝零食店", "order": _alternate_order()},
+            "确认写入飞书",
+            "已写入飞书",
+            "写入成功",
+            {"data": {"record_id": "rec_1"}},
+        )
+    )
+    window.history_page.load_rows(history_store.list_items())
+    window.history_page.list_widget.setCurrentRow(0)
+
+    window.history_page.recipient_name_value.setPlainText("改后王先生")
+    window.history_page.phone_number_value.setPlainText("18800002222")
+    window.history_page.code_value.setPlainText("9900")
+    window.history_page.address_value.setPlainText("上海市闵行区万源路")
+    window.history_page.delivery_note_value.setPlainText("改后备注")
+    window.history_page.income_amount_value.setPlainText("55.00")
+    window.history_page.procurement_product_1_combo.setCurrentText("改后蓝莓")
+    window.history_page.procurement_quantity_1_value.setText("4")
+    window.history_page.procurement_cost_1_value.setText("13.20")
+    window.history_page.save_button.click()
+    qtbot.waitUntil(lambda: len(captured["updates"]) == 1, timeout=3000)
+
+    window.history_page.save_button.click()
+    qtbot.waitUntil(lambda: len(captured["updates"]) == 2, timeout=3000)
+
+    qtbot.waitUntil(
+        lambda: window.intake_page.capture_widget.status_label.text() == "已写入飞书：乐宝零食店",
+        timeout=3000,
+    )
+    qtbot.waitUntil(lambda: window._submit_thread is None, timeout=3000)
+
+    latest_update = captured["updates"][-1]
+    assert latest_update["access_token"] == "tenant_token_123"
+    assert latest_update["record_id"] == "rec_1"
+    assert latest_update["fields"]["备注"] == "改后备注"
+    assert latest_update["fields"]["收入金额"] == "55.00"
+    assert latest_update["fields"]["发货地址"] == "改后王先生 18800002222-9900 上海市闵行区万源路"
+    assert latest_update["fields"]["采购商品1"] == "改后蓝莓"
+    assert latest_update["fields"]["采购数量1"] == "4"
+    assert latest_update["fields"]["采购成本1"] == "13.20"
+
+    updated_row = history_store.get(selected_row["record_id"])
+    assert updated_row["order_snapshot"]["delivery_note"] == "改后备注"
+    assert updated_row["order_snapshot"]["income_amount"] == "55.00"
+    assert updated_row["feishu_result"] == {"data": {"record_id": "rec_1"}}
+
+
+def test_main_window_auto_persists_history_edited_products_to_library(qtbot, tmp_path, monkeypatch):
+    config_store = ConfigStore(tmp_path / "config.json")
+    history_store = HistoryStore(tmp_path / "history.json")
+    config_store.save(_settings_payload())
+
+    class FakeFeishuClient:
+        def __init__(self, app_id: str, app_secret: str, table_app_token: str, table_id: str):
+            pass
+
+        def get_tenant_access_token(self) -> str:
+            return "tenant_token_123"
+
+        def create_record(self, access_token: str, fields: dict) -> dict:
+            return {"data": {"record_id": "rec_1"}}
+
+        def update_record(self, access_token: str, record_id: str, fields: dict) -> dict:
+            return {"data": {"record_id": record_id}}
+
+    monkeypatch.setattr("strawberry_order_management.ui.main_window.FeishuClient", FakeFeishuClient)
+
+    window = MainWindow(config_store=config_store, history_store=history_store)
+    qtbot.addWidget(window)
+
+    selected_row = history_store.append(
+        window._build_history_snapshot(
+            {"shop_name": "乐宝零食店", "order": _alternate_order()},
+            "确认写入飞书",
+            "已写入飞书",
+            "写入成功",
+            {"data": {"record_id": "rec_1"}},
+        )
+    )
+    window.history_page.load_rows(history_store.list_items())
+    window.history_page.list_widget.setCurrentRow(0)
+
+    window.history_page.procurement_product_2_combo.setCurrentText("历史补录商品")
+    window.history_page.procurement_cost_2_value.setText("7.50")
+    window.history_page.save_button.click()
+
+    qtbot.waitUntil(lambda: window._submit_thread is None, timeout=3000)
+
+    assert any(
+        item["name"] == "历史补录商品" and item["default_cost"] == "7.50"
+        for item in config_store.load()["product_presets"]
+    )
+    updated_row = history_store.get(selected_row["record_id"])
+    assert updated_row["order_snapshot"]["procurement_items"][1] == {
+        "product_name": "历史补录商品",
+        "quantity": "1",
+        "cost": "7.50",
+    }
+
+
+def test_main_window_can_save_manual_product_into_global_library(qtbot, tmp_path):
+    config_store = ConfigStore(tmp_path / "config.json")
+    history_store = HistoryStore(tmp_path / "history.json")
+    config_store.save(_settings_payload())
+
+    window = MainWindow(config_store=config_store, history_store=history_store)
+    qtbot.addWidget(window)
+    window.intake_page.show_order(_sample_order())
+
+    window.intake_page.order_card_widget.procurement_product_1_combo.setEditText("临时采购品")
+    window.intake_page.order_card_widget.procurement_cost_1_edit.setText("11.80")
+    window.intake_page.order_card_widget.procurement_save_1_button.click()
+
+    saved_payload = config_store.load()
+    assert any(
+        item["name"] == "临时采购品" and item["default_cost"] == "11.80"
+        for item in saved_payload["product_presets"]
+    )
+    assert window.intake_page.capture_widget.status_label.text() == "已加入商品库：临时采购品"
+
+
+def test_main_window_auto_persists_manual_products_when_saving_history(qtbot, tmp_path):
+    config_store = ConfigStore(tmp_path / "config.json")
+    history_store = HistoryStore(tmp_path / "history.json")
+    config_store.save(_settings_payload())
+
+    window = MainWindow(config_store=config_store, history_store=history_store)
+    qtbot.addWidget(window)
+
+    window.intake_page.show_order(_sample_order())
+    window.intake_page.shop_selector.setCurrentText("乐宝零食店")
+    window.intake_page.order_card_widget.procurement_product_2_combo.setEditText("补录商品")
+    window.intake_page.order_card_widget.procurement_cost_2_edit.setText("7.50")
+
+    window.intake_page.save_history_button.click()
+
+    assert len(history_store.list_items()) == 1
+    record = history_store.list_items()[0]
+    _assert_rich_history_snapshot(
+        record,
+        _sample_order(),
+        "仅存历史",
+        "仅存历史",
+        "",
+        {1: ("补录商品", "1", "7.50")},
+        {
+            "platform_fee_rate": "10",
+            "platform_fee_amount": "16.20",
+            "other_cost": "5.00",
+            "procurement_total_cost": "45.50",
+            "gross_profit": "94.30",
+            "custom_cost_labels": ["包装费", "", ""],
+            "custom_cost_values": ["1.00", "", ""],
+        },
+    )
+    assert record["status"] == "仅存历史"
+    assert record["sync_source"] == "仅存历史"
+    assert record["message"] == ""
+    assert any(
+        item["name"] == "补录商品" and item["default_cost"] == "7.50"
+        for item in config_store.load()["product_presets"]
+    )

@@ -11,12 +11,71 @@ QMainWindow {
     background: #e9eef5;
 }
 
-QScrollArea {
+QScrollArea,
+QAbstractScrollArea {
     background: transparent;
     border: none;
 }
 
+QAbstractScrollArea::corner {
+    background: #f6f8fc;
+    border: none;
+}
+
+QScrollBar:horizontal {
+    background: #edf2fb;
+    height: 12px;
+    margin: 0;
+    border-radius: 6px;
+}
+
+QScrollBar::handle:horizontal {
+    background: #b8c7e6;
+    min-width: 44px;
+    border-radius: 6px;
+}
+
+QScrollBar::handle:horizontal:hover {
+    background: #9fb3df;
+}
+
+QScrollBar:vertical {
+    background: #edf2fb;
+    width: 12px;
+    margin: 0;
+    border-radius: 6px;
+}
+
+QScrollBar::handle:vertical {
+    background: #b8c7e6;
+    min-height: 44px;
+    border-radius: 6px;
+}
+
+QScrollBar::handle:vertical:hover {
+    background: #9fb3df;
+}
+
+QScrollBar::add-line,
+QScrollBar::sub-line,
+QScrollBar::add-page,
+QScrollBar::sub-page {
+    background: transparent;
+    border: none;
+}
+
+QScrollArea#EntryFormRail QWidget#qt_scrollarea_viewport,
+QScrollArea#ProfitDashboardScroll QWidget#qt_scrollarea_viewport,
+QScrollArea#ProfitDailyScroll QWidget#qt_scrollarea_viewport,
+QScrollArea#SettingsSectionScroll QWidget#qt_scrollarea_viewport {
+    background: #f6f8fc;
+}
+
 QWidget#PageContent {
+    background: #f6f8fc;
+}
+
+QWidget#OrderCardWorkspace {
     background: #f6f8fc;
 }
 
@@ -30,19 +89,6 @@ QFrame#WindowShell {
     background: #f4f7fb;
     border: 1px solid #d8e1ef;
     border-radius: 16px;
-}
-
-QFrame#WindowChromeBar {
-    background: rgba(255, 255, 255, 0.98);
-    border-bottom: 1px solid #e2e8f0;
-    border-top-left-radius: 16px;
-    border-top-right-radius: 16px;
-}
-
-QLabel#WindowChromeTitle {
-    color: #6a7892;
-    font-size: 13px;
-    font-weight: 700;
 }
 
 QFrame#WindowSidebar {
@@ -186,20 +232,47 @@ QPushButton#DangerActionButton:hover {
     background: #ffe3e8;
 }
 
-QLineEdit, QTextEdit, QComboBox {
+QLineEdit, QTextEdit, QComboBox, QDateEdit {
     background: #ffffff;
     border: 1px solid #d9e2f1;
     border-radius: 10px;
     padding: 7px 10px;
     selection-background-color: #4a7cff;
+    selection-color: #ffffff;
+    color: #20304a;
 }
 
 QTextEdit {
     min-height: 60px;
 }
 
-QComboBox {
+QComboBox,
+QDateEdit {
     padding-right: 28px;
+    combobox-popup: 0;
+}
+
+QComboBox::drop-down,
+QDateEdit::drop-down {
+    subcontrol-origin: padding;
+    subcontrol-position: top right;
+    width: 26px;
+    border: none;
+    background: transparent;
+}
+
+QComboBox QAbstractItemView,
+QDateEdit QAbstractItemView {
+    background: #ffffff;
+    color: #20304a;
+    border: 1px solid #d9e2f1;
+    selection-background-color: #4a7cff;
+    selection-color: #ffffff;
+    outline: none;
+}
+
+QWidget#EntryFormViewport {
+    background: #f6f8fc;
 }
 
 QLabel#SectionTitle {

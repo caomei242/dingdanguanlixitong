@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import shlex
 import shutil
 import uuid
@@ -58,6 +59,16 @@ def _now_timestamp() -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
+def _parse_timestamp(value: str) -> datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        return datetime.strptime(text, "%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return None
+
+
 class SettingsPage(QWidget):
     save_requested = Signal(object)
     DEFAULT_SHOPS = (
@@ -113,6 +124,22 @@ class SettingsPage(QWidget):
         "采购数量3": "采购数量3",
         "采购成本3": "采购成本3",
     }
+    ALWAYS_HIDDEN_FIELD_MAPPING_KEYS = frozenset(
+        {
+            "订单编号",
+            "SKU",
+            "SKU 图片",
+            "采购快递单号",
+            "价格",
+            "自定义字段1",
+            "自定义字段2",
+            "自定义字段3",
+            "同步方式",
+            "同步状态",
+            "同步说明",
+            "录入时间",
+        }
+    )
     FIELD_MAPPING_KEYS = (
         "店铺",
         "平台",
@@ -269,6 +296,23 @@ class SettingsPage(QWidget):
             "content": "支持截图/粘贴识别订单，同时生成地址提取结果，录单前先展示订单卡供确认。",
         },
     )
+    KNOWN_UPDATE_LOG_TIMESTAMPS = {
+        ("设置", "新增更新日志页签"): "2026-04-14 12:30:00",
+        ("录单", "支持规格模板预填采购明细"): "2026-04-14 12:10:00",
+        ("历史", "采购快递单号升级为三条采购位"): "2026-04-14 11:50:00",
+        ("利润计算", "新增利润计算页面"): "2026-04-14 10:40:00",
+        ("历史", "历史记录支持编辑后覆盖飞书"): "2026-04-13 21:30:00",
+        ("录单", "补齐财务信息自动计算"): "2026-04-13 20:10:00",
+        ("飞书同步", "总表模式和多店铺预设落地"): "2026-04-13 18:50:00",
+        ("录单", "地址提取和识图流程整合"): "2026-04-13 17:20:00",
+        ("UI重构", "全局壳子升级为 Mac 视窗风格"): "2026-04-14 20:40:00",
+        ("订单录入", "录单页升级为三栏工作台"): "2026-04-14 21:05:00",
+        ("历史", "修复历史备注清空与界面整理"): "2026-04-14 21:30:00",
+        ("利润计算", "利润页升级为双 Tab 驾驶舱"): "2026-04-14 21:45:00",
+        ("设置", "设置页升级为左导航工作台"): "2026-04-14 22:00:00",
+        ("UI重构", "补齐侧栏命名与财务大盘分层"): "2026-04-14 22:10:00",
+        ("录单", "规格模板联动升级为自动沉淀"): "2026-04-16 10:30:00",
+    }
 
     def __init__(self, on_resolve_shop_link=None, on_inspect_table_fields=None) -> None:
         super().__init__()
@@ -290,6 +334,7 @@ class SettingsPage(QWidget):
         self.save_product_button = QPushButton("保存商品")
         self.remove_product_button = QPushButton("删除商品")
         self.shop_selector = QComboBox()
+        self.intake_default_shop_selector = QComboBox()
         self.shop_name_edit = QLineEdit()
         self.shop_wiki_url_edit = QLineEdit()
         self.shop_app_token_edit = QLineEdit()
@@ -366,6 +411,7 @@ class SettingsPage(QWidget):
 
         shop_form = QFormLayout()
         shop_form.addRow("已保存店铺", self.shop_selector)
+        shop_form.addRow("录单默认店铺", self.intake_default_shop_selector)
         shop_form.addRow("店铺名称", self.shop_name_edit)
         shop_form.addRow("总表链接", self.shop_wiki_url_edit)
         shop_form.addRow("总表 App Token", self.shop_app_token_edit)
@@ -384,13 +430,10 @@ class SettingsPage(QWidget):
 
         title = QLabel("设置")
         title.setObjectName("SectionTitle")
-        subtitle = QLabel("配置 OCR、辅助提取和飞书写入参数")
-        subtitle.setObjectName("MutedText")
         title_box = QVBoxLayout()
         title_box.setContentsMargins(0, 0, 0, 0)
         title_box.setSpacing(4)
         title_box.addWidget(title)
-        title_box.addWidget(subtitle)
 
         action_box = QVBoxLayout()
         action_box.setContentsMargins(0, 0, 0, 0)
@@ -408,24 +451,24 @@ class SettingsPage(QWidget):
 
         api_section = self._build_settings_section(
             "接口配置",
-            "把 OCR、辅助提取和飞书凭证放在同一块，方便集中排查。",
+            "",
             self._build_tab_card("接口参数", api_form),
         )
         product_section = self._build_settings_section(
             "商品库",
-            "管理全局商品预设和自定义费用标签，供录单页快速复用。",
+            "",
             self._build_tab_card("全局商品库", product_form, product_button_row),
             self._build_tab_card("自定义费用字段", custom_cost_form),
         )
         mapping_section = self._build_settings_section(
             "店铺映射",
-            "左侧选店铺，右侧集中配置总表信息和字段映射；映射区改成三列缩短页面高度。",
+            "",
             self._build_tab_card("店铺与总表信息", shop_form, shop_button_row),
             self._build_tab_card("字段映射", self.show_enabled_only_checkbox, mapping_grid),
         )
         update_log_section = self._build_settings_section(
             "更新日志",
-            "沉淀每次开发的改动内容，方便后续回看和追踪。",
+            "",
             self._build_update_log_tab(),
         )
 
@@ -485,6 +528,7 @@ class SettingsPage(QWidget):
         for index in range(3):
             self._handle_custom_cost_label_changed(index)
         self._refresh_shop_selector(self.DEFAULT_SELECTED_SHOP)
+        self._refresh_intake_default_shop_selector(self.DEFAULT_SELECTED_SHOP)
 
     def to_payload(self) -> dict:
         return {
@@ -510,6 +554,7 @@ class SettingsPage(QWidget):
             "update_logs": [self._copy_update_log(item) for item in self._update_logs],
             "shops": [{"name": shop["name"]} for shop in self._shops],
             "selected_shop_name": self.shop_selector.currentText().strip() or self.DEFAULT_SELECTED_SHOP,
+            "intake_default_shop_name": self.intake_default_shop_selector.currentText().strip() or self.DEFAULT_SELECTED_SHOP,
         }
 
     def load_payload(self, payload: dict) -> None:
@@ -596,6 +641,11 @@ class SettingsPage(QWidget):
         self._refresh_shop_selector(
             self._clean_text(payload.get("selected_shop_name")) or self.DEFAULT_SELECTED_SHOP
         )
+        self._refresh_intake_default_shop_selector(
+            self._clean_text(payload.get("intake_default_shop_name"))
+            or self._clean_text(payload.get("selected_shop_name"))
+            or self.DEFAULT_SELECTED_SHOP
+        )
         self._refresh_update_log_list()
 
     def _emit_save_requested(self) -> None:
@@ -655,6 +705,7 @@ class SettingsPage(QWidget):
 
         self._shops = self._normalize_shops(self._shops)
         self._refresh_shop_selector(shop_name)
+        self._refresh_intake_default_shop_selector(self.intake_default_shop_selector.currentText().strip() or shop_name)
         self.status_label.setText("已保存店铺")
 
     def _handle_remove_shop(self) -> None:
@@ -664,6 +715,7 @@ class SettingsPage(QWidget):
         self._shops = [shop for shop in self._shops if shop["name"] != selected_name]
         self._shops = self._normalize_shops(self._shops)
         self._refresh_shop_selector()
+        self._refresh_intake_default_shop_selector()
 
     def _handle_check_table_fields(self) -> None:
         self._clear_missing_field_highlight()
@@ -730,8 +782,9 @@ class SettingsPage(QWidget):
         )
         if not template["specification"]:
             return False
+        template_key = self._normalize_specification_key(template["specification"])
         for index, existing in enumerate(self._procurement_templates):
-            if existing["specification"] == template["specification"]:
+            if self._normalize_specification_key(existing["specification"]) == template_key:
                 if existing == template:
                     return False
                 self._procurement_templates[index] = template
@@ -774,6 +827,19 @@ class SettingsPage(QWidget):
         self.shop_selector.blockSignals(False)
         self._load_selected_shop()
         self._update_mapping_visibility()
+
+    def _refresh_intake_default_shop_selector(self, selected_name: str | None = None) -> None:
+        self.intake_default_shop_selector.blockSignals(True)
+        self.intake_default_shop_selector.clear()
+        self.intake_default_shop_selector.addItems([shop["name"] for shop in self._shops])
+        target = selected_name or self.DEFAULT_SELECTED_SHOP
+        if target:
+            index = self.intake_default_shop_selector.findText(target)
+            if index >= 0:
+                self.intake_default_shop_selector.setCurrentIndex(index)
+            elif self.intake_default_shop_selector.count() > 0:
+                self.intake_default_shop_selector.setCurrentIndex(0)
+        self.intake_default_shop_selector.blockSignals(False)
 
     @classmethod
     def _normalize_shops(cls, shops: list[dict[str, str]]) -> list[dict[str, str]]:
@@ -835,6 +901,9 @@ class SettingsPage(QWidget):
     def _update_mapping_visibility(self) -> None:
         enabled_only = self.show_enabled_only_checkbox.isChecked()
         for key, row_widget in self.mapping_row_widgets.items():
+            if key in self.ALWAYS_HIDDEN_FIELD_MAPPING_KEYS:
+                row_widget.setVisible(False)
+                continue
             has_value = bool(self.mapping_edits[key].text().strip())
             row_widget.setVisible((not enabled_only) or has_value)
 
@@ -872,24 +941,18 @@ class SettingsPage(QWidget):
         list_card.setObjectName("HistoryListCard")
         list_layout = QVBoxLayout(list_card)
         list_layout.setContentsMargins(12, 12, 12, 12)
-        list_title = QLabel("开发更新记录")
-        list_title.setObjectName("SectionTitle")
-        list_layout.addWidget(list_title)
         list_layout.addWidget(self.update_log_list, 1)
 
         detail_card = QFrame()
         detail_card.setObjectName("HistoryDetailCard")
         detail_layout = QVBoxLayout(detail_card)
         detail_layout.setContentsMargins(12, 12, 12, 12)
-        detail_title = QLabel("日志详情")
-        detail_title.setObjectName("SectionTitle")
-        detail_layout.addWidget(detail_title)
         detail_layout.addLayout(actions)
         detail_layout.addLayout(detail_form)
 
         content_layout.addWidget(list_card, 2)
         content_layout.addWidget(detail_card, 3)
-        return self._build_tab_card("开发更新日志", content)
+        return self._build_tab_card("", content)
 
     @staticmethod
     def _build_settings_section(title: str, subtitle: str, *widgets: QWidget) -> QScrollArea:
@@ -901,10 +964,11 @@ class SettingsPage(QWidget):
 
         title_label = QLabel(title)
         title_label.setObjectName("SectionTitle")
-        subtitle_label = QLabel(subtitle)
-        subtitle_label.setObjectName("MutedText")
         layout.addWidget(title_label)
-        layout.addWidget(subtitle_label)
+        if subtitle:
+            subtitle_label = QLabel(subtitle)
+            subtitle_label.setObjectName("MutedText")
+            layout.addWidget(subtitle_label)
         for widget in widgets:
             layout.addWidget(widget)
         layout.addStretch(1)
@@ -1089,12 +1153,32 @@ class SettingsPage(QWidget):
     def _normalize_update_log(item: dict[str, object]) -> dict[str, str]:
         created_at = str(item.get("created_at", "")).strip() or _now_timestamp()
         updated_at = str(item.get("updated_at", "")).strip() or created_at
+        module = str(item.get("module", "")).strip()
+        title = str(item.get("title", "")).strip()
+        key = (module, title)
+        known_timestamp = SettingsPage.KNOWN_UPDATE_LOG_TIMESTAMPS.get(key, "")
+        now = datetime.now()
+        created_dt = _parse_timestamp(created_at)
+        updated_dt = _parse_timestamp(updated_at)
+        known_dt = _parse_timestamp(known_timestamp)
+        if known_dt is not None:
+            if created_dt is not None and created_dt > now:
+                created_at = known_timestamp
+                created_dt = known_dt
+            if updated_dt is not None and updated_dt > now:
+                updated_at = known_timestamp
+        elif created_dt is not None and created_dt > now:
+            created_at = now.strftime("%Y-%m-%d %H:%M:%S")
+        if updated_dt is not None and updated_dt > now and not known_dt:
+            updated_at = created_at
+        if not updated_at:
+            updated_at = created_at
         return {
             "id": str(item.get("id", "")).strip() or str(uuid.uuid4()),
             "created_at": created_at,
             "updated_at": updated_at,
-            "module": str(item.get("module", "")).strip(),
-            "title": str(item.get("title", "")).strip(),
+            "module": module,
+            "title": title,
             "content": str(item.get("content", "")).strip(),
         }
 
@@ -1114,9 +1198,10 @@ class SettingsPage(QWidget):
         container = QFrame()
         container.setObjectName("CardFrame")
         layout = QVBoxLayout(container)
-        section_title = QLabel(title)
-        section_title.setObjectName("SectionTitle")
-        layout.addWidget(section_title)
+        if title:
+            section_title = QLabel(title)
+            section_title.setObjectName("SectionTitle")
+            layout.addWidget(section_title)
         for child in layouts:
             if child is None:
                 continue
@@ -1170,3 +1255,8 @@ class SettingsPage(QWidget):
         if value is None:
             return ""
         return str(value).strip()
+
+    @staticmethod
+    def _normalize_specification_key(specification: str) -> str:
+        compact = re.sub(r"\s+", "", str(specification or "").strip())
+        return re.sub(r"(?:[xX×＊*]1)$", "", compact)

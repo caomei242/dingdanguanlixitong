@@ -17,22 +17,40 @@ from strawberry_order_management.ui.widgets.screenshot_input_widget import (
 )
 
 
-def test_intake_page_uses_three_column_workspace_shell(qtbot):
+def test_intake_page_uses_compact_two_column_workspace_shell(qtbot):
     page = IntakePage(use_background_thread=False)
     qtbot.addWidget(page)
 
     assert page.findChild(QFrame, "EntryActionBar") is not None
     assert page.findChild(QWidget, "EntryLeftRail") is not None
     assert page.findChild(QScrollArea, "EntryFormRail") is not None
-    assert page.findChild(QWidget, "EntryRightRail") is not None
     assert page.findChild(QFrame, "EntryCaptureCard") is not None
     assert page.findChild(QFrame, "EntryExtractorInputCard") is not None
     assert page.findChild(QFrame, "EntryExtractorResultCard") is not None
+    assert page.findChild(QWidget, "EntryRightRail") is None
+    assert page.address_widget.input_edit.maximumHeight() <= 180
     assert page.findChild(QScrollArea, "EntryFormRail").horizontalScrollBarPolicy() == Qt.ScrollBarPolicy.ScrollBarAsNeeded
+    assert page.findChild(QScrollArea, "EntryFormRail").viewport().objectName() == "EntryFormViewport"
+
+
+def test_intake_page_hides_helper_copy(qtbot):
+    page = IntakePage(use_background_thread=False)
+    qtbot.addWidget(page)
+
+    texts = [label.text() for label in page.findChildren(QLabel)]
+
+    assert "支持粘贴截图、拖拽图片或选择图片，识别后自动生成订单卡" not in texts
+    assert "编号、状态和金额放在一起，方便快速校对。" not in texts
+    assert "收件人、电话、地址与备注单独收拢。" not in texts
+    assert "三条采购槽位用于入库或补录商品库信息。" not in texts
 
 
 def test_intake_theme_includes_financial_section_card_selector():
     assert "QFrame#FinancialSectionCard" in APP_STYLESHEET
+    assert "QWidget#EntryFormViewport" in APP_STYLESHEET
+    assert "QComboBox QAbstractItemView" in APP_STYLESHEET
+    assert "QScrollBar:horizontal" in APP_STYLESHEET
+    assert "QScrollBar::handle:horizontal" in APP_STYLESHEET
 
 
 def test_intake_page_shows_order_card_after_pipeline_result(qtbot):
@@ -257,7 +275,16 @@ def test_screenshot_input_widget_reads_image_from_clipboard(qtbot):
     assert emitted
     assert emitted[0][0].startswith(b"\x89PNG")
     assert emitted[0][1] == "剪贴板截图"
-    assert widget.status_label.text() == "已读取剪贴板截图"
+    assert widget.status_label.text() == ""
+
+
+def test_screenshot_input_widget_hides_helper_subtitle(qtbot):
+    widget = ScreenshotInputWidget()
+    qtbot.addWidget(widget)
+
+    texts = [label.text() for label in widget.findChildren(QLabel)]
+
+    assert "支持粘贴截图、拖拽图片或选择图片，识别后自动生成订单卡" not in texts
 
 
 def test_intake_page_processes_image_into_order_card_and_address_outputs(qtbot):
@@ -292,6 +319,7 @@ def test_intake_page_processes_image_into_order_card_and_address_outputs(qtbot):
         "何女士15781304332四川省成都市金牛区营门口街道友谊花园9-2304"
     )
     assert page.address_widget.output_two.toPlainText() == "请电话送货上门谢谢【3612】"
+    assert page.address_widget.status_label.text() == ""
 
 
 def test_intake_page_processes_image_in_background_without_blocking(qtbot):
@@ -422,7 +450,7 @@ def test_order_card_autofills_procurement_cost_from_selected_preset(qtbot):
 
     page.order_card_widget.procurement_product_1_combo.setCurrentText("澳洲婴儿水")
 
-    assert page.order_card_widget.procurement_quantity_1_edit.text() == ""
+    assert page.order_card_widget.procurement_quantity_1_edit.text() == "1"
     assert page.order_card_widget.procurement_cost_1_edit.text() == "18.50"
 
 
@@ -616,6 +644,63 @@ def test_order_card_prefills_procurement_items_from_matching_specification_templ
     assert page.order_card_widget.procurement_quantity_1_edit.text() == "2"
     assert page.order_card_widget.procurement_cost_1_edit.text() == "109"
     assert page.order_card_widget.procurement_tracking_number_1_edit.text() == ""
+
+
+def test_order_card_prefills_procurement_items_from_normalized_specification_template(qtbot):
+    page = IntakePage(use_background_thread=False)
+    qtbot.addWidget(page)
+    page.set_product_presets([{"name": "27000-澳洲版-1升装", "default_cost": "109"}])
+    page.set_procurement_templates(
+        [
+            {
+                "specification": "1L/桶*12袋(赵露思同款 澳洲版)",
+                "procurement_items": [
+                    {
+                        "product_name": "27000-澳洲版-1升装",
+                        "quantity": "2",
+                        "cost": "109",
+                    },
+                    {"product_name": "康兴-瓶盖-粉色", "quantity": "1", "cost": "13.8"},
+                    {"product_name": "", "quantity": "1", "cost": ""},
+                ],
+            }
+        ]
+    )
+
+    page.show_order(
+        ParsedOrder(
+            order_id="6952003434324366473",
+            placed_at="2026-04-11 20:57:15",
+            order_status="已发货",
+            product_name="澳大利亚进口婴儿水",
+            specification=" 1L/桶*12袋 (赵露思同款 澳洲版) x1 ",
+            quantity="1",
+            order_amount="405.00",
+            income_amount="162.00",
+            recipient_name="何女士",
+            phone_number="15781304332",
+            code="3612",
+            address="四川省成都市金牛区营门口街道友谊花园9-2304",
+            delivery_note="请电话送货上门谢谢【3612】",
+        )
+    )
+
+    assert page.order_card_widget.procurement_product_1_combo.currentText() == "27000-澳洲版-1升装"
+    assert page.order_card_widget.procurement_quantity_1_edit.text() == "2"
+    assert page.order_card_widget.procurement_cost_1_edit.text() == "109"
+    assert page.order_card_widget.procurement_tracking_number_1_edit.text() == ""
+
+
+def test_order_card_defaults_procurement_quantity_to_one_when_product_is_entered(qtbot):
+    page = IntakePage(use_background_thread=False)
+    qtbot.addWidget(page)
+    page.set_product_presets([{"name": "27000-澳洲版-1升装", "default_cost": "109"}])
+    page.show()
+
+    page.order_card_widget.procurement_product_1_combo.setCurrentText("27000-澳洲版-1升装")
+
+    assert page.order_card_widget.procurement_quantity_1_edit.text() == "1"
+    assert page.order_card_widget.procurement_cost_1_edit.text() == "109"
 
 
 def test_intake_page_warns_when_order_quantity_is_greater_than_one(qtbot, monkeypatch):

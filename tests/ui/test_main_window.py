@@ -3,9 +3,12 @@ from pathlib import Path
 import re
 from typing import Optional
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QFrame, QLabel, QMessageBox, QWidget
 
+from strawberry_order_management.app import build_app
 from strawberry_order_management.config import ConfigStore
+from strawberry_order_management.expenses import ExpenseStore
 from strawberry_order_management.history import HistoryStore
 from strawberry_order_management.models import ParsedOrder, ProcurementItem
 from strawberry_order_management.ui.main_window import MainWindow
@@ -192,25 +195,101 @@ def _assert_rich_history_snapshot(
     assert address_snapshot["output_two"].strip()
 
 
+def test_main_window_uses_custom_app_icon(qtbot, tmp_path):
+    app = build_app()
+    window = MainWindow(
+        config_store=ConfigStore(tmp_path / "config.json"),
+        history_store=HistoryStore(tmp_path / "history.json"),
+    )
+    qtbot.addWidget(window)
+
+    assert app.windowIcon().isNull() is False
+    assert window.windowIcon().isNull() is False
+
+
 def test_main_window_wraps_pages_in_mac_style_shell(qtbot, tmp_path):
     window = MainWindow(config_store=ConfigStore(tmp_path / "config.json"), history_store=HistoryStore(tmp_path / "history.json"))
     qtbot.addWidget(window)
+    window.show()
+    qtbot.waitUntil(lambda: window.nav.height() > 0)
 
     assert window.findChild(QFrame, "WindowShell") is not None
-    assert window.findChild(QFrame, "WindowChromeBar") is not None
-    assert window.findChild(QWidget, "TrafficLights") is not None
+    assert window.findChild(QFrame, "WindowChromeBar") is None
+    assert window.findChild(QWidget, "TrafficLights") is None
     assert window.findChild(QFrame, "WindowSidebar") is not None
     assert window.findChild(QFrame, "WindowContentShell") is not None
-    assert window.nav.count() == 4
+    assert window.nav.count() == 5
     assert [window.nav.item(index).text() for index in range(window.nav.count())] == [
         "订单录入",
         "历史订单",
         "财务报表",
+        "经营开支",
         "设置",
     ]
-    title = window.findChild(QLabel, "WindowChromeTitle")
-    assert title is not None
-    assert title.text() == "草莓订单管理系统"
+    assert window.nav.verticalScrollBarPolicy() == Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+    assert window.nav.horizontalScrollBarPolicy() == Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+    assert window.nav.verticalScrollBar().maximum() == 0
+
+
+def test_main_window_can_prefill_order_expense_from_history(qtbot, tmp_path):
+    history_store = HistoryStore(tmp_path / "history.json")
+    expense_store_path = tmp_path / "expenses.json"
+    row = {
+        "record_id": "history-1",
+        "shop_name": "乐宝零食店",
+        "sync_source": "确认写入飞书",
+        "status": "已写入飞书",
+        "message": "写入成功",
+        "created_at": "2026-04-15T11:30:00",
+        "order_snapshot": {
+            "order_id": "6952003434324366473",
+            "placed_at": "2026-04-11 20:57:15",
+            "platform": "抖店",
+            "order_status": "已发货",
+            "product_name": "澳大利亚进口婴儿水",
+            "specification": "1L/桶*12袋(赵露思同款 澳洲版)",
+            "sku": "27000-澳洲版-1升装",
+            "sku_image_path": "",
+            "quantity": "1",
+            "order_amount": "405.00",
+            "income_amount": "162.00",
+            "recipient_name": "何女士",
+            "phone_number": "15781304332",
+            "code": "3612",
+            "address": "四川省成都市金牛区营门口街道友谊花园9-2304",
+            "delivery_note": "",
+            "procurement_tracking_number": "",
+            "platform_fee_rate": "0.06",
+            "platform_fee_amount": "9.72",
+            "other_cost": "5.00",
+            "procurement_total_cost": "38.00",
+            "gross_profit": "109.28",
+            "custom_cost_labels": ["包装费", "", ""],
+            "custom_cost_values": ["1.00", "", ""],
+            "procurement_items": [],
+        },
+        "address_snapshot": {"output_one": "", "output_two": ""},
+    }
+    saved_row = history_store.append(row)
+
+    window = MainWindow(
+        config_store=ConfigStore(tmp_path / "config.json"),
+        history_store=history_store,
+        expense_store=ExpenseStore(expense_store_path),
+    )
+    qtbot.addWidget(window)
+
+    window._handle_history_expense_request(saved_row["record_id"])
+
+    assert window.nav.currentRow() == 3
+    assert window.stack.currentWidget() is window.expense_page
+    assert window.expense_page._current_scope == "订单级"
+    assert window.expense_page._selected_record_id == ""
+    assert window.expense_page.order_combo.currentData()["order_id"] == "6952003434324366473"
+    assert window.expense_page.shop_combo.currentText() == "乐宝零食店"
+    assert window.expense_page.platform_combo.currentText() == "抖店"
+    assert window.expense_page.amount_edit.text() == ""
+    assert "已从历史订单带入" in window.expense_page.status_label.text()
 
 
 def test_main_window_builds_history_snapshot_with_spec_sku_and_image(qtbot, tmp_path):
@@ -319,6 +398,16 @@ def test_main_window_submits_order_to_total_table_with_shop_field(qtbot, tmp_pat
         item["name"] == "澳洲婴儿水" and item["default_cost"] == "19.00"
         for item in config_store.load()["product_presets"]
     )
+    assert config_store.load()["procurement_templates"] == [
+        {
+            "specification": "1L/桶*12袋(赵露思同款 澳洲版)",
+            "procurement_items": [
+                {"product_name": "澳洲婴儿水", "quantity": "2", "cost": "19.00"},
+                {"product_name": "", "quantity": "", "cost": ""},
+                {"product_name": "", "quantity": "", "cost": ""},
+            ],
+        }
+    ]
 
 
 def test_main_window_records_failure_when_feishu_submit_errors(qtbot, tmp_path, monkeypatch):
@@ -1150,3 +1239,89 @@ def test_main_window_auto_persists_manual_products_when_saving_history(qtbot, tm
         item["name"] == "补录商品" and item["default_cost"] == "7.50"
         for item in config_store.load()["product_presets"]
     )
+
+
+def test_main_window_auto_persists_procurement_template_when_saving_history(qtbot, tmp_path):
+    config_store = ConfigStore(tmp_path / "config.json")
+    history_store = HistoryStore(tmp_path / "history.json")
+    config_store.save(_settings_payload())
+
+    window = MainWindow(config_store=config_store, history_store=history_store)
+    qtbot.addWidget(window)
+
+    window.intake_page.show_order(_sample_order())
+    window.intake_page.shop_selector.setCurrentText("乐宝零食店")
+
+    window.intake_page.save_history_button.click()
+
+    saved_payload = config_store.load()
+    assert saved_payload["procurement_templates"] == [
+        {
+            "specification": "1L/桶*12袋(赵露思同款 澳洲版)",
+            "procurement_items": [
+                {"product_name": "澳洲婴儿水", "quantity": "2", "cost": "19.00"},
+                {"product_name": "", "quantity": "", "cost": ""},
+                {"product_name": "", "quantity": "", "cost": ""},
+            ],
+        }
+    ]
+
+
+def test_main_window_updates_procurement_template_when_history_order_changes(qtbot, tmp_path):
+    config_store = ConfigStore(tmp_path / "config.json")
+    history_store = HistoryStore(tmp_path / "history.json")
+    config_store.save(
+        {
+            **_settings_payload(),
+            "procurement_templates": [
+                {
+                    "specification": "1L/桶*12袋(赵露思同款 澳洲版)",
+                    "procurement_items": [
+                        {"product_name": "旧采购", "quantity": "1", "cost": "8.00"},
+                        {"product_name": "", "quantity": "", "cost": ""},
+                        {"product_name": "", "quantity": "", "cost": ""},
+                    ],
+                }
+            ],
+        }
+    )
+
+    window = MainWindow(config_store=config_store, history_store=history_store)
+    qtbot.addWidget(window)
+
+    order = _sample_order()
+    record = history_store.append(
+        window._build_history_snapshot(
+            {"shop_name": "乐宝零食店", "order": order},
+            "仅存历史",
+            "仅存历史",
+        )
+    )
+
+    window.history_page.load_rows(history_store.list_items())
+    window.history_page.list_widget.setCurrentRow(0)
+
+    window.history_page.procurement_product_1_combo.setEditText("新采购方案")
+    window.history_page.procurement_quantity_1_value.setText("3")
+    window.history_page.procurement_cost_1_value.setText("21.50")
+
+    window._handle_history_save_request(
+        record["record_id"],
+        {
+            "order_snapshot": window.history_page._build_order_snapshot_from_inputs(
+                record["order_snapshot"]
+            )
+        },
+    )
+
+    saved_payload = config_store.load()
+    assert saved_payload["procurement_templates"] == [
+        {
+            "specification": "1L/桶*12袋(赵露思同款 澳洲版)",
+            "procurement_items": [
+                {"product_name": "新采购方案", "quantity": "3", "cost": "21.50"},
+                {"product_name": "", "quantity": "", "cost": ""},
+                {"product_name": "", "quantity": "", "cost": ""},
+            ],
+        }
+    ]

@@ -37,6 +37,7 @@ class OrderCardWidget(QWidget):
 
     def __init__(self) -> None:
         super().__init__()
+        self.setObjectName("OrderCardWorkspace")
         self._product_presets: list[dict[str, str]] = []
         self._procurement_templates: list[dict[str, object]] = []
         self.order_id_edit = self._build_line_edit()
@@ -88,7 +89,6 @@ class OrderCardWidget(QWidget):
         layout.addWidget(
             self._build_section_card(
                 "订单概览",
-                "编号、状态和金额放在一起，方便快速核对。",
                 "OrderSummaryCard",
                 self._build_overview_body(),
             )
@@ -96,7 +96,6 @@ class OrderCardWidget(QWidget):
         layout.addWidget(
             self._build_section_card(
                 "收件信息",
-                "收件人、电话、地址与备注单独收拢。",
                 "OrderShippingCard",
                 self._build_shipping_body(),
             )
@@ -104,7 +103,6 @@ class OrderCardWidget(QWidget):
         layout.addWidget(
             self._build_section_card(
                 "采购信息",
-                "三条采购槽位用于入库或补录商品库信息。",
                 "ProcurementSectionCard",
                 self._build_procurement_body(),
             )
@@ -112,7 +110,6 @@ class OrderCardWidget(QWidget):
         layout.addWidget(
             self._build_section_card(
                 "财务信息",
-                "补平台扣点、自定义成本，并自动计算采购总成本和毛利润。",
                 "FinancialSectionCard",
                 self._build_financial_body(),
             )
@@ -401,10 +398,12 @@ class OrderCardWidget(QWidget):
         self._apply_preset_to_slot(index)
 
     def _apply_preset_to_slot(self, index: int) -> None:
-        combo, _, cost_edit, _, _ = self.procurement_rows[index]
+        combo, quantity_edit, cost_edit, _, _ = self.procurement_rows[index]
         selected_name = combo.currentText().strip()
         if not selected_name:
             return
+        if not quantity_edit.text().strip():
+            self._set_line_edit_text(quantity_edit, "1")
         for item in self._product_presets:
             if item["name"] == selected_name:
                 cost_edit.setText(item["default_cost"])
@@ -495,11 +494,16 @@ class OrderCardWidget(QWidget):
         )
 
     def _find_template_for_specification(self, specification: str) -> dict[str, object] | None:
-        normalized = specification.strip()
+        normalized = self._normalize_specification_key(specification)
         for item in self._procurement_templates:
-            if self._to_text(item.get("specification")).strip() == normalized:
+            if self._normalize_specification_key(self._to_text(item.get("specification"))) == normalized:
                 return item
         return None
+
+    @staticmethod
+    def _normalize_specification_key(specification: str) -> str:
+        compact = re.sub(r"\s+", "", str(specification or "").strip())
+        return re.sub(r"(?:[xX×＊*]1)$", "", compact)
 
     def _procurement_items_from_template(self, template: dict[str, object] | None) -> list[ProcurementItem]:
         if not template:
@@ -584,7 +588,6 @@ class OrderCardWidget(QWidget):
     def _build_section_card(
         self,
         title_text: str,
-        subtitle_text: str,
         object_name: str,
         body_widget: QWidget,
     ) -> QFrame:
@@ -597,10 +600,6 @@ class OrderCardWidget(QWidget):
         title = QLabel(title_text)
         title.setObjectName("SectionTitle")
         layout.addWidget(title)
-
-        subtitle = QLabel(subtitle_text)
-        subtitle.setObjectName("MutedText")
-        layout.addWidget(subtitle)
         layout.addWidget(body_widget)
         return card
 

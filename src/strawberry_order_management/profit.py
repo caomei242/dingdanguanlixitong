@@ -10,6 +10,8 @@ from strawberry_order_management.finance import format_money, parse_decimal
 
 _FIXED_ORDER_STATUS_OPTIONS = ("已发货", "待发货", "已拍单未发货")
 _ORDER_STATUS_ALIASES = {"未发货": "待发货", "已下单未发货": "已拍单未发货"}
+_REFUND_AFTER_SALE_TYPES = {"仅退款", "退货退款", "部分退款"}
+_REFUND_AFTER_SALE_STATUSES = {"已退款", "已退货"}
 
 
 def list_available_months(rows: list[dict[str, Any]]) -> list[str]:
@@ -25,24 +27,32 @@ def build_profit_overview(
     rows: list[dict[str, Any]],
     shop_names: list[str],
     month_key: str | None = None,
+    expense_rows: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     normalized_rows = [_parse_history_row(row) for row in rows]
+    normalized_expenses = [_parse_expense_row(row) for row in (expense_rows or [])]
     available_months = list_available_months(rows)
     selected_month = month_key or (available_months[0] if available_months else "")
     month_rows = [row for row in normalized_rows if row["month_key"] == selected_month]
+    month_expenses = [row for row in normalized_expenses if row["month_key"] == selected_month]
     visible_shop_names = _resolve_visible_shop_names(shop_names, month_rows)
 
     income_total = sum((row["income"] for row in month_rows), Decimal("0"))
     expense_totals = _sum_expense_components(month_rows)
-    expense_total = _expense_total_from_components(expense_totals)
+    extra_expense_totals = _sum_external_expense_components(month_expenses)
+    expense_total = _expense_total_from_components(expense_totals) + _expense_total_from_components(extra_expense_totals)
     gross_profit_total = _sum_gross_profit(month_rows, income_total, expense_total)
     order_count = len(month_rows)
     active_shops = len({row["shop_name"] for row in month_rows if row["shop_name"]})
     daily_reference_key = _resolve_daily_reference_key(month_rows, selected_month)
     daily_rows = [row for row in month_rows if row["date_key"] == daily_reference_key]
+    daily_expenses = [row for row in month_expenses if row["date_key"] == daily_reference_key]
     daily_income_total = sum((row["income"] for row in daily_rows), Decimal("0"))
     daily_expense_totals = _sum_expense_components(daily_rows)
-    daily_expense_total = _expense_total_from_components(daily_expense_totals)
+    daily_extra_expense_totals = _sum_external_expense_components(daily_expenses)
+    daily_expense_total = _expense_total_from_components(daily_expense_totals) + _expense_total_from_components(
+        daily_extra_expense_totals
+    )
     daily_gross_profit_total = _sum_gross_profit(daily_rows, daily_income_total, daily_expense_total)
     daily_order_count = len(daily_rows)
     daily_active_shops = len({row["shop_name"] for row in daily_rows if row["shop_name"]})
@@ -51,24 +61,32 @@ def build_profit_overview(
     previous_year_key = _shift_year_key(selected_month, -1)
     previous_month_rows = [row for row in normalized_rows if row["month_key"] == previous_month_key]
     previous_year_rows = [row for row in normalized_rows if row["month_key"] == previous_year_key]
+    previous_month_expenses = [row for row in normalized_expenses if row["month_key"] == previous_month_key]
+    previous_year_expenses = [row for row in normalized_expenses if row["month_key"] == previous_year_key]
 
     previous_month_profit = _sum_gross_profit(
         previous_month_rows,
         sum((row["income"] for row in previous_month_rows), Decimal("0")),
-        _expense_total_from_components(_sum_expense_components(previous_month_rows)),
+        _expense_total_from_components(_sum_expense_components(previous_month_rows))
+        + _expense_total_from_components(_sum_external_expense_components(previous_month_expenses)),
     )
     previous_year_profit = _sum_gross_profit(
         previous_year_rows,
         sum((row["income"] for row in previous_year_rows), Decimal("0")),
-        _expense_total_from_components(_sum_expense_components(previous_year_rows)),
+        _expense_total_from_components(_sum_expense_components(previous_year_rows))
+        + _expense_total_from_components(_sum_external_expense_components(previous_year_expenses)),
     )
 
     rankings = []
     for shop_name in visible_shop_names:
         shop_rows = [row for row in month_rows if row["shop_name"] == shop_name]
+        shop_expenses = _filter_shop_expenses(month_expenses, shop_name)
+        if not shop_rows and not shop_expenses:
+            continue
         shop_income = sum((row["income"] for row in shop_rows), Decimal("0"))
         shop_components = _sum_expense_components(shop_rows)
-        shop_expense = _expense_total_from_components(shop_components)
+        shop_extra_expenses = _sum_external_expense_components(shop_expenses, include_project=False)
+        shop_expense = _expense_total_from_components(shop_components) + _expense_total_from_components(shop_extra_expenses)
         shop_profit = _sum_gross_profit(shop_rows, shop_income, shop_expense)
         rankings.append(
             {
@@ -86,6 +104,16 @@ def build_profit_overview(
         {"label": "采购总成本", "value": format_money(expense_totals["procurement_total_cost"])},
         {"label": "其他成本", "value": format_money(expense_totals["other_cost"] + expense_totals["custom_cost"])},
     ]
+    if extra_expense_totals["order_extra_expense"] != Decimal("0"):
+        expense_breakdown.append({"label": "订单额外开支", "value": format_money(extra_expense_totals["order_extra_expense"])})
+    if extra_expense_totals["store_operating_expense"] != Decimal("0"):
+        expense_breakdown.append(
+            {"label": "店铺经营开支", "value": format_money(extra_expense_totals["store_operating_expense"])}
+        )
+    if extra_expense_totals["project_operating_expense"] != Decimal("0"):
+        expense_breakdown.append(
+            {"label": "项目经营开支", "value": format_money(extra_expense_totals["project_operating_expense"])}
+        )
 
     status_counts = {status: 0 for status in _FIXED_ORDER_STATUS_OPTIONS}
     for row in month_rows:
@@ -116,9 +144,9 @@ def build_profit_overview(
             "yoy_gross_profit": _format_change_percent(gross_profit_total, previous_year_profit),
         },
         "trend_series": {
-            "income": _build_daily_series(month_rows, selected_month, "income"),
-            "expense": _build_daily_series(month_rows, selected_month, "expense"),
-            "gross_profit": _build_daily_series(month_rows, selected_month, "gross_profit"),
+            "income": _build_daily_series(month_rows, month_expenses, selected_month, "income"),
+            "expense": _build_daily_series(month_rows, month_expenses, selected_month, "expense"),
+            "gross_profit": _build_daily_series(month_rows, month_expenses, selected_month, "gross_profit"),
         },
         "shop_rankings": rankings,
         "expense_breakdown": expense_breakdown,
@@ -133,8 +161,10 @@ def build_daily_profit_sections(
     shop_filter: str = "",
     platform_filter: str = "",
     status_filter: str = "",
+    expense_rows: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     normalized_rows = [_parse_history_row(row) for row in rows]
+    normalized_expenses = [_parse_expense_row(row) for row in (expense_rows or [])]
     available_months = list_available_months(rows)
     selected_month = month_key or (available_months[0] if available_months else "")
 
@@ -150,6 +180,13 @@ def build_daily_profit_sections(
             or row["order_status"] == _normalize_status(status_filter)
         )
     ]
+    filtered_expenses = [
+        row
+        for row in normalized_expenses
+        if row["month_key"] == selected_month
+        and (not shop_filter or row["shop_name"] in {"", shop_filter})
+        and (not platform_filter or platform_filter == "全部平台" or not row["platform"] or row["platform"] == platform_filter)
+    ]
 
     if shop_filter:
         shops_to_render = [shop_filter]
@@ -161,14 +198,18 @@ def build_daily_profit_sections(
         daily_groups[row["date_key"]].append(row)
 
     sections = []
-    for date_key in sorted(daily_groups.keys(), reverse=True):
+    section_dates = _resolve_daily_section_dates(filtered_rows, selected_month)
+    for date_key in section_dates:
         day_rows = daily_groups[date_key]
+        day_expenses = [row for row in filtered_expenses if row["date_key"] == date_key]
         shop_sections = []
         for shop_name in shops_to_render:
             shop_rows = [row for row in day_rows if row["shop_name"] == shop_name]
+            shop_expenses = _filter_shop_expenses(day_expenses, shop_name)
             shop_income = sum((row["income"] for row in shop_rows), Decimal("0"))
             shop_components = _sum_expense_components(shop_rows)
-            shop_expense = _expense_total_from_components(shop_components)
+            shop_extra_expenses = _sum_external_expense_components(shop_expenses, include_project=False)
+            shop_expense = _expense_total_from_components(shop_components) + _expense_total_from_components(shop_extra_expenses)
             shop_profit = _sum_gross_profit(shop_rows, shop_income, shop_expense)
             income_breakdown = [
                 {
@@ -194,6 +235,14 @@ def build_daily_profit_sections(
                         "value": format_money(shop_components["other_cost"] + shop_components["custom_cost"]),
                     }
                 )
+            if shop_extra_expenses["order_extra_expense"] != Decimal("0"):
+                expense_breakdown.append(
+                    {"label": "订单额外开支", "value": format_money(shop_extra_expenses["order_extra_expense"])}
+                )
+            if shop_extra_expenses["store_operating_expense"] != Decimal("0"):
+                expense_breakdown.append(
+                    {"label": "店铺经营开支", "value": format_money(shop_extra_expenses["store_operating_expense"])}
+                )
             shop_sections.append(
                 {
                     "shop_name": shop_name,
@@ -211,10 +260,26 @@ def build_daily_profit_sections(
             {
                 "date": date_key,
                 "order_count": len(day_rows),
+                "project_expense_total": format_money(
+                    _sum_external_expense_components(day_expenses)["project_operating_expense"]
+                ),
                 "shops": shop_sections,
             }
         )
     return sections
+
+
+def _resolve_daily_section_dates(rows: list[dict[str, Any]], selected_month: str) -> list[str]:
+    date_keys = {row["date_key"] for row in rows if row["date_key"]}
+    if not selected_month:
+        return sorted(date_keys, reverse=True)
+
+    today_key = datetime.now().strftime("%Y-%m-%d")
+    today_month = today_key[:7]
+    if selected_month == today_month:
+        date_keys.add(today_key)
+
+    return sorted(date_keys, reverse=True)
 
 
 def _parse_history_row(row: dict[str, Any]) -> dict[str, Any]:
@@ -227,13 +292,14 @@ def _parse_history_row(row: dict[str, Any]) -> dict[str, Any]:
     custom_cost_labels = snapshot.get("custom_cost_labels") or []
     if not isinstance(custom_cost_labels, (list, tuple)):
         custom_cost_labels = []
+    income_amount = _resolve_effective_income(snapshot)
     return {
         "record_id": str(row.get("record_id", "")).strip(),
         "shop_name": str(row.get("shop_name", "")).strip(),
         "order_id": str(snapshot.get("order_id", "")).strip(),
         "platform": str(snapshot.get("platform", "")).strip() or "抖店",
         "order_status": _normalize_status(str(snapshot.get("order_status", "")).strip()),
-        "income": parse_decimal(snapshot.get("income_amount")),
+        "income": income_amount,
         "platform_fee_amount": parse_decimal(snapshot.get("platform_fee_amount")),
         "procurement_total_cost": parse_decimal(snapshot.get("procurement_total_cost")),
         "other_cost": parse_decimal(snapshot.get("other_cost")),
@@ -243,6 +309,21 @@ def _parse_history_row(row: dict[str, Any]) -> dict[str, Any]:
         "month_key": dt.strftime("%Y-%m") if dt is not None else "",
         "date_key": dt.strftime("%Y-%m-%d") if dt is not None else "",
     }
+
+
+def _resolve_effective_income(snapshot: dict[str, Any]) -> Decimal:
+    base_income_value = str(snapshot.get("after_sale_base_income", "") or "").strip()
+    if base_income_value:
+        return parse_decimal(snapshot.get("income_amount"))
+    income_amount = parse_decimal(snapshot.get("income_amount"))
+    after_sale_type = str(snapshot.get("after_sale_type", "") or "").strip()
+    after_sale_status = str(snapshot.get("after_sale_status", "") or "").strip()
+    if (
+        after_sale_type in _REFUND_AFTER_SALE_TYPES
+        and after_sale_status in _REFUND_AFTER_SALE_STATUSES
+    ):
+        return max(income_amount - parse_decimal(snapshot.get("after_sale_amount")), Decimal("0"))
+    return income_amount
 
 
 def _parse_datetime(value: str) -> datetime | None:
@@ -285,6 +366,27 @@ def _sum_expense_components(rows: list[dict[str, Any]]) -> dict[str, Decimal]:
     return totals
 
 
+def _sum_external_expense_components(
+    rows: list[dict[str, Any]],
+    *,
+    include_project: bool = True,
+) -> dict[str, Decimal]:
+    totals = {
+        "order_extra_expense": Decimal("0"),
+        "store_operating_expense": Decimal("0"),
+        "project_operating_expense": Decimal("0"),
+    }
+    for row in rows:
+        amount = row["amount"]
+        if row["scope_type"] == "订单级":
+            totals["order_extra_expense"] += amount
+        elif row["scope_type"] == "店铺级":
+            totals["store_operating_expense"] += amount
+        elif include_project and row["scope_type"] == "项目级":
+            totals["project_operating_expense"] += amount
+    return totals
+
+
 def _expense_total_from_components(components: dict[str, Decimal]) -> Decimal:
     return sum(components.values(), Decimal("0"))
 
@@ -292,9 +394,6 @@ def _expense_total_from_components(components: dict[str, Decimal]) -> Decimal:
 def _sum_gross_profit(rows: list[dict[str, Any]], income_total: Decimal, expense_total: Decimal) -> Decimal:
     if not rows:
         return Decimal("0")
-    explicit_profit = sum((row["gross_profit"] for row in rows), Decimal("0"))
-    if explicit_profit != Decimal("0"):
-        return explicit_profit
     return income_total - expense_total
 
 
@@ -323,14 +422,16 @@ def _resolve_visible_shop_names(shop_names: list[str], rows: list[dict[str, Any]
 
 
 def _resolve_daily_reference_key(rows: list[dict[str, Any]], selected_month: str) -> str:
-    if not rows or not selected_month:
+    if not selected_month:
+        return ""
+    today_key = datetime.now().strftime("%Y-%m-%d")
+    if today_key.startswith(f"{selected_month}-"):
+        return today_key
+    if not rows:
         return ""
     available_dates = sorted({row["date_key"] for row in rows if row["date_key"]})
     if not available_dates:
         return ""
-    today_key = datetime.now().strftime("%Y-%m-%d")
-    if today_key.startswith(f"{selected_month}-") and today_key in available_dates:
-        return today_key
     return available_dates[-1]
 
 
@@ -354,6 +455,7 @@ def _shift_year_key(month_key: str, delta_years: int) -> str:
 
 def _build_daily_series(
     rows: list[dict[str, Any]],
+    expense_rows: list[dict[str, Any]],
     month_key: str,
     metric: str,
 ) -> list[dict[str, Any]]:
@@ -396,6 +498,14 @@ def _build_daily_series(
             )
         else:
             raise ValueError(f"unsupported metric: {metric}")
+    if metric in {"expense", "gross_profit"}:
+        external_by_date = _group_external_expenses_by_date(expense_rows)
+        for date_key, components in external_by_date.items():
+            extra_total = _expense_total_from_components(components)
+            if metric == "expense":
+                value_by_date[date_key] += extra_total
+            else:
+                value_by_date[date_key] -= extra_total
     points: list[dict[str, Any]] = []
     for day in range(1, last_day + 1):
         date_key = f"{month_key}-{day:02d}"
@@ -409,3 +519,50 @@ def _build_daily_series(
             }
         )
     return points
+
+
+def _group_external_expenses_by_date(rows: list[dict[str, Any]]) -> dict[str, dict[str, Decimal]]:
+    grouped: dict[str, dict[str, Decimal]] = defaultdict(
+        lambda: {
+            "order_extra_expense": Decimal("0"),
+            "store_operating_expense": Decimal("0"),
+            "project_operating_expense": Decimal("0"),
+        }
+    )
+    for row in rows:
+        if not row["date_key"]:
+            continue
+        bucket = grouped[row["date_key"]]
+        if row["scope_type"] == "订单级":
+            bucket["order_extra_expense"] += row["amount"]
+        elif row["scope_type"] == "店铺级":
+            bucket["store_operating_expense"] += row["amount"]
+        elif row["scope_type"] == "项目级":
+            bucket["project_operating_expense"] += row["amount"]
+    return grouped
+
+
+def _filter_shop_expenses(rows: list[dict[str, Any]], shop_name: str) -> list[dict[str, Any]]:
+    return [
+        row
+        for row in rows
+        if row["scope_type"] != "项目级" and row["shop_name"] == shop_name
+    ]
+
+
+def _parse_expense_row(row: dict[str, Any]) -> dict[str, Any]:
+    expense_date = str(row.get("expense_date", "")).strip()
+    dt = _parse_datetime(expense_date)
+    return {
+        "record_id": str(row.get("record_id", "")).strip(),
+        "expense_date": expense_date,
+        "date_key": dt.strftime("%Y-%m-%d") if dt is not None else "",
+        "month_key": dt.strftime("%Y-%m") if dt is not None else "",
+        "scope_type": str(row.get("scope_type", "")).strip(),
+        "shop_name": str(row.get("shop_name", "")).strip(),
+        "order_id": str(row.get("order_id", "")).strip(),
+        "platform": str(row.get("platform", "")).strip(),
+        "category": str(row.get("category", "")).strip(),
+        "amount": parse_decimal(row.get("amount")),
+        "remark": str(row.get("remark", "")).strip(),
+    }

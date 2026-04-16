@@ -1,3 +1,5 @@
+from datetime import date, timedelta
+
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QFrame, QScrollArea, QWidget
 
@@ -80,7 +82,6 @@ def test_history_page_loads_legacy_flat_rows(qtbot):
 
     assert page.list_widget.count() == 1
     assert page.detail_title_label.text() == "草莓店"
-    assert page.detail_subtitle_label.text() == "仅存历史 · 已写入飞书"
     assert page.order_id_value.toPlainText() == "6952003434324366473"
     assert page.recipient_name_value.toPlainText() == "何女士"
     assert page.address_output_one.toPlainText() == (
@@ -121,7 +122,6 @@ def test_history_page_renders_list_and_loads_first_then_current_item(qtbot):
     assert page.list_widget.count() == 2
     assert page.list_widget.currentRow() == 0
     assert page.detail_title_label.text() == "乐宝零食店"
-    assert page.detail_subtitle_label.text() == "确认写入飞书 · 已写入飞书"
     assert page.order_id_value.toPlainText() == "6952003434324366473"
     assert page.recipient_name_value.toPlainText() == "何女士"
     assert page.address_output_one.toPlainText() == "何女士15781304332四川省成都市"
@@ -130,7 +130,6 @@ def test_history_page_renders_list_and_loads_first_then_current_item(qtbot):
     page.list_widget.setCurrentRow(1)
 
     assert page.detail_title_label.text() == "欢宝零食店"
-    assert page.detail_subtitle_label.text() == "仅存历史 · 写入失败"
     assert page.order_id_value.toPlainText() == "6952003434324366111"
     assert page.recipient_name_value.toPlainText() == "田宝山"
     assert page.address_output_one.toPlainText() == "田宝山15784081541山东省德州市"
@@ -141,8 +140,44 @@ def test_history_page_renders_list_and_loads_first_then_current_item(qtbot):
     assert page.header_actions_widget.isHidden() is False
     assert page.left_column_widget.layout().count() == 1
     assert page.detail_summary_card.isHidden() is False
+    assert page.summary_recipient_label.text() == "收货人"
+    assert page.summary_recipient_value.text() == "田宝山"
+    assert page.summary_income_label.text() == "收入"
+    assert page.summary_income_value.text() == "162.00"
+    assert page.summary_placed_at_label.text() == "下单时间"
+    assert page.summary_placed_at_value.text() == "2026-04-11 20:57:15"
+    assert page.summary_status_label.text() == "订单状态"
+    assert page.summary_status_value.currentText() == "已发货"
     assert page.order_id_value.minimumHeight() <= 40
     assert page.address_value.minimumHeight() <= 60
+
+
+def test_history_page_summary_status_combo_stays_in_sync_with_detail_status(qtbot):
+    page = HistoryPage()
+    qtbot.addWidget(page)
+    page.load_rows(
+        [
+            _row(
+                "record-1",
+                "乐宝零食店",
+                "确认写入飞书",
+                "已写入飞书",
+                "6952003434324366473",
+                "何女士",
+                "何女士15781304332四川省成都市",
+                "请电话送货上门谢谢【3612】",
+            )
+        ]
+    )
+
+    assert page.summary_status_value.currentText() == "已发货"
+    assert page.order_status_value.currentText() == "已发货"
+
+    page.summary_status_value.setCurrentText("待发货")
+    assert page.order_status_value.currentText() == "待发货"
+
+    page.order_status_value.setCurrentText("已拍单未发货")
+    assert page.summary_status_value.currentText() == "已拍单未发货"
 
 
 def test_history_page_uses_master_detail_workspace_shell(qtbot):
@@ -220,7 +255,6 @@ def test_history_page_keeps_selected_record_when_rows_refresh(qtbot):
 
     assert page.list_widget.currentRow() == 1
     assert page.detail_title_label.text() == "欢宝零食店"
-    assert page.detail_subtitle_label.text() == "仅存历史 · 写入失败"
 
 
 def test_history_page_falls_back_to_adjacent_record_when_selected_row_is_deleted(qtbot):
@@ -267,7 +301,6 @@ def test_history_page_falls_back_to_adjacent_record_when_selected_row_is_deleted
 
     assert page.list_widget.currentRow() == 1
     assert page.detail_title_label.text() == "灵宝零食店"
-    assert page.detail_subtitle_label.text() == "仅存历史 · 已写入飞书"
 
 
 def test_history_page_emits_record_ids_for_actions(qtbot):
@@ -299,16 +332,19 @@ def test_history_page_emits_record_ids_for_actions(qtbot):
     )
     page.list_widget.setCurrentRow(1)
 
-    emitted = {"delete": [], "save": []}
+    emitted = {"delete": [], "save": [], "expense": []}
     page.delete_requested.connect(emitted["delete"].append)
     page.save_requested.connect(lambda record_id, patch: emitted["save"].append(record_id))
+    page.expense_requested.connect(emitted["expense"].append)
 
     page.delete_button.click()
     page.save_button.click()
+    page.expense_button.click()
 
     assert emitted == {
         "delete": ["record-2"],
         "save": ["record-2"],
+        "expense": ["record-2"],
     }
 
 
@@ -345,6 +381,117 @@ def test_history_page_loads_and_saves_financial_fields(qtbot):
     assert emitted[0][1]["order_snapshot"]["platform_fee_amount"] == "19.44"
     assert emitted[0][1]["order_snapshot"]["gross_profit"] == "98.56"
     assert emitted[0][1]["order_snapshot"]["custom_cost_values"] == ["1.00", "", ""]
+
+
+def test_history_page_saves_after_sale_refund_and_recalculates_income_and_profit(qtbot):
+    page = HistoryPage()
+    qtbot.addWidget(page)
+    rows = [
+        _row(
+            "record-1",
+            "乐宝零食店",
+            "确认写入飞书",
+            "已写入飞书",
+            "6952003434324366473",
+            "何女士",
+            "何女士15781304332四川省成都市",
+            "请电话送货上门谢谢【3612】",
+        )
+    ]
+
+    page.load_rows(rows)
+    emitted = []
+    page.save_requested.connect(lambda record_id, patch: emitted.append((record_id, patch)))
+
+    page.after_sale_type_value.setCurrentText("仅退款")
+    page.after_sale_status_value.setCurrentText("已退款")
+    page.after_sale_amount_value.setText("10")
+    page.after_sale_date_value.setText("2026-04-16")
+    page.after_sale_goods_returned_value.setCurrentText("是")
+    page.after_sale_resellable_value.setCurrentText("否")
+    page.after_sale_note_value.setPlainText("客户退货退款 10 元")
+    page.save_button.click()
+
+    snapshot = emitted[0][1]["order_snapshot"]
+    assert snapshot["after_sale_type"] == "仅退款"
+    assert snapshot["after_sale_status"] == "已退款"
+    assert snapshot["after_sale_amount"] == "10"
+    assert snapshot["after_sale_date"] == "2026-04-16"
+    assert snapshot["after_sale_goods_returned"] == "是"
+    assert snapshot["after_sale_resellable"] == "否"
+    assert snapshot["after_sale_note"] == "客户退货退款 10 元"
+    assert snapshot["after_sale_base_income"] == "162.00"
+    assert snapshot["income_amount"] == "152.00"
+    assert snapshot["platform_fee_amount"] == "15.20"
+    assert snapshot["gross_profit"] == "92.80"
+
+
+def test_history_page_auto_fills_full_return_refund_and_zeroes_procurement_cost(qtbot):
+    page = HistoryPage()
+    qtbot.addWidget(page)
+    rows = [
+        _row(
+            "record-1",
+            "乐宝零食店",
+            "确认写入飞书",
+            "已写入飞书",
+            "6952003434324366473",
+            "何女士",
+            "何女士15781304332四川省成都市",
+            "请电话送货上门谢谢【3612】",
+        )
+    ]
+
+    page.load_rows(rows)
+
+    page.after_sale_type_value.setCurrentText("退货退款")
+
+    assert page.after_sale_status_value.currentText() == "已退货"
+    assert page.after_sale_amount_value.text() == "162.00"
+    assert page.after_sale_goods_returned_value.currentText() == "是"
+    assert page.procurement_total_cost_value.text() == "0.00"
+    assert page.platform_fee_amount_value.text() == "0.00"
+    assert page.gross_profit_value.text() == "-6.00"
+
+    emitted = []
+    page.save_requested.connect(lambda record_id, patch: emitted.append((record_id, patch)))
+    page.save_button.click()
+
+    snapshot = emitted[0][1]["order_snapshot"]
+    assert snapshot["after_sale_type"] == "退货退款"
+    assert snapshot["after_sale_status"] == "已退货"
+    assert snapshot["after_sale_amount"] == "162.00"
+    assert snapshot["after_sale_goods_returned"] == "是"
+    assert snapshot["income_amount"] == "0.00"
+    assert snapshot["platform_fee_amount"] == "0.00"
+    assert snapshot["procurement_total_cost"] == "0.00"
+    assert snapshot["gross_profit"] == "-6.00"
+
+
+def test_history_page_keeps_procurement_cost_when_full_return_refund_goods_not_returned(qtbot):
+    page = HistoryPage()
+    qtbot.addWidget(page)
+    rows = [
+        _row(
+            "record-1",
+            "乐宝零食店",
+            "确认写入飞书",
+            "已写入飞书",
+            "6952003434324366473",
+            "何女士",
+            "何女士15781304332四川省成都市",
+            "请电话送货上门谢谢【3612】",
+        )
+    ]
+
+    page.load_rows(rows)
+    page.after_sale_type_value.setCurrentText("退货退款")
+    page.after_sale_goods_returned_value.setCurrentText("否")
+
+    assert page.after_sale_goods_returned_value.currentText() == "否"
+    assert page.procurement_total_cost_value.text() == "38.00"
+    assert page.platform_fee_amount_value.text() == "0.00"
+    assert page.gross_profit_value.text() == "-44.00"
 
 
 def test_history_page_treats_decimal_fee_rate_as_direct_multiplier(qtbot):
@@ -468,6 +615,11 @@ def test_history_page_save_button_stays_near_detail_header(qtbot):
     assert page.left_column_widget.layout().count() == 1
     assert page.save_button.text() == "保存修改并重新写入飞书"
     assert page.resubmit_button.isHidden() is True
+    sticky_bar = page.findChild(QFrame, "HistoryStickyActionBar")
+    detail_scroll = page.findChild(QScrollArea, "HistoryDetailScroll")
+    assert sticky_bar is not None
+    assert detail_scroll is not None
+    assert sticky_bar.parent() is not detail_scroll.widget()
 
 
 def test_history_page_filters_by_quick_range_shop_status_and_specific_date(qtbot):
@@ -495,9 +647,12 @@ def test_history_page_filters_by_quick_range_shop_status_and_specific_date(qtbot
             "请放门口",
         ),
     ]
-    rows[0]["order_snapshot"]["placed_at"] = "2026-04-14 09:00:00"
+    today = date.today()
+    yesterday = today - timedelta(days=1)
+
+    rows[0]["order_snapshot"]["placed_at"] = f"{today.isoformat()} 09:00:00"
     rows[0]["order_snapshot"]["order_status"] = "已发货"
-    rows[1]["order_snapshot"]["placed_at"] = "2026-04-13 10:30:00"
+    rows[1]["order_snapshot"]["placed_at"] = f"{yesterday.isoformat()} 10:30:00"
     rows[1]["order_snapshot"]["order_status"] = "待发货"
 
     page.load_rows(rows)
@@ -512,7 +667,7 @@ def test_history_page_filters_by_quick_range_shop_status_and_specific_date(qtbot
     assert page.list_widget.count() == 0
 
     page.quick_filter_buttons["全部"].click()
-    page.date_filter_edit.setDate(page.date_filter_edit.date().fromString("2026-04-13", "yyyy-MM-dd"))
+    page.date_filter_edit.setDate(page.date_filter_edit.date().fromString(yesterday.isoformat(), "yyyy-MM-dd"))
     page.shop_filter_combo.setCurrentText("欢宝零食店")
     page.status_filter_combo.setCurrentText("待发货")
     page.apply_filters_button.click()

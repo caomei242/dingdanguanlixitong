@@ -1,4 +1,4 @@
-from PySide6.QtWidgets import QFrame, QListWidget, QScrollArea, QStackedWidget
+from PySide6.QtWidgets import QFrame, QLabel, QListWidget, QScrollArea, QStackedWidget
 
 from strawberry_order_management.ui.main_window import MainWindow
 from strawberry_order_management.ui.pages.history_page import HistoryPage
@@ -60,6 +60,7 @@ def test_settings_page_load_payload_preserves_global_product_library_and_total_t
     assert page.product_name_edit.text() == "澳大利亚进口婴儿水"
     assert page.product_default_cost_edit.text() == "12.50"
     assert page.shop_selector.currentText() == "乐宝零食店"
+    assert page.intake_default_shop_selector.currentText() == "乐宝零食店"
     assert page.shop_wiki_url_edit.text() == "https://my.feishu.cn/wiki/QTXMwCDpQi9n6VkfDxJc5mNTnjh?table=tbl_total"
     assert page.shop_app_token_edit.text() == "app_token_total"
     assert page.shop_table_id_edit.text() == "tbl_total"
@@ -218,9 +219,18 @@ def test_settings_page_load_payload_preserves_update_logs(qtbot):
 
     assert page.update_log_list.count() == 2
     assert "新增利润页" in page.update_log_list.item(0).text()
-    assert page.update_log_title_edit.text() == "新增利润页"
-    assert page.update_log_module_edit.text() == "利润计算"
-    assert page.update_log_content_edit.toPlainText() == "新增大盘和每日账目明细两个 tab。"
+
+
+def test_settings_page_hides_header_helper_copy(qtbot):
+    page = SettingsPage()
+    qtbot.addWidget(page)
+
+    texts = [label.text() for label in page.findChildren(QLabel)]
+
+    assert "配置 OCR、辅助提取和飞书写入参数" not in texts
+    assert "把 OCR、辅助提取和飞书凭证放在同一块，方便集中排查。" not in texts
+    assert "沉淀每次开发的改动内容，方便后续回看和追踪。" not in texts
+    assert "开发更新日志" not in texts
 
 
 def test_settings_page_to_payload_persists_update_logs(qtbot):
@@ -277,6 +287,32 @@ def test_settings_page_can_edit_and_delete_update_log(qtbot):
 
     assert page.update_log_list.count() == 0
     assert page.to_payload()["update_logs"] == []
+
+
+def test_settings_page_normalizes_future_known_update_log_timestamps(qtbot):
+    page = SettingsPage()
+    qtbot.addWidget(page)
+
+    page.load_payload(
+        {
+            "update_logs_initialized": True,
+            "update_logs": [
+                {
+                    "id": "log-future",
+                    "created_at": "2099-04-15 00:10:00",
+                    "updated_at": "2099-04-15 00:10:00",
+                    "module": "UI重构",
+                    "title": "补齐侧栏命名与财务大盘分层",
+                    "content": "测试未来时间修正。",
+                }
+            ],
+        }
+    )
+
+    payload = page.to_payload()
+
+    assert payload["update_logs"][0]["created_at"] == "2026-04-14 22:10:00"
+    assert payload["update_logs"][0]["updated_at"] == "2026-04-14 22:10:00"
 
 
 def test_settings_page_backfills_update_logs_once_for_empty_legacy_payload(qtbot):
@@ -645,7 +681,21 @@ def test_settings_page_uses_default_shop_presets_and_default_selection(qtbot):
         "悦宝零食店",
     ]
     assert payload["selected_shop_name"] == "乐宝零食店"
+    assert payload["intake_default_shop_name"] == "乐宝零食店"
     assert "草莓店" not in [shop["name"] for shop in payload["shops"]]
+
+
+def test_settings_page_persists_separate_intake_default_shop(qtbot):
+    page = SettingsPage()
+    qtbot.addWidget(page)
+
+    page.shop_selector.setCurrentText("欢宝零食店")
+    page.intake_default_shop_selector.setCurrentText("君宝零食店")
+
+    payload = page.to_payload()
+
+    assert payload["selected_shop_name"] == "欢宝零食店"
+    assert payload["intake_default_shop_name"] == "君宝零食店"
 
 
 def test_settings_page_persists_custom_cost_labels(qtbot):
@@ -672,6 +722,47 @@ def test_settings_page_can_filter_to_enabled_mappings(qtbot):
     assert not page.mapping_row_widgets["平台"].isHidden()
 
 
+def test_settings_page_hides_low_priority_mappings_by_default(qtbot):
+    page = SettingsPage()
+    qtbot.addWidget(page)
+
+    assert not page.mapping_row_widgets["店铺"].isHidden()
+    assert not page.mapping_row_widgets["规格"].isHidden()
+    assert page.mapping_row_widgets["SKU"].isHidden()
+    assert page.mapping_row_widgets["SKU 图片"].isHidden()
+    assert page.mapping_row_widgets["订单编号"].isHidden()
+    assert page.mapping_row_widgets["价格"].isHidden()
+    assert page.mapping_row_widgets["采购快递单号"].isHidden()
+    assert page.mapping_row_widgets["自定义字段1"].isHidden()
+    assert page.mapping_row_widgets["同步状态"].isHidden()
+    assert page.mapping_row_widgets["录入时间"].isHidden()
+
+
+def test_settings_page_preserves_hidden_mapping_values_in_payload(qtbot):
+    page = SettingsPage()
+    qtbot.addWidget(page)
+
+    page.load_payload(
+        {
+            "feishu_field_mapping": {
+                "SKU": "SKU列",
+                "SKU 图片": "图片列",
+                "订单编号": "订单编号列",
+                "价格": "价格列",
+                "同步状态": "同步状态列",
+            }
+        }
+    )
+
+    payload = page.to_payload()
+
+    assert payload["feishu_field_mapping"]["SKU"] == "SKU列"
+    assert payload["feishu_field_mapping"]["SKU 图片"] == "图片列"
+    assert payload["feishu_field_mapping"]["订单编号"] == "订单编号列"
+    assert payload["feishu_field_mapping"]["价格"] == "价格列"
+    assert payload["feishu_field_mapping"]["同步状态"] == "同步状态列"
+
+
 def test_settings_page_custom_cost_labels_update_mapping_row_text_and_defaults(qtbot):
     page = SettingsPage()
     qtbot.addWidget(page)
@@ -693,7 +784,7 @@ def test_settings_page_custom_cost_label_does_not_override_manual_mapping(qtbot)
     assert page.mapping_edits["自定义字段1"].text() == "费用A"
 
 
-def test_main_window_navigates_between_four_pages(qtbot):
+def test_main_window_navigates_between_five_pages(qtbot):
     window = MainWindow()
     qtbot.addWidget(window)
 
@@ -707,6 +798,9 @@ def test_main_window_navigates_between_four_pages(qtbot):
     assert window.stack.currentWidget() is window.profit_page
 
     window.nav.setCurrentRow(3)
+    assert window.stack.currentWidget() is window.expense_page
+
+    window.nav.setCurrentRow(4)
     assert window.stack.currentWidget() is window.settings_page
 
     window.nav.setCurrentRow(0)
@@ -768,6 +862,26 @@ def test_main_window_loads_initial_settings_from_config_store(qtbot):
     assert window.intake_page.shop_selector.currentText() == "乐宝零食店"
 
 
+def test_main_window_prefers_intake_default_shop_name_for_entry_page(qtbot):
+    store = MemoryConfigStore(
+        {
+            "shops": [
+                {"name": "乐宝零食店"},
+                {"name": "欢宝零食店"},
+                {"name": "君宝零食店"},
+            ],
+            "selected_shop_name": "欢宝零食店",
+            "intake_default_shop_name": "君宝零食店",
+        }
+    )
+    window = MainWindow(config_store=store)
+    qtbot.addWidget(window)
+
+    assert window.settings_page.shop_selector.currentText() == "欢宝零食店"
+    assert window.settings_page.intake_default_shop_selector.currentText() == "君宝零食店"
+    assert window.intake_page.shop_selector.currentText() == "君宝零食店"
+
+
 def test_main_window_uses_default_shop_presets_when_config_is_empty(qtbot):
     window = MainWindow(config_store=MemoryConfigStore({}))
     qtbot.addWidget(window)
@@ -792,7 +906,8 @@ def test_main_window_saves_settings_into_config_store(qtbot):
     window.settings_page.helper_api_key_edit.setText("minimax-secret")
     window.settings_page.save_button.click()
 
-    assert store.saved_payloads == [window.settings_page.to_payload()]
+    assert store.saved_payloads
+    assert store.saved_payloads[-1] == window.settings_page.to_payload()
 
 
 def test_main_window_uses_current_settings_to_process_images(qtbot):

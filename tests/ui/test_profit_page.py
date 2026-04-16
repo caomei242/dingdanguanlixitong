@@ -1,6 +1,9 @@
+from datetime import datetime as real_datetime
+
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QFrame, QScrollArea
 
+import strawberry_order_management.profit as profit_module
 from strawberry_order_management.ui.pages.profit_page import ProfitPage
 
 
@@ -80,38 +83,48 @@ def test_profit_page_renders_two_tabs_and_overview_metrics(qtbot):
     assert page.metric_value_labels["profit_rate"].text() == "41.78%"
     assert page.metric_value_labels["income"].text() == "180.00"
     assert page.metric_value_labels["expense"].text() == "104.80"
-    assert page.month_summary_heading.text() == "月级别"
-    assert page.daily_summary_heading.text() == "当日级别"
-    assert page.daily_scope_label.text() == "2026-04-13"
-    assert page.daily_metric_value_labels["gross_profit"].text() == "75.20"
-    assert page.daily_metric_value_labels["income"].text() == "180.00"
+    assert page.month_summary_heading.text() == "本月经营"
+    assert page.month_scope_label.text() == "2026-04"
+    assert page.daily_summary_heading.text() == "今日经营"
+    assert page.daily_scope_label.text() == "2026-04-16"
+    assert page.daily_metric_value_labels["gross_profit"].text() == "0.00"
+    assert page.daily_metric_value_labels["income"].text() == "0.00"
     assert page.overview_trend_metric_combo.currentText() == "收入"
+    assert page.trend_subtitle_label.text() == ""
     assert len(page.income_trend_chart.series_points) == 30
     assert page.income_trend_chart.series_points[12]["amount"] == "180.00"
 
     page.overview_trend_metric_combo.setCurrentText("支出")
 
     assert page.trend_title_label.text() == "支出趋势"
+    assert page.trend_subtitle_label.text() == ""
     assert page.income_trend_chart.series_points[12]["amount"] == "104.80"
 
 
-def test_profit_page_daily_tab_renders_day_cards_and_expandable_details(qtbot):
+def test_profit_page_daily_tab_renders_day_cards_and_expandable_details(qtbot, monkeypatch):
+    class _FakeDateTime(real_datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return cls(2026, 4, 16, 9, 0, 0)
+
+    monkeypatch.setattr(profit_module, "datetime", _FakeDateTime)
+
     page = ProfitPage()
     qtbot.addWidget(page)
     page.set_shop_names(["乐宝零食店", "欢宝零食店"])
     page.load_rows(_rows())
 
-    assert len(page.day_cards) == 1
+    assert len(page.day_cards) == 2
     day_card = page.day_cards[0]
-    assert day_card.date_label.text() == "2026-04-13"
-    assert day_card.shop_cards[0].summary_labels["income"].text() == "100.00"
-    assert day_card.shop_cards[0].summary_labels["profit_rate"].text() == "40.00%"
+    assert day_card.date_label.text() == "2026-04-16"
+    assert day_card.shop_cards[0].summary_labels["income"].text() == "0.00"
+    assert day_card.shop_cards[0].summary_labels["profit_rate"].text() == "--"
     assert day_card.shop_cards[0].details_container.isHidden() is True
 
     qtbot.mouseClick(day_card.shop_cards[0].toggle_button, Qt.MouseButton.LeftButton)
 
     assert day_card.shop_cards[0].details_container.isHidden() is False
-    assert "订单收入" in day_card.shop_cards[0].income_breakdown_label.text()
+    assert day_card.shop_cards[0].income_breakdown_label.text() == "收入构成\n暂无数据"
 
 
 def test_profit_page_uses_dashboard_and_daily_workspace_shell(qtbot):
@@ -129,3 +142,13 @@ def test_profit_page_uses_dashboard_and_daily_workspace_shell(qtbot):
     assert page.findChild(QFrame, "ProfitDailyRowsPanel") is not None
     assert page.day_cards[0].objectName() == "ProfitDailyDayCard"
     assert page.day_cards[0].shop_cards[0].objectName() == "ProfitDailyShopRow"
+
+
+def test_profit_page_hides_helper_copy(qtbot):
+    page = ProfitPage()
+    qtbot.addWidget(page)
+
+    texts = [label.text() for label in page.findChildren(type(page.trend_title_label))]
+
+    assert "先看整体毛利、利润率、同比和环比，再判断本月经营状态。" not in texts
+    assert "按日期查看每家店的收入、支出、毛利和利润率，点开后再看具体构成。" not in texts

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from datetime import datetime as real_datetime
+
+import strawberry_order_management.profit as profit_module
 from strawberry_order_management.profit import (
     build_daily_profit_sections,
     build_profit_overview,
@@ -99,6 +102,44 @@ def _rows():
     ]
 
 
+def _expense_rows():
+    return [
+        {
+            "record_id": "expense-order-1",
+            "expense_date": "2026-04-13",
+            "scope_type": "订单级",
+            "shop_name": "乐宝零食店",
+            "order_id": "apr13-lebao",
+            "platform": "抖店",
+            "category": "售后补偿",
+            "amount": "10.00",
+            "remark": "售后返现 10 元",
+        },
+        {
+            "record_id": "expense-shop-1",
+            "expense_date": "2026-04-13",
+            "scope_type": "店铺级",
+            "shop_name": "乐宝零食店",
+            "order_id": "",
+            "platform": "",
+            "category": "软件服务",
+            "amount": "99.00",
+            "remark": "自动发货软件月费",
+        },
+        {
+            "record_id": "expense-project-1",
+            "expense_date": "2026-04-13",
+            "scope_type": "项目级",
+            "shop_name": "",
+            "order_id": "",
+            "platform": "",
+            "category": "设备采购",
+            "amount": "200.00",
+            "remark": "运营办公电脑",
+        },
+    ]
+
+
 def test_list_available_months_descending():
     assert list_available_months(_rows()) == ["2026-04", "2026-03", "2025-04"]
 
@@ -164,6 +205,104 @@ def test_build_profit_overview_aggregates_totals_rankings_and_comparisons():
     assert overview["trend_series"]["gross_profit"][12]["amount"] == "75.20"
 
 
+def test_build_profit_overview_includes_order_store_and_project_expenses_in_correct_scope():
+    overview = build_profit_overview(
+        _rows(),
+        ["乐宝零食店", "欢宝零食店", "灵宝零食店"],
+        month_key="2026-04",
+        expense_rows=_expense_rows(),
+    )
+
+    assert overview["totals"] == {
+        "income": "230.00",
+        "expense": "448.80",
+        "gross_profit": "-218.80",
+        "profit_rate": "-95.13%",
+        "order_count": "3",
+        "active_shops": "2",
+    }
+    assert overview["shop_rankings"][0] == {
+        "shop_name": "欢宝零食店",
+        "income": "80.00",
+        "expense": "44.80",
+        "gross_profit": "35.20",
+        "profit_rate": "44.00%",
+    }
+    assert overview["shop_rankings"][1] == {
+        "shop_name": "乐宝零食店",
+        "income": "150.00",
+        "expense": "204.00",
+        "gross_profit": "-54.00",
+        "profit_rate": "-36.00%",
+    }
+    assert overview["expense_breakdown"] == [
+        {"label": "平台扣点金额", "value": "13.80"},
+        {"label": "采购总成本", "value": "120.00"},
+        {"label": "其他成本", "value": "6.00"},
+        {"label": "订单额外开支", "value": "10.00"},
+        {"label": "店铺经营开支", "value": "99.00"},
+        {"label": "项目经营开支", "value": "200.00"},
+    ]
+    assert overview["trend_series"]["expense"][12]["amount"] == "413.80"
+    assert overview["trend_series"]["gross_profit"][12]["amount"] == "-233.80"
+
+
+def test_build_profit_overview_reduces_income_when_after_sale_refund_exists():
+    rows = _rows()
+    rows[0]["order_snapshot"]["after_sale_type"] = "退货退款"
+    rows[0]["order_snapshot"]["after_sale_status"] = "已退款"
+    rows[0]["order_snapshot"]["after_sale_amount"] = "10.00"
+
+    overview = build_profit_overview(
+        rows,
+        ["乐宝零食店", "欢宝零食店", "灵宝零食店"],
+        month_key="2026-04",
+    )
+
+    assert overview["totals"] == {
+        "income": "220.00",
+        "expense": "139.80",
+        "gross_profit": "80.20",
+        "profit_rate": "36.45%",
+        "order_count": "3",
+        "active_shops": "2",
+    }
+    assert overview["shop_rankings"][0] == {
+        "shop_name": "乐宝零食店",
+        "income": "140.00",
+        "expense": "95.00",
+        "gross_profit": "45.00",
+        "profit_rate": "32.14%",
+    }
+    assert overview["trend_series"]["income"][12]["amount"] == "170.00"
+    assert overview["trend_series"]["gross_profit"][12]["amount"] == "65.20"
+
+
+def test_build_profit_overview_uses_today_with_zero_when_current_month_has_no_today_data(monkeypatch):
+    class _FakeDateTime(real_datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return cls(2026, 4, 16, 18, 0, 0)
+
+    monkeypatch.setattr(profit_module, "datetime", _FakeDateTime)
+
+    overview = build_profit_overview(
+        _rows(),
+        ["乐宝零食店", "欢宝零食店", "灵宝零食店"],
+        month_key="2026-04",
+    )
+
+    assert overview["daily_totals"] == {
+        "date_key": "2026-04-16",
+        "income": "0.00",
+        "expense": "0.00",
+        "gross_profit": "0.00",
+        "profit_rate": "--",
+        "order_count": "0",
+        "active_shops": "0",
+    }
+
+
 def test_build_daily_profit_sections_shows_each_day_and_each_shop():
     sections = build_daily_profit_sections(
         _rows(),
@@ -171,9 +310,10 @@ def test_build_daily_profit_sections_shows_each_day_and_each_shop():
         month_key="2026-04",
     )
 
-    assert [section["date"] for section in sections] == ["2026-04-13", "2026-04-12"]
-    assert sections[0]["order_count"] == 2
-    assert sections[0]["shops"][0] == {
+    assert [section["date"] for section in sections] == ["2026-04-16", "2026-04-13", "2026-04-12"]
+    assert sections[0]["order_count"] == 0
+    assert sections[1]["order_count"] == 2
+    assert sections[1]["shops"][0] == {
         "shop_name": "乐宝零食店",
         "order_count": 1,
         "income": "100.00",
@@ -189,9 +329,9 @@ def test_build_daily_profit_sections_shows_each_day_and_each_shop():
             {"label": "其他成本", "value": "4.00"},
         ],
     }
-    assert sections[0]["shops"][1]["shop_name"] == "欢宝零食店"
-    assert sections[0]["shops"][1]["profit_rate"] == "44.00%"
-    assert sections[1]["shops"][1] == {
+    assert sections[1]["shops"][1]["shop_name"] == "欢宝零食店"
+    assert sections[1]["shops"][1]["profit_rate"] == "44.00%"
+    assert sections[2]["shops"][1] == {
         "shop_name": "欢宝零食店",
         "order_count": 0,
         "income": "0.00",
@@ -200,6 +340,36 @@ def test_build_daily_profit_sections_shows_each_day_and_each_shop():
         "profit_rate": "--",
         "income_breakdown": [],
         "expense_breakdown": [],
+    }
+
+
+def test_build_daily_profit_sections_includes_order_and_store_expenses_but_not_project_expense_in_shop_rows():
+    sections = build_daily_profit_sections(
+        _rows(),
+        ["乐宝零食店", "欢宝零食店", "灵宝零食店"],
+        month_key="2026-04",
+        expense_rows=_expense_rows(),
+    )
+
+    assert sections[0]["project_expense_total"] == "0.00"
+    assert sections[1]["project_expense_total"] == "200.00"
+    assert sections[1]["shops"][0] == {
+        "shop_name": "乐宝零食店",
+        "order_count": 1,
+        "income": "100.00",
+        "expense": "169.00",
+        "gross_profit": "-69.00",
+        "profit_rate": "-69.00%",
+        "income_breakdown": [
+            {"label": "订单收入", "value": "100.00", "order_id": "apr13-lebao"}
+        ],
+        "expense_breakdown": [
+            {"label": "平台扣点金额", "value": "6.00"},
+            {"label": "采购总成本", "value": "50.00"},
+            {"label": "其他成本", "value": "4.00"},
+            {"label": "订单额外开支", "value": "10.00"},
+            {"label": "店铺经营开支", "value": "99.00"},
+        ],
     }
 
 
@@ -213,7 +383,7 @@ def test_build_daily_profit_sections_supports_filters():
         status_filter="已发货",
     )
 
-    assert [section["date"] for section in sections] == ["2026-04-13", "2026-04-12"]
+    assert [section["date"] for section in sections] == ["2026-04-16", "2026-04-13", "2026-04-12"]
     assert [shop["shop_name"] for shop in sections[0]["shops"]] == ["乐宝零食店"]
 
 
@@ -235,6 +405,45 @@ def test_build_daily_profit_sections_includes_historical_shops_even_if_not_in_se
     )
 
     assert [shop["shop_name"] for shop in sections[0]["shops"]] == ["乐宝零食店", "欢宝零食店"]
+
+
+def test_build_daily_profit_sections_uses_today_with_zero_when_current_month_has_no_today_data(monkeypatch):
+    class _FakeDateTime(real_datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return cls(2026, 4, 16, 9, 0, 0)
+
+    monkeypatch.setattr(profit_module, "datetime", _FakeDateTime)
+
+    sections = build_daily_profit_sections(
+        _rows(),
+        ["乐宝零食店", "欢宝零食店"],
+        month_key="2026-04",
+    )
+
+    assert [section["date"] for section in sections] == ["2026-04-16", "2026-04-13", "2026-04-12"]
+    assert sections[0]["order_count"] == 0
+    assert sections[0]["project_expense_total"] == "0.00"
+    assert sections[0]["shops"][0] == {
+        "shop_name": "乐宝零食店",
+        "order_count": 0,
+        "income": "0.00",
+        "expense": "0.00",
+        "gross_profit": "0.00",
+        "profit_rate": "--",
+        "income_breakdown": [],
+        "expense_breakdown": [],
+    }
+    assert sections[0]["shops"][1] == {
+        "shop_name": "欢宝零食店",
+        "order_count": 0,
+        "income": "0.00",
+        "expense": "0.00",
+        "gross_profit": "0.00",
+        "profit_rate": "--",
+        "income_breakdown": [],
+        "expense_breakdown": [],
+    }
 
 
 def test_build_profit_overview_uses_placeholder_when_no_comparison_baseline():

@@ -17,9 +17,7 @@ class ScreenshotInputWidget(QFrame):
 
         title = QLabel("拍单识别")
         title.setObjectName("SectionTitle")
-        subtitle = QLabel("支持粘贴截图、拖拽图片或选择图片，识别后自动生成订单卡")
-        subtitle.setObjectName("MutedText")
-        self.status_label = QLabel("等待截图")
+        self.status_label = QLabel("")
         self.status_label.setObjectName("MutedText")
         self.choose_button = QPushButton("选择图片")
         self.paste_button = QPushButton("粘贴截图")
@@ -31,7 +29,6 @@ class ScreenshotInputWidget(QFrame):
 
         layout = QVBoxLayout(self)
         layout.addWidget(title)
-        layout.addWidget(subtitle)
         layout.addLayout(button_row)
         layout.addWidget(self.status_label)
 
@@ -97,7 +94,7 @@ class ScreenshotInputWidget(QFrame):
         event.ignore()
 
     def _emit_image_bytes(self, image_bytes: bytes, source_label: str) -> None:
-        self.status_label.setText(f"已读取{source_label}")
+        self.status_label.setText("")
         self.image_ready.emit(image_bytes, source_label)
 
     @staticmethod

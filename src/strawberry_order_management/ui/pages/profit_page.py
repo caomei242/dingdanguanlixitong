@@ -299,6 +299,7 @@ class ProfitPage(QWidget):
     def __init__(self) -> None:
         super().__init__()
         self._rows: list[dict[str, Any]] = []
+        self._expense_rows: list[dict[str, Any]] = []
         self._shop_names: list[str] = []
         self.day_cards: list[_DailyDayCard] = []
         self.metric_value_labels: dict[str, QLabel] = {}
@@ -329,14 +330,16 @@ class ProfitPage(QWidget):
         self.income_trend_chart = _IncomeTrendChart()
         self.trend_title_label = QLabel("收入趋势")
         self.trend_title_label.setObjectName("SectionTitle")
-        self.trend_subtitle_label = QLabel("按当月每天收入绘制折线，方便快速判断波动。")
+        self.trend_subtitle_label = QLabel("")
         self.trend_subtitle_label.setObjectName("MutedText")
         self.shop_rankings_label = QLabel("暂无数据")
         self.shop_rankings_label.setWordWrap(True)
         self.shop_rankings_label.setObjectName("MutedText")
-        self.month_summary_heading = QLabel("月级别")
+        self.month_summary_heading = QLabel("本月经营")
         self.month_summary_heading.setObjectName("SectionTitle")
-        self.daily_summary_heading = QLabel("当日级别")
+        self.month_scope_label = QLabel("—")
+        self.month_scope_label.setObjectName("MutedText")
+        self.daily_summary_heading = QLabel("今日经营")
         self.daily_summary_heading.setObjectName("SectionTitle")
         self.daily_scope_label = QLabel("—")
         self.daily_scope_label.setObjectName("MutedText")
@@ -371,6 +374,10 @@ class ProfitPage(QWidget):
         self._rows = list(rows)
         self._refresh()
 
+    def load_expense_rows(self, rows: list[dict[str, Any]]) -> None:
+        self._expense_rows = list(rows)
+        self._refresh()
+
     def _build_overview_tab(self) -> QWidget:
         container = QWidget()
         container.setObjectName("ProfitDashboardTab")
@@ -388,10 +395,7 @@ class ProfitPage(QWidget):
         title_box.setSpacing(4)
         title = QLabel("利润大盘")
         title.setObjectName("SectionTitle")
-        subtitle = QLabel("先看整体毛利、利润率、同比和环比，再判断本月经营状态。")
-        subtitle.setObjectName("MutedText")
         title_box.addWidget(title)
-        title_box.addWidget(subtitle)
         month_box = QHBoxLayout()
         month_label = QLabel("月份")
         month_label.setObjectName("OrderFieldLabel")
@@ -514,12 +518,17 @@ class ProfitPage(QWidget):
         trend_metric_label.setObjectName("OrderFieldLabel")
         trend_header.addWidget(trend_metric_label)
         trend_header.addWidget(self.overview_trend_metric_combo)
-        trend_header.addWidget(self.trend_subtitle_label)
         trend_layout.addLayout(trend_header)
         trend_layout.addWidget(self.income_trend_chart)
 
+        month_header = QHBoxLayout()
+        month_header.setContentsMargins(0, 0, 0, 0)
+        month_header.addWidget(self.month_summary_heading)
+        month_header.addStretch(1)
+        month_header.addWidget(self.month_scope_label)
+
         layout.addWidget(header_card)
-        layout.addWidget(self.month_summary_heading)
+        layout.addLayout(month_header)
         layout.addLayout(metric_grid)
         daily_header = QHBoxLayout()
         daily_header.setContentsMargins(0, 0, 0, 0)
@@ -552,8 +561,6 @@ class ProfitPage(QWidget):
         header_layout.setSpacing(10)
         title = QLabel("每日账目明细")
         title.setObjectName("SectionTitle")
-        subtitle = QLabel("按日期查看每家店的收入、支出、毛利和利润率，点开后再看具体构成。")
-        subtitle.setObjectName("MutedText")
         filter_row = QHBoxLayout()
         filter_row.setContentsMargins(0, 0, 0, 0)
         filter_row.setSpacing(10)
@@ -572,7 +579,6 @@ class ProfitPage(QWidget):
             filter_row.addLayout(block)
         filter_row.addStretch(1)
         header_layout.addWidget(title)
-        header_layout.addWidget(subtitle)
         header_layout.addLayout(filter_row)
 
         self.daily_content = QFrame()
@@ -655,10 +661,16 @@ class ProfitPage(QWidget):
         self.daily_shop_combo.blockSignals(False)
 
     def _render_overview(self) -> None:
-        overview = build_profit_overview(self._rows, self._shop_names, self._current_month_key())
+        overview = build_profit_overview(
+            self._rows,
+            self._shop_names,
+            self._current_month_key(),
+            expense_rows=self._expense_rows,
+        )
         totals = overview["totals"]
         for key in ("gross_profit", "profit_rate", "income", "expense", "order_count", "active_shops"):
             self.metric_value_labels[key].setText(totals.get(key, "--"))
+        self.month_scope_label.setText(self._current_month_key() or "暂无月份")
         daily_totals = overview.get("daily_totals", {})
         for key in ("gross_profit", "profit_rate", "income", "expense", "order_count", "active_shops"):
             self.daily_metric_value_labels[key].setText(daily_totals.get(key, "--"))
@@ -687,7 +699,7 @@ class ProfitPage(QWidget):
             "expense": "按当月每天支出绘制折线，方便快速识别异常支出。",
         }.get(metric_key, "按当月每天收入绘制折线，方便快速判断波动。")
         self.trend_title_label.setText(trend_title_text)
-        self.trend_subtitle_label.setText(trend_subtitle_text)
+        self.trend_subtitle_label.setText("")
         self.income_trend_chart.set_points(overview.get("trend_series", {}).get(metric_key, []))
         for status, label in self.status_count_labels.items():
             label.setText(str(overview["status_counts"].get(status, 0)))
@@ -718,6 +730,7 @@ class ProfitPage(QWidget):
             shop_filter=shop_filter,
             platform_filter=self.daily_platform_combo.currentText().strip(),
             status_filter=self.daily_status_combo.currentText().strip(),
+            expense_rows=self._expense_rows,
         )
         if not sections:
             empty_card = QFrame()

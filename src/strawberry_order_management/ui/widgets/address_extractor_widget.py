@@ -23,7 +23,7 @@ class AddressExtractorWidget(QWidget):
         self.output_two = QTextEdit()
         self.copy_output_one_button = QPushButton("复制")
         self.copy_output_two_button = QPushButton("复制")
-        self.status_label = QLabel("等待输入")
+        self.status_label = QLabel("")
 
         self.output_one.setReadOnly(True)
         self.output_two.setReadOnly(True)
@@ -89,7 +89,7 @@ class AddressExtractorWidget(QWidget):
         )
         self.output_one.setPlainText(payload.cleaned_text)
         self.output_two.setPlainText(payload.delivery_note)
-        self.status_label.setText("已同步订单地址结果")
+        self.status_label.setText("")
 
     def _extract(self) -> None:
         try:
@@ -102,7 +102,7 @@ class AddressExtractorWidget(QWidget):
 
         self.output_one.setPlainText(payload.cleaned_text)
         self.output_two.setPlainText(payload.delivery_note)
-        self.status_label.setText("提取成功")
+        self.status_label.setText("")
 
     def _copy_output(self, text: str, status_message: str) -> None:
         if not text.strip():

@@ -196,11 +196,6 @@ def _make_card(title: str, subtitle: str | None = None) -> tuple[QFrame, QVBoxLa
     title_label = QLabel(title)
     title_label.setObjectName("BlueprintSectionTitle")
     layout.addWidget(title_label)
-    if subtitle:
-        subtitle_label = QLabel(subtitle)
-        subtitle_label.setObjectName("BlueprintMuted")
-        subtitle_label.setWordWrap(True)
-        layout.addWidget(subtitle_label)
     return card, layout
 
 
@@ -439,7 +434,7 @@ class BlueprintWindow(QMainWindow):
         left_col_layout.setContentsMargins(0, 0, 0, 0)
         left_col_layout.setSpacing(12)
 
-        capture_card, capture_layout = _make_card("拍单识别", "支持粘贴截图、拖拽图片或选择图片，识别后自动生成订单卡。")
+        capture_card, capture_layout = _make_card("拍单识别")
         capture_buttons = QWidget()
         capture_buttons_layout = QHBoxLayout(capture_buttons)
         capture_buttons_layout.setContentsMargins(0, 0, 0, 0)
@@ -456,7 +451,7 @@ class BlueprintWindow(QMainWindow):
         waiting_layout.addStretch(1)
         capture_layout.addWidget(waiting)
 
-        extractor_card, extractor_layout = _make_card("文本提取", "左侧负责输入、提取和复制，不与主录单表单混在一起。")
+        extractor_card, extractor_layout = _make_card("文本提取")
         extractor_layout.addWidget(_text("", height=120))
         extractor_layout.addWidget(QPushButton("一键提取"))
         result_one = _text("何女士15781304332四川省成都市金牛区营门口街道友谊花园9-2304", height=72)
@@ -480,7 +475,7 @@ class BlueprintWindow(QMainWindow):
         center_layout.setContentsMargins(0, 0, 0, 0)
         center_layout.setSpacing(12)
 
-        order_card, order_layout = _make_card("订单概览", "编号、状态和金额放在一起，减少纵向滚动。")
+        order_card, order_layout = _make_card("订单概览")
         order_grid = QGridLayout()
         order_grid.setContentsMargins(0, 0, 0, 0)
         order_grid.setHorizontalSpacing(12)
@@ -514,7 +509,7 @@ class BlueprintWindow(QMainWindow):
         order_grid.addWidget(income_field, 4, 1, 1, 1)
         order_layout.addLayout(order_grid)
 
-        shipping_card, shipping_layout = _make_card("收件信息", "收件人、电话、地址与备注单独收拢。")
+        shipping_card, shipping_layout = _make_card("收件信息")
         shipping_grid = QGridLayout()
         shipping_grid.setContentsMargins(0, 0, 0, 0)
         shipping_grid.setHorizontalSpacing(12)
@@ -531,7 +526,7 @@ class BlueprintWindow(QMainWindow):
             shipping_grid.addWidget(field, row, col, row_span, col_span)
         shipping_layout.addLayout(shipping_grid)
 
-        procurement_card, procurement_layout = _make_card("采购信息", "采购槽位压缩为更紧凑横向布局，减少页面高度。")
+        procurement_card, procurement_layout = _make_card("采购信息")
         for index, name in enumerate(["采购1", "采购2", "采购3"], start=1):
             row = QWidget()
             row_layout = QHBoxLayout(row)
@@ -553,7 +548,7 @@ class BlueprintWindow(QMainWindow):
             row_layout.addWidget(action)
             procurement_layout.addWidget(row)
 
-        finance_card, finance_layout = _make_card("财务信息", "补平台扣点、自定义成本，并自动计算采购总成本和毛利润。")
+        finance_card, finance_layout = _make_card("财务信息")
         finance_grid = QGridLayout()
         finance_grid.setContentsMargins(0, 0, 0, 0)
         finance_grid.setHorizontalSpacing(12)
@@ -586,7 +581,7 @@ class BlueprintWindow(QMainWindow):
         right_col_layout = QVBoxLayout(right_col)
         right_col_layout.setContentsMargins(0, 0, 0, 0)
         right_col_layout.setSpacing(12)
-        support_card, support_layout = _make_card("提取结果", "右侧单独承载地址提取和识别反馈，主录单区更专注。")
+        support_card, support_layout = _make_card("提取结果")
         sync_box = _text("已同步订单地址结果", height=140)
         sync_box.setReadOnly(True)
         support_layout.addWidget(QLabel("结果一"))
@@ -693,7 +688,7 @@ class BlueprintWindow(QMainWindow):
         detail_header_left_layout.setSpacing(2)
         detail_header_left_layout.addWidget(QLabel("君宝零食店"))
         detail_header_left_layout.itemAt(0).widget().setObjectName("BlueprintPageTitle")
-        subtitle = QLabel("确认写入飞书 · 已写入飞书")
+        subtitle = QLabel("")
         subtitle.setObjectName("BlueprintMuted")
         detail_header_left_layout.addWidget(subtitle)
 
@@ -878,7 +873,7 @@ class BlueprintWindow(QMainWindow):
             metrics_layout.addWidget(_OverviewMetricCard(title, value, accent), 0, idx)
         overview_layout.addWidget(metrics)
 
-        trend_card, trend_layout = _make_card("收入趋势", "默认看收入，可切换到毛利润和支出。保留 hover 提示与竖向辅助线的预期位置。")
+        trend_card, trend_layout = _make_card("收入趋势")
         trend_header = QWidget()
         trend_header_layout = QHBoxLayout(trend_header)
         trend_header_layout.setContentsMargins(0, 0, 0, 0)

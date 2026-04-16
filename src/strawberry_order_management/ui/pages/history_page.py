@@ -56,10 +56,23 @@ _ORDER_SNAPSHOT_KEYS = (
     "gross_profit",
     "custom_cost_labels",
     "custom_cost_values",
+    "after_sale_status",
+    "after_sale_type",
+    "after_sale_amount",
+    "after_sale_date",
+    "after_sale_goods_returned",
+    "after_sale_resellable",
+    "after_sale_note",
+    "after_sale_base_income",
 )
 _FIXED_ORDER_STATUS_OPTIONS = ("已发货", "待发货", "已拍单未发货")
 _ORDER_STATUS_ALIASES = {"未发货": "待发货", "已下单未发货": "已拍单未发货"}
 _DEFAULT_PLATFORM_FEE_RATE = "0.06"
+_AFTER_SALE_STATUS_OPTIONS = ("正常", "售后中", "已退款", "已退货", "已补发")
+_AFTER_SALE_TYPE_OPTIONS = ("", "仅退款", "退货退款", "部分退款", "补发")
+_AFTER_SALE_BOOLEAN_OPTIONS = ("", "否", "是")
+_REFUND_AFTER_SALE_TYPES = {"仅退款", "退货退款", "部分退款"}
+_REFUND_AFTER_SALE_STATUSES = {"已退款", "已退货"}
 
 
 class _HistoryStatusCard(QFrame):
@@ -97,6 +110,7 @@ class HistoryPage(QWidget):
     save_requested = Signal(str, object)
     delete_requested = Signal(str)
     resubmit_requested = Signal(str)
+    expense_requested = Signal(str)
 
     def __init__(self) -> None:
         super().__init__()
@@ -106,6 +120,7 @@ class HistoryPage(QWidget):
         self._filtered_rows: list[dict[str, Any]] = []
         self._active_quick_filter = "全部"
         self._specific_date_active = False
+        self._syncing_order_status = False
 
         title = QLabel("历史工作台")
         title.setObjectName("SectionTitle")
@@ -160,8 +175,6 @@ class HistoryPage(QWidget):
 
         self.detail_title_label = QLabel("请选择一条历史记录")
         self.detail_title_label.setObjectName("HistoryDetailTitle")
-        self.detail_subtitle_label = QLabel("详情会显示订单快照、地址提取结果和同步轨迹")
-        self.detail_subtitle_label.setObjectName("HistoryDetailMeta")
 
         self.order_id_value = self._build_text_value(minimum_height=36)
         self.placed_at_value = self._build_text_value(minimum_height=36)
@@ -191,6 +204,25 @@ class HistoryPage(QWidget):
         self.other_cost_value = self._build_line_edit()
         self.procurement_total_cost_value = self._build_line_edit()
         self.gross_profit_value = self._build_line_edit()
+        self.after_sale_status_value = QComboBox()
+        self.after_sale_status_value.setObjectName("OrderValueEdit")
+        self.after_sale_status_value.setMinimumHeight(36)
+        self.after_sale_status_value.addItems(list(_AFTER_SALE_STATUS_OPTIONS))
+        self.after_sale_type_value = QComboBox()
+        self.after_sale_type_value.setObjectName("OrderValueEdit")
+        self.after_sale_type_value.setMinimumHeight(36)
+        self.after_sale_type_value.addItems(list(_AFTER_SALE_TYPE_OPTIONS))
+        self.after_sale_amount_value = self._build_line_edit()
+        self.after_sale_date_value = self._build_line_edit()
+        self.after_sale_goods_returned_value = QComboBox()
+        self.after_sale_goods_returned_value.setObjectName("OrderValueEdit")
+        self.after_sale_goods_returned_value.setMinimumHeight(36)
+        self.after_sale_goods_returned_value.addItems(list(_AFTER_SALE_BOOLEAN_OPTIONS))
+        self.after_sale_resellable_value = QComboBox()
+        self.after_sale_resellable_value.setObjectName("OrderValueEdit")
+        self.after_sale_resellable_value.setMinimumHeight(36)
+        self.after_sale_resellable_value.addItems(list(_AFTER_SALE_BOOLEAN_OPTIONS))
+        self.after_sale_note_value = self._build_text_value(minimum_height=56)
         self.custom_cost_label_1 = QLabel("")
         self.custom_cost_label_2 = QLabel("")
         self.custom_cost_label_3 = QLabel("")
@@ -276,6 +308,19 @@ class HistoryPage(QWidget):
 
         finance_section = self._build_section("财务信息", finance_form)
 
+        after_sale_form = QFormLayout()
+        after_sale_form.setLabelAlignment(Qt.AlignmentFlag.AlignTop)
+        after_sale_form.setFormAlignment(Qt.AlignmentFlag.AlignTop)
+        after_sale_form.addRow("售后状态", self.after_sale_status_value)
+        after_sale_form.addRow("售后类型", self.after_sale_type_value)
+        after_sale_form.addRow("售后金额", self.after_sale_amount_value)
+        after_sale_form.addRow("售后日期", self.after_sale_date_value)
+        after_sale_form.addRow("是否收回货品", self.after_sale_goods_returned_value)
+        after_sale_form.addRow("是否可二次销售", self.after_sale_resellable_value)
+        after_sale_form.addRow("售后备注", self.after_sale_note_value)
+
+        after_sale_section = self._build_section("售后处理", after_sale_form)
+
         self.address_output_one = self._build_text_value(minimum_height=56, editable=False)
         self.address_output_two = self._build_text_value(minimum_height=56, editable=False)
 
@@ -302,12 +347,15 @@ class HistoryPage(QWidget):
 
         self.save_button = QPushButton("保存修改并重新写入飞书")
         self.save_button.setObjectName("SecondaryActionButton")
+        self.expense_button = QPushButton("新增订单开支")
+        self.expense_button.setObjectName("SecondaryActionButton")
         self.delete_button = QPushButton("删除")
         self.delete_button.setObjectName("DangerActionButton")
         self.resubmit_button = QPushButton("重新写入飞书")
         self.resubmit_button.setObjectName("SecondaryActionButton")
 
         self.save_button.clicked.connect(self._emit_save_requested)
+        self.expense_button.clicked.connect(self._emit_expense_requested)
         self.delete_button.clicked.connect(self._emit_delete_requested)
         self.resubmit_button.clicked.connect(self._emit_resubmit_requested)
 
@@ -327,19 +375,18 @@ class HistoryPage(QWidget):
         detail_header_text_layout.setContentsMargins(0, 0, 0, 0)
         detail_header_text_layout.setSpacing(2)
         detail_header_text_layout.addWidget(self.detail_title_label)
-        detail_header_text_layout.addWidget(self.detail_subtitle_label)
 
         self.header_actions_widget = QWidget()
         header_actions_layout = QHBoxLayout(self.header_actions_widget)
         header_actions_layout.setContentsMargins(0, 0, 0, 0)
         header_actions_layout.setSpacing(8)
+        header_actions_layout.addWidget(self.expense_button)
         header_actions_layout.addWidget(self.save_button)
         header_actions_layout.addWidget(self.delete_button)
         self.resubmit_button.hide()
 
         detail_header_layout.addWidget(detail_header_text, 1)
         detail_header_layout.addWidget(self.header_actions_widget, 0, Qt.AlignmentFlag.AlignTop)
-        detail_body_layout.addWidget(detail_header)
 
         self.detail_summary_card = QFrame()
         self.detail_summary_card.setObjectName("HistorySummaryCard")
@@ -347,24 +394,48 @@ class HistoryPage(QWidget):
         detail_summary_layout.setContentsMargins(10, 10, 10, 10)
         detail_summary_layout.setHorizontalSpacing(8)
         detail_summary_layout.setVerticalSpacing(8)
-        self.summary_income_card, self.summary_income_value = self._build_summary_value("收入")
-        self.summary_order_amount_card, self.summary_order_amount_value = self._build_summary_value("订单金额")
-        self.summary_product_card, self.summary_product_value = self._build_summary_value("商品")
-        self.summary_procurement_card, self.summary_procurement_value = self._build_summary_value("采购")
-        detail_summary_layout.addWidget(self.summary_income_card, 0, 0)
-        detail_summary_layout.addWidget(self.summary_order_amount_card, 0, 1)
-        detail_summary_layout.addWidget(self.summary_product_card, 0, 2)
-        detail_summary_layout.addWidget(self.summary_procurement_card, 0, 3)
+        (
+            self.summary_recipient_card,
+            self.summary_recipient_label,
+            self.summary_recipient_value,
+        ) = self._build_summary_value("收货人")
+        (
+            self.summary_income_card,
+            self.summary_income_label,
+            self.summary_income_value,
+        ) = self._build_summary_value("收入")
+        (
+            self.summary_placed_at_card,
+            self.summary_placed_at_label,
+            self.summary_placed_at_value,
+        ) = self._build_summary_value("下单时间")
+        (
+            self.summary_status_card,
+            self.summary_status_label,
+            self.summary_status_value,
+        ) = self._build_summary_status_value("订单状态")
+        detail_summary_layout.addWidget(self.summary_recipient_card, 0, 0)
+        detail_summary_layout.addWidget(self.summary_income_card, 0, 1)
+        detail_summary_layout.addWidget(self.summary_placed_at_card, 0, 2)
+        detail_summary_layout.addWidget(self.summary_status_card, 0, 3)
+
+        right_top_column = QWidget()
+        right_top_column_layout = QVBoxLayout(right_top_column)
+        right_top_column_layout.setContentsMargins(0, 0, 0, 0)
+        right_top_column_layout.setSpacing(10)
+        right_top_column_layout.addWidget(after_sale_section)
+        right_top_column_layout.addWidget(finance_section)
+        right_top_column_layout.addWidget(procurement_section)
+        right_top_column_layout.addStretch(1)
 
         detail_grid = QGridLayout()
         detail_grid.setContentsMargins(0, 0, 0, 0)
         detail_grid.setHorizontalSpacing(10)
         detail_grid.setVerticalSpacing(10)
         detail_grid.addWidget(order_section, 0, 0)
-        detail_grid.addWidget(procurement_section, 0, 1)
-        detail_grid.addWidget(finance_section, 1, 0)
-        detail_grid.addWidget(address_section, 1, 1)
-        detail_grid.addWidget(sync_section, 2, 0, 1, 2)
+        detail_grid.addWidget(right_top_column, 0, 1)
+        detail_grid.addWidget(address_section, 1, 0)
+        detail_grid.addWidget(sync_section, 1, 1)
 
         detail_body_layout.addWidget(self.detail_summary_card)
         detail_body_layout.addLayout(detail_grid)
@@ -381,6 +452,8 @@ class HistoryPage(QWidget):
         detail_card.setObjectName("HistoryDetailPane")
         detail_card_layout = QVBoxLayout(detail_card)
         detail_card_layout.setContentsMargins(12, 12, 12, 12)
+        detail_card_layout.setSpacing(10)
+        detail_card_layout.addWidget(detail_header)
         detail_card_layout.addWidget(detail_scroll)
 
         self.left_column_widget = QFrame()
@@ -436,6 +509,9 @@ class HistoryPage(QWidget):
             self.custom_cost_value_1,
             self.custom_cost_value_2,
             self.custom_cost_value_3,
+            self.after_sale_amount_value,
+            self.after_sale_date_value,
+            self.after_sale_note_value,
         ]
 
         self._set_widgets_read_only(False)
@@ -549,6 +625,9 @@ class HistoryPage(QWidget):
     def _emit_resubmit_requested(self) -> None:
         self._emit_action(self.resubmit_requested)
 
+    def _emit_expense_requested(self) -> None:
+        self._emit_action(self.expense_requested)
+
     def _emit_action(self, signal: Signal) -> None:
         row = self._current_row()
         if row is None:
@@ -568,10 +647,6 @@ class HistoryPage(QWidget):
         address_snapshot = row.get("address_snapshot") or {}
 
         self.detail_title_label.setText(self._display_value(row.get("shop_name")))
-        self.detail_subtitle_label.setText(
-            f"{self._display_value(row.get('sync_source'))} · {self._display_value(row.get('status'))}"
-        )
-
         self.order_id_value.setPlainText(self._text_value(order_snapshot.get("order_id")))
         self.placed_at_value.setPlainText(self._text_value(order_snapshot.get("placed_at")))
         self.platform_value.setPlainText(self._text_value(order_snapshot.get("platform")) or "抖店")
@@ -595,6 +670,19 @@ class HistoryPage(QWidget):
         self.other_cost_value.setText(self._text_value(order_snapshot.get("other_cost")))
         self.procurement_total_cost_value.setText(self._text_value(order_snapshot.get("procurement_total_cost")))
         self.gross_profit_value.setText(self._text_value(order_snapshot.get("gross_profit")))
+        self._set_after_sale_status_value(self._text_value(order_snapshot.get("after_sale_status")))
+        self._set_after_sale_type_value(self._text_value(order_snapshot.get("after_sale_type")))
+        self.after_sale_amount_value.setText(self._text_value(order_snapshot.get("after_sale_amount")))
+        self.after_sale_date_value.setText(self._text_value(order_snapshot.get("after_sale_date")))
+        self._set_combo_text(
+            self.after_sale_goods_returned_value,
+            self._text_value(order_snapshot.get("after_sale_goods_returned")),
+        )
+        self._set_combo_text(
+            self.after_sale_resellable_value,
+            self._text_value(order_snapshot.get("after_sale_resellable")),
+        )
+        self.after_sale_note_value.setPlainText(self._text_value(order_snapshot.get("after_sale_note")))
         custom_labels = order_snapshot.get("custom_cost_labels") or ["", "", ""]
         custom_values = order_snapshot.get("custom_cost_values") or ["", "", ""]
         self._set_custom_cost_row(self.custom_cost_label_1, self.custom_cost_value_1, custom_labels, custom_values, 0)
@@ -642,7 +730,6 @@ class HistoryPage(QWidget):
 
     def _show_empty_detail(self) -> None:
         self.detail_title_label.setText("请选择一条历史记录")
-        self.detail_subtitle_label.setText("详情会显示订单快照、地址提取结果和同步轨迹")
         for widget in (
             self.order_id_value,
             self.placed_at_value,
@@ -658,6 +745,7 @@ class HistoryPage(QWidget):
             self.code_value,
             self.address_value,
             self.delivery_note_value,
+            self.after_sale_note_value,
             self.address_output_one,
             self.address_output_two,
             self.sync_source_value,
@@ -682,6 +770,8 @@ class HistoryPage(QWidget):
             self.custom_cost_value_1,
             self.custom_cost_value_2,
             self.custom_cost_value_3,
+            self.after_sale_amount_value,
+            self.after_sale_date_value,
         ):
             widget.setText("")
         self.platform_fee_rate_value.setText(_DEFAULT_PLATFORM_FEE_RATE)
@@ -689,17 +779,21 @@ class HistoryPage(QWidget):
         self.procurement_product_2_combo.setCurrentText("")
         self.procurement_product_3_combo.setCurrentText("")
         self._set_order_status_value("")
+        self._set_after_sale_status_value("")
+        self._set_after_sale_type_value("")
+        self._set_combo_text(self.after_sale_goods_returned_value, "")
+        self._set_combo_text(self.after_sale_resellable_value, "")
         self._set_sku_image("")
         self.custom_cost_label_1.setText("")
         self.custom_cost_label_2.setText("")
         self.custom_cost_label_3.setText("")
         for widget in (
+            self.summary_recipient_value,
             self.summary_income_value,
-            self.summary_order_amount_value,
-            self.summary_product_value,
-            self.summary_procurement_value,
+            self.summary_placed_at_value,
         ):
             widget.setText("-")
+        self._set_summary_order_status_value("")
         self._set_widgets_read_only(False)
 
     def _build_order_snapshot_from_inputs(self, current_snapshot: dict[str, Any]) -> dict[str, Any]:
@@ -727,6 +821,14 @@ class HistoryPage(QWidget):
                 "other_cost": self._text_value(self.other_cost_value.text()),
                 "procurement_total_cost": self._text_value(self.procurement_total_cost_value.text()),
                 "gross_profit": self._text_value(self.gross_profit_value.text()),
+                "after_sale_status": self._normalize_after_sale_status(self.after_sale_status_value.currentText()),
+                "after_sale_type": self._text_value(self.after_sale_type_value.currentText()),
+                "after_sale_amount": self._text_value(self.after_sale_amount_value.text()),
+                "after_sale_date": self._text_value(self.after_sale_date_value.text()),
+                "after_sale_goods_returned": self._text_value(self.after_sale_goods_returned_value.currentText()),
+                "after_sale_resellable": self._text_value(self.after_sale_resellable_value.currentText()),
+                "after_sale_note": self._text_value(self.after_sale_note_value.toPlainText()),
+                "after_sale_base_income": self._text_value(current_snapshot.get("after_sale_base_income")),
                 "custom_cost_labels": [
                     self._text_value(self.custom_cost_label_1.text()),
                     self._text_value(self.custom_cost_label_2.text()),
@@ -920,12 +1022,17 @@ class HistoryPage(QWidget):
             self.procurement_product_1_combo,
             self.procurement_product_2_combo,
             self.procurement_product_3_combo,
+            self.after_sale_status_value,
+            self.after_sale_type_value,
+            self.after_sale_goods_returned_value,
+            self.after_sale_resellable_value,
         ):
             widget.setEnabled(not read_only)
 
     def _update_action_state(self) -> None:
         has_row = self._current_row() is not None
         self.list_widget.setEnabled(True)
+        self.expense_button.setEnabled(has_row)
         self.save_button.setEnabled(has_row)
         self.delete_button.setEnabled(has_row)
         self.resubmit_button.setEnabled(has_row)
@@ -977,23 +1084,14 @@ class HistoryPage(QWidget):
         }
 
     def _update_detail_summary(self, order_snapshot: dict[str, Any]) -> None:
-        procurement_items = order_snapshot.get("procurement_items") or []
-        first_procurement = next(
-            (item for item in procurement_items if isinstance(item, dict) and self._text_value(item.get("product_name"))),
-            None,
-        )
-        if first_procurement:
-            procurement_text = (
-                f"{self._text_value(first_procurement.get('product_name'))} / "
-                f"{self._text_value(first_procurement.get('quantity')) or '1'} / "
-                f"{self._text_value(first_procurement.get('cost')) or '-'}"
-            )
-        else:
-            procurement_text = "-"
-        self.summary_income_value.setText(self._text_value(order_snapshot.get("income_amount")) or "-")
-        self.summary_order_amount_value.setText(self._text_value(order_snapshot.get("order_amount")) or "-")
-        self.summary_product_value.setText(self._text_value(order_snapshot.get("product_name")) or "-")
-        self.summary_procurement_value.setText(procurement_text)
+        recipient_text = self._text_value(order_snapshot.get("recipient_name")) or "-"
+        income_text = self._text_value(order_snapshot.get("income_amount")) or "-"
+        placed_at_text = self._text_value(order_snapshot.get("placed_at")) or "-"
+        status_text = self._normalize_order_status(self._text_value(order_snapshot.get("order_status"))) or "-"
+        self.summary_recipient_value.setText(recipient_text)
+        self.summary_income_value.setText(income_text)
+        self.summary_placed_at_value.setText(placed_at_text)
+        self._set_summary_order_status_value(status_text)
 
     def _build_filter_bar(self) -> QWidget:
         container = QFrame()
@@ -1038,6 +1136,11 @@ class HistoryPage(QWidget):
         self.income_amount_value.textChanged.connect(self._recalculate_detail_financials)
         self.platform_fee_rate_value.textChanged.connect(self._recalculate_detail_financials)
         self.other_cost_value.textChanged.connect(self._recalculate_detail_financials)
+        self.order_status_value.currentTextChanged.connect(self._handle_order_status_changed)
+        self.summary_status_value.currentTextChanged.connect(self._handle_summary_order_status_changed)
+        self.after_sale_status_value.currentTextChanged.connect(self._recalculate_detail_financials)
+        self.after_sale_type_value.currentTextChanged.connect(self._handle_after_sale_type_changed)
+        self.after_sale_goods_returned_value.currentTextChanged.connect(self._recalculate_detail_financials)
         for widget in (
             self.procurement_quantity_1_value,
             self.procurement_cost_1_value,
@@ -1048,6 +1151,8 @@ class HistoryPage(QWidget):
             self.custom_cost_value_1,
             self.custom_cost_value_2,
             self.custom_cost_value_3,
+            self.after_sale_amount_value,
+            self.after_sale_date_value,
         ):
             widget.textChanged.connect(self._recalculate_detail_financials)
 
@@ -1177,12 +1282,86 @@ class HistoryPage(QWidget):
         cleaned = str(value or "").strip()
         return _ORDER_STATUS_ALIASES.get(cleaned, cleaned)
 
+    @staticmethod
+    def _normalize_after_sale_status(value: str) -> str:
+        cleaned = str(value or "").strip()
+        if not cleaned:
+            return "正常"
+        return cleaned if cleaned in _AFTER_SALE_STATUS_OPTIONS else "正常"
+
     def _set_order_status_value(self, value: str) -> None:
         normalized = self._normalize_order_status(value) or "待发货"
         index = self.order_status_value.findText(normalized)
         if index < 0:
             index = self.order_status_value.findText("待发货")
+        self.order_status_value.blockSignals(True)
         self.order_status_value.setCurrentIndex(max(index, 0))
+        self.order_status_value.blockSignals(False)
+
+    def _set_summary_order_status_value(self, value: str) -> None:
+        normalized = self._normalize_order_status(value) or "待发货"
+        index = self.summary_status_value.findText(normalized)
+        if index < 0:
+            index = self.summary_status_value.findText("待发货")
+        self.summary_status_value.blockSignals(True)
+        self.summary_status_value.setCurrentIndex(max(index, 0))
+        self.summary_status_value.blockSignals(False)
+
+    def _set_after_sale_status_value(self, value: str) -> None:
+        normalized = self._normalize_after_sale_status(value)
+        self._set_combo_text(self.after_sale_status_value, normalized or "正常")
+
+    def _set_after_sale_type_value(self, value: str) -> None:
+        self._set_combo_text(self.after_sale_type_value, self._text_value(value))
+
+    @staticmethod
+    def _set_combo_text(widget: QComboBox, value: str) -> None:
+        normalized = str(value or "").strip()
+        index = widget.findText(normalized)
+        widget.blockSignals(True)
+        widget.setCurrentIndex(max(index, 0))
+        widget.blockSignals(False)
+
+    def _handle_order_status_changed(self, value: str) -> None:
+        if self._syncing_order_status:
+            return
+        self._syncing_order_status = True
+        try:
+            self._set_summary_order_status_value(value)
+            self._recalculate_detail_financials()
+        finally:
+            self._syncing_order_status = False
+
+    def _handle_summary_order_status_changed(self, value: str) -> None:
+        if self._syncing_order_status:
+            return
+        self._syncing_order_status = True
+        try:
+            self._set_order_status_value(value)
+            self._recalculate_detail_financials()
+        finally:
+            self._syncing_order_status = False
+
+    def _handle_after_sale_type_changed(self, value: str) -> None:
+        current_type = self._text_value(value)
+        if current_type == "退货退款":
+            base_income = self._resolve_after_sale_base_income()
+            self._set_after_sale_status_value("已退货")
+            self.after_sale_amount_value.blockSignals(True)
+            self.after_sale_amount_value.setText(format_money(base_income))
+            self.after_sale_amount_value.blockSignals(False)
+            self._set_combo_text(self.after_sale_goods_returned_value, "是")
+        self._recalculate_detail_financials()
+
+    def _resolve_after_sale_base_income(self) -> Decimal:
+        row = self._current_row()
+        snapshot = row.get("order_snapshot") if row else {}
+        if isinstance(snapshot, dict):
+            base_income_value = self._text_value(snapshot.get("after_sale_base_income"))
+            if base_income_value:
+                return parse_decimal(base_income_value)
+        current_income = self._text_value(self.income_amount_value.toPlainText())
+        return parse_decimal(current_income)
 
     def _set_sku_image(self, image_path: str) -> None:
         normalized = self._text_value(image_path)
@@ -1256,16 +1435,41 @@ class HistoryPage(QWidget):
     def _recalculate_financial_snapshot(self, order_snapshot: dict[str, Any]) -> dict[str, Any]:
         snapshot = dict(order_snapshot)
         income = parse_decimal(snapshot.get("income_amount"))
+        after_sale_type = self._text_value(snapshot.get("after_sale_type"))
+        after_sale_status = self._normalize_after_sale_status(snapshot.get("after_sale_status"))
+        after_sale_amount = parse_decimal(snapshot.get("after_sale_amount"))
+        after_sale_goods_returned = self._text_value(snapshot.get("after_sale_goods_returned"))
+        refund_applies = (
+            after_sale_type in _REFUND_AFTER_SALE_TYPES and after_sale_status in _REFUND_AFTER_SALE_STATUSES
+        )
+        base_income_value = self._text_value(snapshot.get("after_sale_base_income"))
+        base_income = parse_decimal(base_income_value) if base_income_value else income
+        if refund_applies:
+            net_income = max(base_income - after_sale_amount, Decimal("0"))
+            snapshot["after_sale_base_income"] = format_money(base_income)
+            snapshot["income_amount"] = format_money(net_income)
+            income = net_income
+        else:
+            if base_income_value:
+                snapshot["income_amount"] = format_money(base_income)
+                snapshot["after_sale_base_income"] = ""
+                income = base_income
         if not self._text_value(snapshot.get("platform_fee_rate")):
             snapshot["platform_fee_rate"] = _DEFAULT_PLATFORM_FEE_RATE
         fee_amount = parse_decimal(
-            calculate_platform_fee_amount(snapshot.get("income_amount"), snapshot.get("platform_fee_rate"))
+            calculate_platform_fee_amount(format_money(income), snapshot.get("platform_fee_rate"))
         )
         procurement_total = Decimal("0")
         for item in snapshot.get("procurement_items", []):
             if not isinstance(item, dict):
                 continue
             procurement_total += parse_decimal(item.get("quantity") or "1") * parse_decimal(item.get("cost"))
+        if (
+            refund_applies
+            and after_sale_type == "退货退款"
+            and after_sale_goods_returned == "是"
+        ):
+            procurement_total = Decimal("0")
         procurement_total = procurement_total.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         other_cost = parse_decimal(snapshot.get("other_cost"))
         custom_total = Decimal("0")
@@ -1341,7 +1545,7 @@ class HistoryPage(QWidget):
         return card, value_label
 
     @staticmethod
-    def _build_summary_value(title: str) -> tuple[QFrame, QLabel]:
+    def _build_summary_value(title: str) -> tuple[QFrame, QLabel, QLabel]:
         card = QFrame()
         card.setObjectName("HistoryMiniSummaryCard")
         layout = QVBoxLayout(card)
@@ -1354,7 +1558,24 @@ class HistoryPage(QWidget):
         value_label.setWordWrap(True)
         layout.addWidget(title_label)
         layout.addWidget(value_label)
-        return card, value_label
+        return card, title_label, value_label
+
+    @staticmethod
+    def _build_summary_status_value(title: str) -> tuple[QFrame, QLabel, QComboBox]:
+        card = QFrame()
+        card.setObjectName("HistoryMiniSummaryCard")
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(10, 8, 10, 8)
+        layout.setSpacing(4)
+        title_label = QLabel(title)
+        title_label.setObjectName("HistoryMiniSummaryTitle")
+        value_combo = QComboBox()
+        value_combo.setObjectName("OrderValueEdit")
+        value_combo.setMinimumHeight(36)
+        value_combo.addItems(list(_FIXED_ORDER_STATUS_OPTIONS))
+        layout.addWidget(title_label)
+        layout.addWidget(value_combo)
+        return card, title_label, value_combo
 
     @staticmethod
     def _label(text: str) -> QLabel:

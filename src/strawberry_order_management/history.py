@@ -5,6 +5,9 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from strawberry_order_management.extractors.address import clean_virtual_number_artifacts
+from strawberry_order_management.services.auto_order import normalize_procurement_items
+
 
 _ORDER_SNAPSHOT_KEYS = {
     "order_id",
@@ -19,7 +22,29 @@ _ORDER_SNAPSHOT_KEYS = {
     "code",
     "address",
     "delivery_note",
+    "procurement_items",
 }
+
+
+def _normalize_auto_order_debug(value: Any) -> dict[str, Any]:
+    payload = dict(value or {}) if isinstance(value, dict) else {}
+    steps: list[dict[str, str]] = []
+    for item in list(payload.get("steps") or []):
+        if not isinstance(item, dict):
+            continue
+        steps.append(
+            {
+                "at": str(item.get("at", "")).strip(),
+                "text": str(item.get("text", "")).strip(),
+            }
+        )
+    return {
+        "steps": steps,
+        "screenshot_path": str(payload.get("screenshot_path", "")).strip(),
+        "updated_at": str(payload.get("updated_at", "")).strip(),
+        "stage": str(payload.get("stage", "")).strip(),
+        "summary": str(payload.get("summary", "")).strip(),
+    }
 
 
 class HistoryStore:
@@ -91,6 +116,8 @@ class HistoryStore:
             }
         else:
             order_snapshot = dict(order_snapshot)
+        order_snapshot["procurement_items"] = normalize_procurement_items(order_snapshot.get("procurement_items"))
+        order_snapshot["address"] = clean_virtual_number_artifacts(order_snapshot.get("address", ""))
 
         address_snapshot = normalized.get("address_snapshot")
         if not isinstance(address_snapshot, dict):
@@ -103,10 +130,23 @@ class HistoryStore:
             address_snapshot = dict(address_snapshot)
         address_snapshot.setdefault("output_one", "")
         address_snapshot.setdefault("output_two", "")
+        address_snapshot["output_one"] = clean_virtual_number_artifacts(address_snapshot.get("output_one", ""))
 
         normalized["order_snapshot"] = order_snapshot
         normalized["address_snapshot"] = address_snapshot
         normalized["sync_source"] = str(normalized.get("sync_source", "")).strip() or "-"
+        normalized["auto_order_status"] = str(normalized.get("auto_order_status", "")).strip()
+        normalized["auto_order_message"] = str(normalized.get("auto_order_message", "")).strip()
+        normalized["auto_order_last_run_at"] = str(normalized.get("auto_order_last_run_at", "")).strip()
+        normalized["auto_order_task_id"] = str(normalized.get("auto_order_task_id", "")).strip()
+        normalized["auto_order_task_status"] = str(normalized.get("auto_order_task_status", "")).strip()
+        normalized["auto_order_task_submitted_at"] = str(
+            normalized.get("auto_order_task_submitted_at", "")
+        ).strip()
+        normalized["auto_order_task_last_polled_at"] = str(
+            normalized.get("auto_order_task_last_polled_at", "")
+        ).strip()
+        normalized["auto_order_debug"] = _normalize_auto_order_debug(normalized.get("auto_order_debug"))
         feishu_record_id = str(normalized.get("feishu_record_id", "")).strip()
         if not feishu_record_id:
             feishu_result = normalized.get("feishu_result")

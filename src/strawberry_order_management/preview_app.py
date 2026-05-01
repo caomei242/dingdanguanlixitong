@@ -1,12 +1,14 @@
 from PySide6.QtWidgets import QApplication
 
 from strawberry_order_management.ui.blueprint_window import BlueprintWindow
+from strawberry_order_management.ui.theme import configure_light_appearance
 
 
 def build_preview_app() -> QApplication:
     app = QApplication.instance()
     if app is None:
         app = QApplication([])
+    configure_light_appearance(app)
     app.setApplicationName("草莓订单管理系统 UI 蓝图预览")
     return app
 

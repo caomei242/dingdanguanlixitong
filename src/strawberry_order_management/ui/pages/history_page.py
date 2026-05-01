@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
     QLabel,
+    QLayout,
     QLineEdit,
     QListWidget,
     QPushButton,
@@ -24,10 +25,25 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from strawberry_order_management.extractors.address import clean_virtual_number_artifacts
 from strawberry_order_management.finance import (
     calculate_platform_fee_amount,
     format_money,
     parse_decimal,
+)
+from strawberry_order_management.services.auto_order import (
+    AUTO_ORDER_STATUS_FAILED,
+    AUTO_ORDER_STATUS_PARTIAL,
+    apply_auto_order_result,
+    normalize_procurement_item,
+    normalize_procurement_items,
+    procurement_item_auto_status,
+    procurement_item_has_content,
+    row_auto_order_status,
+    row_has_auto_order_scope,
+    summarize_auto_order_message,
+    summarize_auto_order_status,
+    unresolved_procurement_indices,
 )
 
 
@@ -65,8 +81,9 @@ _ORDER_SNAPSHOT_KEYS = (
     "after_sale_note",
     "after_sale_base_income",
 )
-_FIXED_ORDER_STATUS_OPTIONS = ("已发货", "待发货", "已拍单未发货")
+_FIXED_ORDER_STATUS_OPTIONS = ("已发货", "待发货", "已拍单未发货", "售后中", "已完成售后")
 _ORDER_STATUS_ALIASES = {"未发货": "待发货", "已下单未发货": "已拍单未发货"}
+_PLATFORM_OPTIONS = ("抖店", "微信小店")
 _DEFAULT_PLATFORM_FEE_RATE = "0.06"
 _AFTER_SALE_STATUS_OPTIONS = ("正常", "售后中", "已退款", "已退货", "已补发")
 _AFTER_SALE_TYPE_OPTIONS = ("", "仅退款", "退货退款", "部分退款", "补发")
@@ -111,16 +128,21 @@ class HistoryPage(QWidget):
     delete_requested = Signal(str)
     resubmit_requested = Signal(str)
     expense_requested = Signal(str)
+    auto_order_requested = Signal(str, object)
+    auto_order_view_requested = Signal(str)
 
     def __init__(self) -> None:
         super().__init__()
         self.setObjectName("HistoryPage")
         self._product_presets: list[dict[str, str]] = []
+        self._shop_names: list[str] = []
         self._all_rows: list[dict[str, Any]] = []
         self._filtered_rows: list[dict[str, Any]] = []
         self._active_quick_filter = "全部"
         self._specific_date_active = False
         self._syncing_order_status = False
+        self._shop_platforms: dict[str, str] = {}
+        self._syncing_shop_platform = False
 
         title = QLabel("历史工作台")
         title.setObjectName("SectionTitle")
@@ -175,10 +197,19 @@ class HistoryPage(QWidget):
 
         self.detail_title_label = QLabel("请选择一条历史记录")
         self.detail_title_label.setObjectName("HistoryDetailTitle")
+        self.detail_title_label.hide()
+        self.detail_shop_combo = QComboBox()
+        self.detail_shop_combo.setObjectName("OrderValueEdit")
+        self.detail_shop_combo.setMinimumHeight(36)
+        self.detail_shop_combo.setMinimumWidth(220)
+        self.detail_shop_combo.setEnabled(False)
 
         self.order_id_value = self._build_text_value(minimum_height=36)
         self.placed_at_value = self._build_text_value(minimum_height=36)
-        self.platform_value = self._build_text_value(minimum_height=36)
+        self.platform_value = QComboBox()
+        self.platform_value.setObjectName("OrderValueEdit")
+        self.platform_value.setMinimumHeight(36)
+        self.platform_value.addItems(list(_PLATFORM_OPTIONS))
         self.order_status_value = QComboBox()
         self.order_status_value.setObjectName("OrderValueEdit")
         self.order_status_value.setMinimumHeight(36)
@@ -230,39 +261,42 @@ class HistoryPage(QWidget):
         self.custom_cost_value_2 = self._build_line_edit()
         self.custom_cost_value_3 = self._build_line_edit()
 
-        order_form = QFormLayout()
-        order_form.setLabelAlignment(Qt.AlignmentFlag.AlignTop)
-        order_form.setFormAlignment(Qt.AlignmentFlag.AlignTop)
-        order_form.addRow("订单编号", self.order_id_value)
-        order_form.addRow("下单时间", self.placed_at_value)
-        order_form.addRow("平台", self.platform_value)
-        order_form.addRow("订单状态", self.order_status_value)
-        order_form.addRow("商品名称", self.product_name_value)
-        order_form.addRow("规格", self.specification_value)
-        order_form.addRow("SKU 图片", self.sku_image_value)
-        order_form.addRow("数量", self.quantity_value)
-        order_form.addRow("订单金额", self.order_amount_value)
-        order_form.addRow("收入", self.income_amount_value)
-        order_form.addRow("收件人", self.recipient_name_value)
-        order_form.addRow("手机号", self.phone_number_value)
-        order_form.addRow("编号", self.code_value)
-        order_form.addRow("收货地址", self.address_value)
-        order_form.addRow("备注", self.delivery_note_value)
+        order_grid = QGridLayout()
+        order_grid.setContentsMargins(0, 0, 0, 0)
+        order_grid.setHorizontalSpacing(12)
+        order_grid.setVerticalSpacing(8)
+        order_grid.setColumnStretch(1, 1)
+        order_grid.setColumnStretch(3, 1)
+        order_grid.setColumnMinimumWidth(1, 260)
+        order_grid.setColumnMinimumWidth(3, 260)
+        self._add_detail_grid_row(order_grid, 0, "订单编号", self.order_id_value, "商品名称", self.product_name_value)
+        self._add_detail_grid_row(order_grid, 1, "下单时间", self.placed_at_value, "规格", self.specification_value)
+        self._add_detail_grid_row(order_grid, 2, "平台", self.platform_value, "收件人", self.recipient_name_value)
+        self._add_detail_grid_row(order_grid, 3, "手机号", self.phone_number_value, "数量", self.quantity_value)
+        self._add_detail_grid_row(order_grid, 4, "编号", self.code_value, "订单金额", self.order_amount_value)
+        self._add_detail_grid_row(order_grid, 5, "收入", self.income_amount_value, "备注", self.delivery_note_value)
+        self._add_detail_grid_row(order_grid, 6, "SKU 图片", self.sku_image_value, "", None)
 
-        order_section = self._build_section("订单基础信息", order_form)
+        order_section = self._build_section("订单基础信息", order_grid)
 
         self.procurement_product_1_combo = self._build_procurement_combo()
         self.procurement_quantity_1_value = self._build_line_edit()
         self.procurement_cost_1_value = self._build_line_edit()
         self.procurement_tracking_1_value = self._build_line_edit()
+        self.procurement_clear_tracking_1_button = self._build_small_action_button("清空")
+        self.procurement_clear_tracking_1_button.clicked.connect(self.procurement_tracking_1_value.clear)
         self.procurement_product_2_combo = self._build_procurement_combo()
         self.procurement_quantity_2_value = self._build_line_edit()
         self.procurement_cost_2_value = self._build_line_edit()
         self.procurement_tracking_2_value = self._build_line_edit()
+        self.procurement_clear_tracking_2_button = self._build_small_action_button("清空")
+        self.procurement_clear_tracking_2_button.clicked.connect(self.procurement_tracking_2_value.clear)
         self.procurement_product_3_combo = self._build_procurement_combo()
         self.procurement_quantity_3_value = self._build_line_edit()
         self.procurement_cost_3_value = self._build_line_edit()
         self.procurement_tracking_3_value = self._build_line_edit()
+        self.procurement_clear_tracking_3_button = self._build_small_action_button("清空")
+        self.procurement_clear_tracking_3_button.clicked.connect(self.procurement_tracking_3_value.clear)
         for combo in (
             self.procurement_product_1_combo,
             self.procurement_product_2_combo,
@@ -282,15 +316,24 @@ class HistoryPage(QWidget):
         procurement_form.addRow("采购 1 商品", self.procurement_product_1_combo)
         procurement_form.addRow("采购 1 数量", self.procurement_quantity_1_value)
         procurement_form.addRow("采购 1 成本", self.procurement_cost_1_value)
-        procurement_form.addRow("采购 1 快递单号", self.procurement_tracking_1_value)
+        procurement_form.addRow(
+            "采购 1 快递单号",
+            self._with_inline_actions(self.procurement_tracking_1_value, self.procurement_clear_tracking_1_button),
+        )
         procurement_form.addRow("采购 2 商品", self.procurement_product_2_combo)
         procurement_form.addRow("采购 2 数量", self.procurement_quantity_2_value)
         procurement_form.addRow("采购 2 成本", self.procurement_cost_2_value)
-        procurement_form.addRow("采购 2 快递单号", self.procurement_tracking_2_value)
+        procurement_form.addRow(
+            "采购 2 快递单号",
+            self._with_inline_actions(self.procurement_tracking_2_value, self.procurement_clear_tracking_2_button),
+        )
         procurement_form.addRow("采购 3 商品", self.procurement_product_3_combo)
         procurement_form.addRow("采购 3 数量", self.procurement_quantity_3_value)
         procurement_form.addRow("采购 3 成本", self.procurement_cost_3_value)
-        procurement_form.addRow("采购 3 快递单号", self.procurement_tracking_3_value)
+        procurement_form.addRow(
+            "采购 3 快递单号",
+            self._with_inline_actions(self.procurement_tracking_3_value, self.procurement_clear_tracking_3_button),
+        )
 
         procurement_section = self._build_section("采购信息", procurement_form)
 
@@ -311,7 +354,6 @@ class HistoryPage(QWidget):
         after_sale_form = QFormLayout()
         after_sale_form.setLabelAlignment(Qt.AlignmentFlag.AlignTop)
         after_sale_form.setFormAlignment(Qt.AlignmentFlag.AlignTop)
-        after_sale_form.addRow("售后状态", self.after_sale_status_value)
         after_sale_form.addRow("售后类型", self.after_sale_type_value)
         after_sale_form.addRow("售后金额", self.after_sale_amount_value)
         after_sale_form.addRow("售后日期", self.after_sale_date_value)
@@ -323,6 +365,14 @@ class HistoryPage(QWidget):
 
         self.address_output_one = self._build_text_value(minimum_height=56, editable=False)
         self.address_output_two = self._build_text_value(minimum_height=56, editable=False)
+        self.summary_address_widget = QWidget()
+        self.summary_address_widget.setObjectName("HistorySummaryAddressRow")
+        summary_address_form = QFormLayout(self.summary_address_widget)
+        summary_address_form.setContentsMargins(0, 0, 0, 0)
+        summary_address_form.setSpacing(8)
+        summary_address_form.setLabelAlignment(Qt.AlignmentFlag.AlignTop)
+        summary_address_form.setFormAlignment(Qt.AlignmentFlag.AlignTop)
+        summary_address_form.addRow("收货地址", self.address_value)
 
         address_form = QFormLayout()
         address_form.setLabelAlignment(Qt.AlignmentFlag.AlignTop)
@@ -347,6 +397,8 @@ class HistoryPage(QWidget):
 
         self.save_button = QPushButton("保存修改并重新写入飞书")
         self.save_button.setObjectName("SecondaryActionButton")
+        self.auto_order_action_button = QPushButton("送入自动拍单")
+        self.auto_order_action_button.setObjectName("SecondaryActionButton")
         self.expense_button = QPushButton("新增订单开支")
         self.expense_button.setObjectName("SecondaryActionButton")
         self.delete_button = QPushButton("删除")
@@ -355,9 +407,11 @@ class HistoryPage(QWidget):
         self.resubmit_button.setObjectName("SecondaryActionButton")
 
         self.save_button.clicked.connect(self._emit_save_requested)
+        self.auto_order_action_button.clicked.connect(self._emit_auto_order_requested)
         self.expense_button.clicked.connect(self._emit_expense_requested)
         self.delete_button.clicked.connect(self._emit_delete_requested)
         self.resubmit_button.clicked.connect(self._emit_resubmit_requested)
+        self.detail_shop_combo.currentTextChanged.connect(self._handle_detail_shop_changed)
 
         detail_body = QWidget()
         detail_body.setObjectName("PageContent")
@@ -374,12 +428,13 @@ class HistoryPage(QWidget):
         detail_header_text_layout = QVBoxLayout(detail_header_text)
         detail_header_text_layout.setContentsMargins(0, 0, 0, 0)
         detail_header_text_layout.setSpacing(2)
-        detail_header_text_layout.addWidget(self.detail_title_label)
+        detail_header_text_layout.addWidget(self.detail_shop_combo, 0, Qt.AlignmentFlag.AlignLeft)
 
         self.header_actions_widget = QWidget()
         header_actions_layout = QHBoxLayout(self.header_actions_widget)
         header_actions_layout.setContentsMargins(0, 0, 0, 0)
         header_actions_layout.setSpacing(8)
+        header_actions_layout.addWidget(self.auto_order_action_button)
         header_actions_layout.addWidget(self.expense_button)
         header_actions_layout.addWidget(self.save_button)
         header_actions_layout.addWidget(self.delete_button)
@@ -414,26 +469,50 @@ class HistoryPage(QWidget):
             self.summary_status_label,
             self.summary_status_value,
         ) = self._build_summary_status_value("订单状态")
+        self.auto_order_status_badge = QLabel("")
+        self.auto_order_status_badge.setObjectName("MutedText")
+        self.auto_order_view_button = QPushButton("去自动拍单查看")
+        self.auto_order_view_button.setObjectName("SecondaryActionButton")
+        self.auto_order_view_button.clicked.connect(self._emit_auto_order_view_requested)
+        self.auto_order_resume_hint_label = QLabel("")
+        self.auto_order_resume_hint_label.setObjectName("MutedText")
+        self.auto_order_hint_widget = QWidget()
+        auto_order_hint_layout = QHBoxLayout(self.auto_order_hint_widget)
+        auto_order_hint_layout.setContentsMargins(0, 0, 0, 0)
+        auto_order_hint_layout.setSpacing(8)
+        auto_order_hint_layout.addWidget(self.auto_order_status_badge, 0)
+        auto_order_hint_layout.addWidget(self.auto_order_view_button, 0)
+        auto_order_hint_layout.addWidget(self.auto_order_resume_hint_label, 0)
+        auto_order_hint_layout.addStretch(1)
         detail_summary_layout.addWidget(self.summary_recipient_card, 0, 0)
         detail_summary_layout.addWidget(self.summary_income_card, 0, 1)
         detail_summary_layout.addWidget(self.summary_placed_at_card, 0, 2)
-        detail_summary_layout.addWidget(self.summary_status_card, 0, 3)
+        detail_summary_layout.addWidget(self.summary_address_widget, 1, 0, 1, 2)
+        detail_summary_layout.addWidget(self.summary_status_card, 1, 2)
+        detail_summary_layout.addWidget(self.auto_order_hint_widget, 1, 3)
 
-        right_top_column = QWidget()
-        right_top_column_layout = QVBoxLayout(right_top_column)
-        right_top_column_layout.setContentsMargins(0, 0, 0, 0)
-        right_top_column_layout.setSpacing(10)
-        right_top_column_layout.addWidget(after_sale_section)
-        right_top_column_layout.addWidget(finance_section)
-        right_top_column_layout.addWidget(procurement_section)
-        right_top_column_layout.addStretch(1)
+        left_detail_column = QWidget()
+        left_detail_column_layout = QVBoxLayout(left_detail_column)
+        left_detail_column_layout.setContentsMargins(0, 0, 0, 0)
+        left_detail_column_layout.setSpacing(10)
+        left_detail_column_layout.addWidget(after_sale_section)
+        left_detail_column_layout.addWidget(procurement_section)
+        left_detail_column_layout.addStretch(1)
+
+        right_detail_column = QWidget()
+        right_detail_column_layout = QVBoxLayout(right_detail_column)
+        right_detail_column_layout.setContentsMargins(0, 0, 0, 0)
+        right_detail_column_layout.setSpacing(10)
+        right_detail_column_layout.addWidget(finance_section)
+        right_detail_column_layout.addWidget(order_section)
+        right_detail_column_layout.addStretch(1)
 
         detail_grid = QGridLayout()
         detail_grid.setContentsMargins(0, 0, 0, 0)
         detail_grid.setHorizontalSpacing(10)
         detail_grid.setVerticalSpacing(10)
-        detail_grid.addWidget(order_section, 0, 0)
-        detail_grid.addWidget(right_top_column, 0, 1)
+        detail_grid.addWidget(left_detail_column, 0, 0)
+        detail_grid.addWidget(right_detail_column, 0, 1)
         detail_grid.addWidget(address_section, 1, 0)
         detail_grid.addWidget(sync_section, 1, 1)
 
@@ -471,7 +550,7 @@ class HistoryPage(QWidget):
         workspace_row.addWidget(detail_card, 2)
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(0, 0, 0, 0)
+        root.setContentsMargins(16, 16, 16, 16)
         root.setSpacing(10)
         root.addWidget(title)
         root.addWidget(filter_bar)
@@ -481,7 +560,6 @@ class HistoryPage(QWidget):
         self._editable_widgets = [
             self.order_id_value,
             self.placed_at_value,
-            self.platform_value,
             self.product_name_value,
             self.specification_value,
             self.quantity_value,
@@ -546,11 +624,48 @@ class HistoryPage(QWidget):
         self._apply_procurement_preset(self.procurement_product_2_combo, self.procurement_quantity_2_value, self.procurement_cost_2_value)
         self._apply_procurement_preset(self.procurement_product_3_combo, self.procurement_quantity_3_value, self.procurement_cost_3_value)
 
+    def set_shop_names(self, shop_names: list[str]) -> None:
+        seen: set[str] = set()
+        self._shop_names = []
+        for name in shop_names:
+            normalized = self._text_value(name)
+            if normalized and normalized not in seen:
+                seen.add(normalized)
+                self._shop_names.append(normalized)
+        current_row = self._current_row()
+        current_shop = self._text_value((current_row or {}).get("shop_name"))
+        if not current_shop:
+            current_shop = self._text_value(self.detail_shop_combo.currentText())
+        self._set_detail_shop_value(current_shop, enable=bool(current_row))
+
+    def set_shop_platforms(self, shop_platforms: dict[str, str]) -> None:
+        self._shop_platforms = {
+            self._text_value(name): self._text_value(platform)
+            for name, platform in shop_platforms.items()
+            if self._text_value(name) and self._text_value(platform)
+        }
+        self._handle_detail_shop_changed(self.detail_shop_combo.currentText())
+
     def load_rows(self, rows: list[dict[str, Any]]) -> None:
         previous_record_id, previous_index = self._current_selection()
-        self._all_rows = [self._normalize_row(row) for row in rows]
+        self._all_rows = sorted(
+            (self._normalize_row(row) for row in rows),
+            key=self._history_sort_key,
+            reverse=True,
+        )
         self._refresh_shop_filter_options()
         self._apply_filters(previous_record_id, previous_index)
+
+    def select_record(self, record_id: str) -> None:
+        target_record_id = self._text_value(record_id)
+        if not target_record_id:
+            return
+        for index, row in enumerate(self._filtered_rows):
+            if self._text_value(row.get("record_id")) == target_record_id:
+                self.list_widget.setCurrentRow(index)
+                self._show_row(index)
+                self._update_action_state()
+                return
 
     def _apply_filters(self, previous_record_id: str | None = None, previous_index: int | None = None) -> None:
         self._filtered_rows = [row for row in self._all_rows if self._row_matches_filters(row)]
@@ -613,7 +728,11 @@ class HistoryPage(QWidget):
         record_id = self._text_value(row.get("record_id"))
         if not record_id:
             return
-        patch = {"order_snapshot": self._build_order_snapshot_from_inputs(row.get("order_snapshot") or {})}
+        patch = {
+            "shop_name": self._text_value(self.detail_shop_combo.currentText())
+            or self._text_value(row.get("shop_name")),
+            "order_snapshot": self._build_order_snapshot_from_inputs(row.get("order_snapshot") or {}),
+        }
         self._merge_patch(row, patch)
         self._show_row(self.list_widget.currentRow())
         self._update_action_state()
@@ -624,6 +743,18 @@ class HistoryPage(QWidget):
 
     def _emit_resubmit_requested(self) -> None:
         self._emit_action(self.resubmit_requested)
+
+    def _emit_auto_order_requested(self) -> None:
+        row = self._current_row()
+        if row is None:
+            return
+        record_id = self._text_value(row.get("record_id"))
+        if not record_id:
+            return
+        self.auto_order_requested.emit(record_id, unresolved_procurement_indices(row))
+
+    def _emit_auto_order_view_requested(self) -> None:
+        self._emit_action(self.auto_order_view_requested)
 
     def _emit_expense_requested(self) -> None:
         self._emit_action(self.expense_requested)
@@ -646,10 +777,12 @@ class HistoryPage(QWidget):
         order_snapshot = row.get("order_snapshot") or {}
         address_snapshot = row.get("address_snapshot") or {}
 
-        self.detail_title_label.setText(self._display_value(row.get("shop_name")))
+        shop_name = self._text_value(row.get("shop_name"))
+        self.detail_title_label.setText(self._display_value(shop_name))
+        self._set_detail_shop_value(shop_name, enable=True)
         self.order_id_value.setPlainText(self._text_value(order_snapshot.get("order_id")))
         self.placed_at_value.setPlainText(self._text_value(order_snapshot.get("placed_at")))
-        self.platform_value.setPlainText(self._text_value(order_snapshot.get("platform")) or "抖店")
+        self._set_platform_value(self._resolved_platform_value(shop_name, order_snapshot.get("platform")))
         self._set_order_status_value(self._text_value(order_snapshot.get("order_status")))
         self.product_name_value.setPlainText(self._text_value(order_snapshot.get("product_name")))
         self.specification_value.setPlainText(self._text_value(order_snapshot.get("specification")))
@@ -661,7 +794,7 @@ class HistoryPage(QWidget):
         self.recipient_name_value.setPlainText(self._text_value(order_snapshot.get("recipient_name")))
         self.phone_number_value.setPlainText(self._text_value(order_snapshot.get("phone_number")))
         self.code_value.setPlainText(self._text_value(order_snapshot.get("code")))
-        self.address_value.setPlainText(self._text_value(order_snapshot.get("address")))
+        self.address_value.setPlainText(clean_virtual_number_artifacts(self._text_value(order_snapshot.get("address"))))
         self.delivery_note_value.setPlainText(self._text_value(order_snapshot.get("delivery_note")))
         self.platform_fee_rate_value.setText(
             self._text_value(order_snapshot.get("platform_fee_rate")) or _DEFAULT_PLATFORM_FEE_RATE
@@ -720,20 +853,23 @@ class HistoryPage(QWidget):
             widgets[2].setText(self._text_value(item.get("cost")))
             widgets[3].setText(self._text_value(item.get("tracking_number")))
 
-        self.address_output_one.setPlainText(self._text_value(address_snapshot.get("output_one")))
+        self.address_output_one.setPlainText(
+            clean_virtual_number_artifacts(self._text_value(address_snapshot.get("output_one")))
+        )
         self.address_output_two.setPlainText(self._text_value(address_snapshot.get("output_two")))
         self.sync_source_value.setPlainText(self._display_value(row.get("sync_source")))
         self.status_value.setPlainText(self._display_value(row.get("status")))
         self.sync_message_value.setPlainText(self._build_sync_message(row))
         self._update_detail_summary(order_snapshot)
+        self._update_auto_order_hint(row)
         self._set_widgets_read_only(False)
 
     def _show_empty_detail(self) -> None:
         self.detail_title_label.setText("请选择一条历史记录")
+        self._set_detail_shop_value("", enable=False)
         for widget in (
             self.order_id_value,
             self.placed_at_value,
-            self.platform_value,
             self.product_name_value,
             self.specification_value,
             self.sku_value,
@@ -753,6 +889,7 @@ class HistoryPage(QWidget):
             self.sync_message_value,
         ):
             widget.setPlainText("")
+        self._set_platform_value("")
         for widget in (
             self.platform_fee_amount_value,
             self.other_cost_value,
@@ -794,16 +931,27 @@ class HistoryPage(QWidget):
         ):
             widget.setText("-")
         self._set_summary_order_status_value("")
+        self.auto_order_status_badge.clear()
+        self.auto_order_resume_hint_label.clear()
+        self.auto_order_hint_widget.setHidden(True)
         self._set_widgets_read_only(False)
 
     def _build_order_snapshot_from_inputs(self, current_snapshot: dict[str, Any]) -> dict[str, Any]:
         order_snapshot = dict(current_snapshot)
+        current_procurement_items = normalize_procurement_items(current_snapshot.get("procurement_items"))
+        order_status = self._normalize_order_status(self.order_status_value.currentText())
+        after_sale_type = self._text_value(self.after_sale_type_value.currentText())
+        after_sale_status = self._resolve_effective_after_sale_status(
+            order_status,
+            after_sale_type,
+            self.after_sale_status_value.currentText(),
+        )
         order_snapshot.update(
             {
                 "order_id": self._text_value(self.order_id_value.toPlainText()),
                 "placed_at": self._text_value(self.placed_at_value.toPlainText()),
-                "platform": self._text_value(self.platform_value.toPlainText()) or "抖店",
-                "order_status": self._normalize_order_status(self.order_status_value.currentText()),
+                "platform": self._text_value(self.platform_value.currentText()) or "抖店",
+                "order_status": order_status,
                 "product_name": self._text_value(self.product_name_value.toPlainText()),
                 "specification": self._text_value(self.specification_value.toPlainText()),
                 "sku": self._text_value(self.sku_value.toPlainText()),
@@ -821,8 +969,8 @@ class HistoryPage(QWidget):
                 "other_cost": self._text_value(self.other_cost_value.text()),
                 "procurement_total_cost": self._text_value(self.procurement_total_cost_value.text()),
                 "gross_profit": self._text_value(self.gross_profit_value.text()),
-                "after_sale_status": self._normalize_after_sale_status(self.after_sale_status_value.currentText()),
-                "after_sale_type": self._text_value(self.after_sale_type_value.currentText()),
+                "after_sale_status": after_sale_status,
+                "after_sale_type": after_sale_type,
                 "after_sale_amount": self._text_value(self.after_sale_amount_value.text()),
                 "after_sale_date": self._text_value(self.after_sale_date_value.text()),
                 "after_sale_goods_returned": self._text_value(self.after_sale_goods_returned_value.currentText()),
@@ -845,18 +993,21 @@ class HistoryPage(QWidget):
                         self.procurement_quantity_1_value,
                         self.procurement_cost_1_value,
                         self.procurement_tracking_1_value,
+                        current_procurement_items[0],
                     ),
                     self._build_procurement_item_snapshot(
                         self.procurement_product_2_combo,
                         self.procurement_quantity_2_value,
                         self.procurement_cost_2_value,
                         self.procurement_tracking_2_value,
+                        current_procurement_items[1],
                     ),
                     self._build_procurement_item_snapshot(
                         self.procurement_product_3_combo,
                         self.procurement_quantity_3_value,
                         self.procurement_cost_3_value,
                         self.procurement_tracking_3_value,
+                        current_procurement_items[2],
                     ),
                 ],
             }
@@ -916,30 +1067,7 @@ class HistoryPage(QWidget):
             for index in range(3)
         ]
 
-        procurement_items = order_snapshot.get("procurement_items")
-        normalized_items = []
-        if isinstance(procurement_items, list):
-            source_items = procurement_items
-        else:
-            source_items = []
-        for index in range(3):
-            item = source_items[index] if index < len(source_items) and isinstance(source_items[index], dict) else {}
-            product_name = self._text_value(item.get("product_name"))
-            quantity = self._text_value(item.get("quantity"))
-            cost = self._text_value(item.get("cost"))
-            tracking_number = self._text_value(item.get("tracking_number"))
-            normalized_items.append(
-                {
-                    "product_name": product_name,
-                    "quantity": (
-                        quantity
-                        if quantity != "1" or any((product_name, cost, tracking_number))
-                        else ""
-                    ) or ("1" if any((product_name, cost, tracking_number)) else ""),
-                    "cost": cost,
-                    **({"tracking_number": tracking_number} if tracking_number else {}),
-                }
-            )
+        normalized_items = normalize_procurement_items(order_snapshot.get("procurement_items"))
         order_snapshot["procurement_items"] = normalized_items
         if not self._text_value(order_snapshot.get("procurement_tracking_number")):
             order_snapshot["procurement_tracking_number"] = " / ".join(
@@ -956,12 +1084,19 @@ class HistoryPage(QWidget):
             }
         else:
             address_snapshot = dict(address_snapshot)
-        address_snapshot["output_one"] = self._text_value(address_snapshot.get("output_one"))
+        address_snapshot["output_one"] = clean_virtual_number_artifacts(
+            self._text_value(address_snapshot.get("output_one"))
+        )
         address_snapshot["output_two"] = self._text_value(address_snapshot.get("output_two"))
+        order_snapshot["address"] = clean_virtual_number_artifacts(order_snapshot.get("address", ""))
 
         order_snapshot = self._recalculate_financial_snapshot(order_snapshot)
         normalized["order_snapshot"] = order_snapshot
         normalized["address_snapshot"] = address_snapshot
+        normalized["auto_order_status"] = self._text_value(normalized.get("auto_order_status"))
+        normalized["auto_order_message"] = self._text_value(normalized.get("auto_order_message"))
+        normalized["auto_order_last_run_at"] = self._text_value(normalized.get("auto_order_last_run_at"))
+        normalized["auto_order_resume_hint"] = self._text_value(normalized.get("auto_order_resume_hint"))
         normalized["sync_source"] = self._display_value(normalized.get("sync_source"))
         normalized["status"] = self._display_value(normalized.get("status"))
         normalized["message"] = self._text_value(normalized.get("message"))
@@ -1018,6 +1153,10 @@ class HistoryPage(QWidget):
             if hasattr(widget, "setReadOnly"):
                 widget.setReadOnly(read_only)
         self.order_status_value.setEnabled(not read_only)
+        self.detail_shop_combo.setEnabled(
+            not read_only and bool(self.detail_shop_combo.count()) and self._current_row() is not None
+        )
+        self.platform_value.setEnabled(not read_only)
         for widget in (
             self.procurement_product_1_combo,
             self.procurement_product_2_combo,
@@ -1030,12 +1169,22 @@ class HistoryPage(QWidget):
             widget.setEnabled(not read_only)
 
     def _update_action_state(self) -> None:
-        has_row = self._current_row() is not None
+        current_row = self._current_row()
+        has_row = current_row is not None
         self.list_widget.setEnabled(True)
         self.expense_button.setEnabled(has_row)
         self.save_button.setEnabled(has_row)
         self.delete_button.setEnabled(has_row)
         self.resubmit_button.setEnabled(has_row)
+        has_auto_order_scope = bool(current_row and row_has_auto_order_scope(current_row))
+        self.auto_order_action_button.setVisible(has_auto_order_scope)
+        if has_auto_order_scope and current_row is not None:
+            auto_order_status = row_auto_order_status(current_row)
+            if auto_order_status in (AUTO_ORDER_STATUS_PARTIAL, AUTO_ORDER_STATUS_FAILED):
+                self.auto_order_action_button.setText("重拍未成功采购位")
+            else:
+                self.auto_order_action_button.setText("送入自动拍单")
+            self.auto_order_action_button.setEnabled(bool(unresolved_procurement_indices(current_row)))
         self.header_actions_widget.setHidden(not has_row)
 
     def _update_stats(self) -> None:
@@ -1067,21 +1216,30 @@ class HistoryPage(QWidget):
         quantity_widget: QLineEdit,
         cost_widget: QLineEdit,
         tracking_widget: QLineEdit,
-    ) -> dict[str, str]:
+        current_item: dict[str, Any],
+    ) -> dict[str, Any]:
+        base_item = normalize_procurement_item(current_item)
         product_name = self._text_value(combo.currentText())
-        quantity = self._text_value(quantity_widget.text())
-        cost = self._text_value(cost_widget.text())
-        tracking_number = self._text_value(tracking_widget.text())
-        if any((product_name, cost, tracking_number)):
-            quantity = quantity or "1"
-        elif quantity == "1":
-            quantity = ""
-        return {
-            "product_name": product_name,
-            "quantity": quantity,
-            "cost": cost,
-            **({"tracking_number": tracking_number} if tracking_number else {}),
-        }
+        preserved_jd_link = self._text_value(base_item.get("jd_link"))
+        if not product_name or product_name != self._text_value(base_item.get("product_name")):
+            preserved_jd_link = ""
+        base_item.update(
+            normalize_procurement_item(
+                {
+                    "product_name": product_name,
+                    "quantity": self._text_value(quantity_widget.text()),
+                    "cost": self._text_value(cost_widget.text()),
+                    "jd_link": preserved_jd_link,
+                    "tracking_number": self._text_value(tracking_widget.text()),
+                    "jd_status": base_item.get("jd_status", ""),
+                    "jd_account_name": base_item.get("jd_account_name", ""),
+                    "jd_order_id": base_item.get("jd_order_id", ""),
+                    "jd_error_message": base_item.get("jd_error_message", ""),
+                    "jd_last_run_at": base_item.get("jd_last_run_at", ""),
+                }
+            )
+        )
+        return base_item
 
     def _update_detail_summary(self, order_snapshot: dict[str, Any]) -> None:
         recipient_text = self._text_value(order_snapshot.get("recipient_name")) or "-"
@@ -1092,6 +1250,16 @@ class HistoryPage(QWidget):
         self.summary_income_value.setText(income_text)
         self.summary_placed_at_value.setText(placed_at_text)
         self._set_summary_order_status_value(status_text)
+
+    def _update_auto_order_hint(self, row: dict[str, Any]) -> None:
+        if not row_has_auto_order_scope(row):
+            self.auto_order_hint_widget.setHidden(True)
+            self.auto_order_status_badge.clear()
+            return
+        auto_order_status = row_auto_order_status(row)
+        self.auto_order_status_badge.setText(f"拍单{auto_order_status}")
+        self.auto_order_resume_hint_label.setText(self._text_value(row.get("auto_order_resume_hint")))
+        self.auto_order_hint_widget.setHidden(False)
 
     def _build_filter_bar(self) -> QWidget:
         container = QFrame()
@@ -1257,7 +1425,7 @@ class HistoryPage(QWidget):
             if status_filter and status_filter != "全部状态":
                 if normalized_status != status_filter:
                     return False
-        placed_date = self._extract_row_date(order_snapshot)
+        placed_date = self._extract_row_date(row)
         if self._specific_date_active:
             selected = self.date_filter_edit.date().toPython()
             return placed_date == selected
@@ -1269,13 +1437,46 @@ class HistoryPage(QWidget):
             return placed_date >= date.today() - timedelta(days=6)
         return True
 
-    @staticmethod
-    def _extract_row_date(order_snapshot: dict[str, Any]) -> date:
-        placed_at = str(order_snapshot.get("placed_at", "")).strip()
-        try:
-            return datetime.strptime(placed_at, "%Y-%m-%d %H:%M:%S").date()
-        except ValueError:
+    @classmethod
+    def _extract_row_date(cls, row: dict[str, Any]) -> date:
+        history_datetime = cls._resolved_history_datetime(row)
+        if history_datetime == datetime.min:
             return date.min
+        return history_datetime.date()
+
+    @classmethod
+    def _resolved_history_datetime(cls, row: dict[str, Any]) -> datetime:
+        order_snapshot = row.get("order_snapshot") or {}
+        placed_at = cls._parse_history_datetime(order_snapshot.get("placed_at"))
+        if placed_at != datetime.min:
+            return placed_at
+        return cls._parse_history_datetime(row.get("created_at"))
+
+    @classmethod
+    def _history_sort_key(cls, row: dict[str, Any]) -> tuple[datetime, datetime, str]:
+        placed_at = cls._resolved_history_datetime(row)
+        created_at = cls._parse_history_datetime(row.get("created_at"))
+        record_id = cls._text_value(row.get("record_id"))
+        return placed_at, created_at, record_id
+
+    @staticmethod
+    def _parse_history_datetime(value: object) -> datetime:
+        text = str(value or "").strip()
+        if not text:
+            return datetime.min
+        try:
+            parsed = datetime.fromisoformat(text)
+            if parsed.tzinfo is not None:
+                return parsed.astimezone().replace(tzinfo=None)
+            return parsed
+        except ValueError:
+            pass
+        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M"):
+            try:
+                return datetime.strptime(text, fmt)
+            except ValueError:
+                continue
+        return datetime.min
 
     @staticmethod
     def _normalize_order_status(value: str) -> str:
@@ -1288,6 +1489,26 @@ class HistoryPage(QWidget):
         if not cleaned:
             return "正常"
         return cleaned if cleaned in _AFTER_SALE_STATUS_OPTIONS else "正常"
+
+    def _resolve_effective_after_sale_status(
+        self,
+        order_status: str,
+        after_sale_type: str,
+        current_status: str,
+    ) -> str:
+        normalized_order_status = self._normalize_order_status(order_status)
+        normalized_type = self._text_value(after_sale_type)
+        normalized_current = self._normalize_after_sale_status(current_status)
+        if normalized_order_status == "售后中":
+            return "售后中"
+        if normalized_order_status == "已完成售后":
+            if normalized_type == "退货退款":
+                return "已退货"
+            if normalized_type in {"仅退款", "部分退款"}:
+                return "已退款"
+            if normalized_type == "补发":
+                return "已补发"
+        return normalized_current
 
     def _set_order_status_value(self, value: str) -> None:
         normalized = self._normalize_order_status(value) or "待发货"
@@ -1306,6 +1527,54 @@ class HistoryPage(QWidget):
         self.summary_status_value.blockSignals(True)
         self.summary_status_value.setCurrentIndex(max(index, 0))
         self.summary_status_value.blockSignals(False)
+
+    def _set_detail_shop_value(self, value: str, *, enable: bool) -> None:
+        current_shop = self._text_value(value)
+        options: list[str] = []
+        seen: set[str] = set()
+        for name in [current_shop, *self._shop_names]:
+            normalized = self._text_value(name)
+            if normalized and normalized not in seen:
+                seen.add(normalized)
+                options.append(normalized)
+        self.detail_shop_combo.blockSignals(True)
+        self.detail_shop_combo.clear()
+        if options:
+            self.detail_shop_combo.addItems(options)
+            index = self.detail_shop_combo.findText(current_shop)
+            self.detail_shop_combo.setCurrentIndex(index if index >= 0 else 0)
+        self.detail_shop_combo.blockSignals(False)
+        self.detail_shop_combo.setEnabled(enable and bool(options))
+
+    def _set_platform_value(self, value: object) -> None:
+        normalized = self._resolved_platform_value(self.detail_shop_combo.currentText(), value)
+        index = self.platform_value.findText(normalized)
+        if index < 0:
+            index = self.platform_value.findText("抖店")
+        self.platform_value.blockSignals(True)
+        self.platform_value.setCurrentIndex(max(index, 0))
+        self.platform_value.blockSignals(False)
+
+    def _handle_detail_shop_changed(self, shop_name: str) -> None:
+        if self._syncing_shop_platform:
+            return
+        mapped_platform = self._shop_platforms.get(self._text_value(shop_name))
+        if not mapped_platform:
+            return
+        self._syncing_shop_platform = True
+        try:
+            self._set_platform_value(mapped_platform)
+        finally:
+            self._syncing_shop_platform = False
+
+    def _resolved_platform_value(self, shop_name: object, platform: object) -> str:
+        mapped_platform = self._shop_platforms.get(self._text_value(shop_name))
+        normalized_platform = self._text_value(platform)
+        if mapped_platform in _PLATFORM_OPTIONS:
+            return mapped_platform
+        if normalized_platform in _PLATFORM_OPTIONS:
+            return normalized_platform
+        return "抖店"
 
     def _set_after_sale_status_value(self, value: str) -> None:
         normalized = self._normalize_after_sale_status(value)
@@ -1435,13 +1704,17 @@ class HistoryPage(QWidget):
     def _recalculate_financial_snapshot(self, order_snapshot: dict[str, Any]) -> dict[str, Any]:
         snapshot = dict(order_snapshot)
         income = parse_decimal(snapshot.get("income_amount"))
+        order_status = self._normalize_order_status(snapshot.get("order_status"))
         after_sale_type = self._text_value(snapshot.get("after_sale_type"))
-        after_sale_status = self._normalize_after_sale_status(snapshot.get("after_sale_status"))
+        after_sale_status = self._resolve_effective_after_sale_status(
+            order_status,
+            after_sale_type,
+            snapshot.get("after_sale_status"),
+        )
+        snapshot["after_sale_status"] = after_sale_status
         after_sale_amount = parse_decimal(snapshot.get("after_sale_amount"))
         after_sale_goods_returned = self._text_value(snapshot.get("after_sale_goods_returned"))
-        refund_applies = (
-            after_sale_type in _REFUND_AFTER_SALE_TYPES and after_sale_status in _REFUND_AFTER_SALE_STATUSES
-        )
+        refund_applies = order_status == "已完成售后" and after_sale_type in _REFUND_AFTER_SALE_TYPES
         base_income_value = self._text_value(snapshot.get("after_sale_base_income"))
         base_income = parse_decimal(base_income_value) if base_income_value else income
         if refund_applies:
@@ -1517,7 +1790,25 @@ class HistoryPage(QWidget):
         return widget
 
     @staticmethod
-    def _build_section(title: str, form_layout: QFormLayout) -> QFrame:
+    def _build_small_action_button(text: str) -> QPushButton:
+        button = QPushButton(text)
+        button.setObjectName("SecondaryActionButton")
+        button.setMaximumWidth(68)
+        return button
+
+    @staticmethod
+    def _with_inline_actions(field_widget: QWidget, *action_widgets: QWidget) -> QWidget:
+        container = QWidget()
+        layout = QHBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+        layout.addWidget(field_widget, 1)
+        for action_widget in action_widgets:
+            layout.addWidget(action_widget, 0)
+        return container
+
+    @staticmethod
+    def _build_section(title: str, body_layout: QLayout) -> QFrame:
         frame = QFrame()
         frame.setObjectName("CardFrame")
         layout = QVBoxLayout(frame)
@@ -1526,8 +1817,24 @@ class HistoryPage(QWidget):
         header = QLabel(title)
         header.setObjectName("SectionTitle")
         layout.addWidget(header)
-        layout.addLayout(form_layout)
+        layout.addLayout(body_layout)
         return frame
+
+    @classmethod
+    def _add_detail_grid_row(
+        cls,
+        layout: QGridLayout,
+        row: int,
+        left_label: str,
+        left_widget: QWidget,
+        right_label: str | None,
+        right_widget: QWidget | None,
+    ) -> None:
+        layout.addWidget(cls._label(left_label), row, 0, Qt.AlignmentFlag.AlignTop)
+        layout.addWidget(left_widget, row, 1)
+        if right_label and right_widget is not None:
+            layout.addWidget(cls._label(right_label), row, 2, Qt.AlignmentFlag.AlignTop)
+            layout.addWidget(right_widget, row, 3)
 
     @staticmethod
     def _build_stat_card(title: str, value: str) -> tuple[QFrame, QLabel]:

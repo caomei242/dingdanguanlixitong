@@ -107,10 +107,13 @@ class ExpensePage(QWidget):
         self.expense_date_edit.setDate(QDate.currentDate())
         self.category_combo = QComboBox()
         self.category_combo.setEditable(True)
+        self.category_combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        self.category_combo.setToolTip("可直接输入分类，也可以点右侧下拉选择常用分类。")
         self.category_combo.addItems(list(_CATEGORY_OPTIONS))
         self.shop_combo = QComboBox()
         self.platform_combo = QComboBox()
         self.platform_combo.addItems(list(_PLATFORM_OPTIONS))
+        self.platform_combo.setToolTip("订单级会先跟随关联订单自动带入，也可以手动修正。")
         self.order_combo = QComboBox()
         self.amount_edit = QLineEdit()
         self.amount_edit.setPlaceholderText("输入金额")
@@ -361,7 +364,7 @@ class ExpensePage(QWidget):
         content = QWidget()
         content.setObjectName("PageContent")
         content_layout = QVBoxLayout(content)
-        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.setContentsMargins(16, 16, 16, 16)
         content_layout.setSpacing(14)
         content_layout.addWidget(action_bar)
         content_layout.addWidget(workspace, 1)
@@ -428,8 +431,8 @@ class ExpensePage(QWidget):
         is_project = scope_type == "项目级"
 
         self.order_combo.setEnabled(is_order)
-        self.shop_combo.setEnabled(is_store)
-        self.platform_combo.setEnabled(is_store)
+        self.shop_combo.setEnabled(is_order or is_store)
+        self.platform_combo.setEnabled(is_order or is_store)
 
         if is_project:
             self.shop_combo.setCurrentIndex(-1)
@@ -656,12 +659,16 @@ class ExpensePage(QWidget):
         platform = str(data.get("platform", "")).strip()
         if shop_name:
             index = self.shop_combo.findText(shop_name)
-            if index >= 0:
-                self.shop_combo.setCurrentIndex(index)
+            if index < 0:
+                self.shop_combo.addItem(shop_name)
+                index = self.shop_combo.findText(shop_name)
+            self.shop_combo.setCurrentIndex(index)
         if platform:
             index = self.platform_combo.findText(platform)
-            if index >= 0:
-                self.platform_combo.setCurrentIndex(index)
+            if index < 0:
+                self.platform_combo.addItem(platform)
+                index = self.platform_combo.findText(platform)
+            self.platform_combo.setCurrentIndex(index)
 
     def _load_row_into_editor(self, row: dict[str, Any]) -> None:
         self._selected_record_id = row["record_id"]
@@ -731,8 +738,8 @@ class ExpensePage(QWidget):
             order_id = ""
             if isinstance(data, dict):
                 order_id = str(data.get("order_id", "")).strip()
-                payload["shop_name"] = str(data.get("shop_name", "")).strip()
-                payload["platform"] = str(data.get("platform", "")).strip()
+                payload["shop_name"] = self.shop_combo.currentText().strip() or str(data.get("shop_name", "")).strip()
+                payload["platform"] = self.platform_combo.currentText().strip() or str(data.get("platform", "")).strip()
             if not order_id:
                 QMessageBox.warning(self, "缺少关联订单", "订单级开支需要先选择关联订单。")
                 return None

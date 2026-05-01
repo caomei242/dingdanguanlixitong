@@ -1,0 +1,1008 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>草莓订单管理系统 - 经营开支 A1</title>
+  <style>
+    :root {
+      --bg: #eef4fb;
+      --surface: rgba(255,255,255,0.72);
+      --card: #ffffff;
+      --line: #d6e2f2;
+      --text: #22324c;
+      --muted: #7a89a6;
+      --blue: #5a81ff;
+      --blue-strong: #4673f5;
+      --blue-soft: #edf3ff;
+      --green: #24ad7c;
+      --orange: #f39847;
+      --red: #ef627b;
+      --shadow: 0 24px 60px rgba(39, 68, 120, 0.12);
+      --radius-xl: 26px;
+      --radius-lg: 20px;
+      --radius-md: 16px;
+      --radius-sm: 14px;
+      --font: "SF Pro Display", "PingFang SC", "Helvetica Neue", Arial, sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      padding: 26px;
+      font-family: var(--font);
+      color: var(--text);
+      background:
+        radial-gradient(circle at 18% 16%, rgba(90,129,255,0.10), transparent 28%),
+        radial-gradient(circle at 82% 8%, rgba(255,112,112,0.08), transparent 24%),
+        linear-gradient(180deg, #f8fbff 0%, var(--bg) 100%);
+    }
+
+    .shell {
+      max-width: 1680px;
+      margin: 0 auto;
+      height: calc(100vh - 52px);
+      min-height: 920px;
+      border-radius: 28px;
+      border: 1px solid rgba(201, 214, 235, 0.86);
+      background: var(--surface);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      backdrop-filter: blur(18px);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .titlebar {
+      height: 56px;
+      flex-shrink: 0;
+      border-bottom: 1px solid rgba(201, 214, 235, 0.8);
+      background: rgba(255,255,255,0.76);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+    }
+
+    .lights {
+      position: absolute;
+      left: 18px;
+      display: flex;
+      gap: 8px;
+    }
+
+    .light {
+      width: 13px;
+      height: 13px;
+      border-radius: 999px;
+      box-shadow: inset 0 0 0 1px rgba(0,0,0,0.12);
+    }
+
+    .red { background: #ff5f56; }
+    .yellow { background: #ffbd2d; }
+    .green { background: #28c840; }
+
+    .title {
+      font-size: 14px;
+      font-weight: 800;
+      color: #556580;
+      letter-spacing: .02em;
+    }
+
+    .workspace {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 204px 1fr;
+      min-height: 0;
+    }
+
+    .sidebar {
+      background: rgba(247,250,255,0.86);
+      border-right: 1px solid rgba(201,214,235,0.86);
+      padding: 24px 16px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 22px;
+    }
+
+    .brand {
+      padding: 8px 12px;
+    }
+
+    .logo {
+      font-size: 44px;
+      font-weight: 900;
+      letter-spacing: -0.08em;
+      color: #ff5c86;
+      line-height: 1;
+      margin-bottom: 8px;
+    }
+
+    .sub {
+      font-size: 14px;
+      color: var(--muted);
+      font-weight: 700;
+    }
+
+    .nav {
+      background: rgba(255,255,255,0.82);
+      border: 1px solid rgba(203,216,238,0.9);
+      border-radius: 24px;
+      padding: 16px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .nav button {
+      border: 0;
+      background: transparent;
+      text-align: left;
+      padding: 14px 16px;
+      border-radius: 16px;
+      font-size: 18px;
+      font-weight: 800;
+      color: #34435f;
+      cursor: default;
+    }
+
+    .nav button.active {
+      color: #fff;
+      background: linear-gradient(180deg, #6f93ff 0%, #4f7cf6 100%);
+      box-shadow: 0 16px 28px rgba(79,124,246,0.26);
+    }
+
+    .main {
+      padding: 20px;
+      min-width: 0;
+    }
+
+    .page {
+      height: 100%;
+      border-radius: 28px;
+      border: 1px solid rgba(201,214,235,0.92);
+      background: rgba(255,255,255,0.74);
+      padding: 18px 18px 16px;
+      display: grid;
+      grid-template-rows: auto auto auto 1fr;
+      gap: 14px;
+      min-height: 0;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 20px;
+    }
+
+    .headline {
+      margin: 0;
+      font-size: 34px;
+      font-weight: 900;
+      letter-spacing: -0.04em;
+    }
+
+    .headnote {
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 15px;
+    }
+
+    .actions {
+      display: flex;
+      gap: 10px;
+    }
+
+    .actions button,
+    .toolbar button,
+    .primary,
+    .secondary {
+      border: 0;
+      border-radius: 999px;
+      padding: 12px 18px;
+      font-size: 14px;
+      font-weight: 800;
+      cursor: default;
+      font-family: inherit;
+    }
+
+    .secondary {
+      background: #edf1f9;
+      color: #62718d;
+    }
+
+    .primary {
+      color: #fff;
+      background: linear-gradient(180deg, #5e84ff 0%, #4673f5 100%);
+      box-shadow: 0 12px 20px rgba(70,115,245,0.22);
+    }
+
+    .toolbar {
+      display: grid;
+      grid-template-columns: 1.1fr .8fr .8fr .8fr auto;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .toolbar .cell,
+    .input,
+    .select,
+    .textarea,
+    .chip,
+    .mini-box {
+      border: 1px solid rgba(208,220,240,0.96);
+      background: #fff;
+      border-radius: 16px;
+      padding: 13px 15px;
+      font-size: 14px;
+      color: var(--text);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.9);
+    }
+
+    .toolbar .cell {
+      color: #5a6c89;
+      font-weight: 700;
+    }
+
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+    }
+
+    .summary-card,
+    .panel,
+    .block,
+    .detail-card,
+    .log-row {
+      border-radius: 22px;
+      border: 1px solid rgba(203,216,238,0.94);
+      background: rgba(255,255,255,0.92);
+      box-shadow: 0 10px 18px rgba(82,108,149,0.05);
+    }
+
+    .summary-card {
+      padding: 16px 18px;
+    }
+
+    .label {
+      font-size: 12px;
+      font-weight: 800;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+
+    .value {
+      font-size: 30px;
+      font-weight: 900;
+      letter-spacing: -0.03em;
+      margin-bottom: 4px;
+    }
+
+    .note {
+      font-size: 12px;
+      color: #8a99b5;
+    }
+
+    .content {
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 420px 1fr;
+      gap: 14px;
+    }
+
+    .panel {
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .panel-head {
+      padding: 18px 18px 14px;
+      border-bottom: 1px solid rgba(234,240,249,0.92);
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .panel-head h2 {
+      margin: 0;
+      font-size: 24px;
+      font-weight: 900;
+      letter-spacing: -0.03em;
+    }
+
+    .panel-head p {
+      margin: 6px 0 0;
+      font-size: 13px;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    .left-scroll,
+    .right-scroll {
+      min-height: 0;
+      overflow: auto;
+      padding: 16px 18px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .pillbar {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .pill {
+      border: 0;
+      padding: 10px 14px;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 800;
+      color: #60708d;
+      background: #f3f7fd;
+      cursor: pointer;
+      transition: .18s ease;
+    }
+
+    .pill.active {
+      background: linear-gradient(180deg, #5e84ff 0%, #4a77f6 100%);
+      border-color: transparent;
+      color: #fff;
+      box-shadow: 0 12px 20px rgba(74,119,246,0.18);
+    }
+
+    .scope-section.hidden {
+      display: none;
+    }
+
+    .log-row {
+      cursor: pointer;
+      transition: .18s ease;
+    }
+
+    .log-row:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 14px 24px rgba(82,108,149,0.08);
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+    }
+
+    .field label {
+      font-size: 12px;
+      font-weight: 800;
+      color: #7b8ca9;
+    }
+
+    .textarea {
+      min-height: 96px;
+      resize: none;
+      font-family: inherit;
+    }
+
+    .helper {
+      border-radius: 18px;
+      background: linear-gradient(135deg, #f3f7ff 0%, #ffffff 100%);
+      border: 1px solid rgba(208,220,240,0.92);
+      padding: 16px;
+    }
+
+    .helper h3 {
+      margin: 0 0 8px;
+      font-size: 16px;
+      font-weight: 900;
+    }
+
+    .helper ul {
+      margin: 0;
+      padding-left: 18px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.7;
+    }
+
+    .right-grid {
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      min-height: 0;
+      gap: 14px;
+    }
+
+    .log-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .log-row {
+      padding: 16px;
+      display: grid;
+      grid-template-columns: 1.45fr auto auto auto;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .log-row.active {
+      border-color: rgba(87,124,247,0.7);
+      box-shadow: 0 0 0 3px rgba(83,122,248,0.08);
+    }
+
+    .row-main {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    .row-title {
+      font-size: 17px;
+      font-weight: 900;
+    }
+
+    .row-sub {
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .chip {
+      width: fit-content;
+      border-radius: 999px;
+      padding: 8px 12px;
+      font-size: 12px;
+      font-weight: 800;
+      background: var(--blue-soft);
+      color: var(--blue-strong);
+    }
+
+    .amount {
+      justify-self: end;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 92px;
+      padding: 9px 14px;
+      text-align: center;
+      font-size: 18px;
+      font-weight: 900;
+      letter-spacing: -0.03em;
+      border-radius: 999px;
+      background: #f5f8fd;
+      border: 1px solid rgba(214, 226, 242, 0.96);
+    }
+
+    .amount.red {
+      color: var(--red);
+      background: #fff2f5;
+      border-color: rgba(242, 194, 203, 0.92);
+    }
+    .amount.orange {
+      color: var(--orange);
+      background: #fff5eb;
+      border-color: rgba(245, 214, 183, 0.92);
+    }
+    .amount.green {
+      color: var(--green);
+      background: #eefaf4;
+      border-color: rgba(186, 231, 210, 0.92);
+    }
+
+    .detail-top {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+    }
+
+    .mini-box {
+      border-radius: 18px;
+      padding: 14px;
+    }
+
+    .mini-box .label { margin-bottom: 6px; }
+    .mini-box .value {
+      font-size: 20px;
+      margin: 0;
+    }
+
+    .detail-body {
+      display: grid;
+      grid-template-columns: 1.1fr .9fr;
+      gap: 14px;
+    }
+
+    .detail-card {
+      padding: 16px;
+    }
+
+    .detail-card h3 {
+      margin: 0 0 12px;
+      font-size: 18px;
+      font-weight: 900;
+    }
+
+    .detail-lines {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .detail-line {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      font-size: 13px;
+      align-items: flex-start;
+    }
+
+    .detail-line span {
+      color: var(--muted);
+      font-weight: 700;
+    }
+
+    .detail-line strong {
+      font-weight: 900;
+      text-align: right;
+      max-width: 60%;
+    }
+
+    .profit {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+    }
+
+    .profit .mini-box {
+      min-height: 100px;
+    }
+
+    .caption {
+      margin-top: -2px;
+      font-size: 12px;
+      color: #8da0be;
+      line-height: 1.6;
+    }
+
+    @media (max-width: 1440px) {
+      body { padding: 14px; }
+      .workspace { grid-template-columns: 184px 1fr; }
+      .content { grid-template-columns: 380px 1fr; }
+      .summary, .detail-top { grid-template-columns: repeat(2, 1fr); }
+      .toolbar { grid-template-columns: 1fr 1fr 1fr 1fr; }
+      .toolbar button { grid-column: 1 / -1; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <div class="titlebar">
+      <div class="lights">
+        <span class="light red"></span>
+        <span class="light yellow"></span>
+        <span class="light green"></span>
+      </div>
+      <div class="title">草莓订单管理系统 · 经营开支 A1 定稿草图</div>
+    </div>
+
+    <div class="workspace">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="logo">草莓</div>
+          <div class="sub">订单管理系统</div>
+        </div>
+        <div class="nav">
+          <button>订单录入</button>
+          <button>历史订单</button>
+          <button>财务报表</button>
+          <button class="active">经营开支</button>
+          <button>设置</button>
+        </div>
+      </aside>
+
+      <main class="main">
+        <section class="page">
+          <div class="topbar">
+            <div>
+              <h1 class="headline">经营开支</h1>
+              <div class="headnote">左边录入，右边查账和核对；项目级、店铺级、订单级统一放进这一页。</div>
+            </div>
+            <div class="actions">
+              <button class="secondary">导出筛选结果</button>
+              <button class="primary">保存开支</button>
+            </div>
+          </div>
+
+          <div class="toolbar">
+            <div class="cell">搜索：订单号 / 店铺 / 备注 / 服务软件</div>
+            <div class="cell">日期：2026-04</div>
+            <div class="cell">层级：全部开支</div>
+            <div class="cell">店铺：全部店铺</div>
+            <button class="primary">应用筛选</button>
+          </div>
+
+          <div class="summary">
+            <div class="summary-card">
+              <div class="label">本月经营开支</div>
+              <div class="value">¥8,108</div>
+              <div class="note">项目级 1 笔 / 店铺级 1 笔 / 订单级 1 笔</div>
+            </div>
+            <div class="summary-card">
+              <div class="label">项目级开支</div>
+              <div class="value">¥7,999</div>
+              <div class="note">只进总盘经营利润</div>
+            </div>
+            <div class="summary-card">
+              <div class="label">店铺级开支</div>
+              <div class="value">¥99</div>
+              <div class="note">乐宝零食店软件服务费</div>
+            </div>
+            <div class="summary-card">
+              <div class="label">订单级开支</div>
+              <div class="value">¥10</div>
+              <div class="note">售后返现 1 笔</div>
+            </div>
+          </div>
+
+          <div class="content">
+            <div class="panel">
+              <div class="panel-head">
+                <div>
+                  <h2>开支录入</h2>
+                  <p>这里直接记账；如果从历史订单跳过来，订单信息和店铺会自动预填。</p>
+                </div>
+                <button class="secondary">清空</button>
+              </div>
+
+              <div class="left-scroll">
+                <div class="pillbar">
+                  <button class="pill active" data-scope-tab="order">订单级开支</button>
+                  <button class="pill" data-scope-tab="store">店铺级开支</button>
+                  <button class="pill" data-scope-tab="project">项目级开支</button>
+                </div>
+
+                <div class="form-grid">
+                  <div class="field">
+                    <label>开支日期</label>
+                    <div class="select">2026-04-15</div>
+                  </div>
+                  <div class="field">
+                    <label id="scope-category-label">分类</label>
+                    <div class="select" id="scope-category-value">售后补偿</div>
+                  </div>
+                </div>
+
+                <div class="form-grid scope-section" data-scope-section="order">
+                  <div class="field">
+                    <label>店铺</label>
+                    <div class="select">乐宝零食店</div>
+                  </div>
+                  <div class="field">
+                    <label>平台</label>
+                    <div class="select">抖店</div>
+                  </div>
+                </div>
+
+                <div class="field scope-section" data-scope-section="order">
+                  <label>关联订单</label>
+                  <div class="input">6952059303468209543 · 丽 · 已发货 · 点击可重新换单</div>
+                </div>
+
+                <div class="form-grid scope-section hidden" data-scope-section="store">
+                  <div class="field">
+                    <label>店铺</label>
+                    <div class="select">乐宝零食店</div>
+                  </div>
+                  <div class="field">
+                    <label>平台</label>
+                    <div class="select">抖店</div>
+                  </div>
+                </div>
+
+                <div class="scope-section hidden" data-scope-section="project">
+                  <div class="helper">
+                    <h3>项目级开支说明</h3>
+                    <ul>
+                      <li>这类记录不绑定订单，也不归属于某一家店。</li>
+                      <li>例如电脑、打印机、项目共用工具、运营素材。</li>
+                      <li>利润口径上只进入总盘经营利润，不分摊到店铺。</li>
+                    </ul>
+                  </div>
+                </div>
+
+                <div class="form-grid">
+                  <div class="field">
+                    <label>金额</label>
+                    <div class="input">10.00</div>
+                  </div>
+                  <div class="field">
+                    <label>计入利润</label>
+                    <div class="select">是</div>
+                  </div>
+                </div>
+
+                <div class="field">
+                  <label>备注</label>
+                  <div class="textarea">客户反馈瓶盖破损，售后返现 10 元。因为是该订单引起的补偿，归到订单级开支。</div>
+                </div>
+
+                <div class="helper" id="scope-helper">
+                  <h3>真实使用方式</h3>
+                  <ul>
+                    <li>买电脑：切到“项目级开支”，店铺和订单自动隐藏或留空。</li>
+                    <li>某店买软件：切到“店铺级开支”，保留店铺，订单不填。</li>
+                    <li>售后返现：从历史订单点“新增开支”跳过来，订单预填。</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+
+            <div class="right-grid">
+              <div class="panel">
+                <div class="panel-head">
+                  <div>
+                    <h2>最近开支</h2>
+                    <p>右边先看台账，下面看选中详情。这样你不用来回切页面。</p>
+                  </div>
+                  <button class="secondary">按金额排序</button>
+                </div>
+
+                <div class="right-scroll">
+                    <div class="log-list">
+                      <div class="log-row active" data-record="order">
+                        <div class="row-main">
+                          <div class="row-title">售后返现 10 元</div>
+                          <div class="row-sub">2026-04-15 · 丽 · 绑定订单 6952059303468209543</div>
+                        </div>
+                        <div><span class="chip">订单级</span></div>
+                      <div>乐宝零食店</div>
+                      <div class="amount red">¥10</div>
+                    </div>
+
+                      <div class="log-row" data-record="store">
+                        <div class="row-main">
+                          <div class="row-title">自动发货软件月费</div>
+                          <div class="row-sub">2026-04-15 · 不绑定订单 · 店铺服务软件</div>
+                        </div>
+                        <div><span class="chip">店铺级</span></div>
+                      <div>乐宝零食店</div>
+                      <div class="amount orange">¥99</div>
+                    </div>
+
+                      <div class="log-row" data-record="project">
+                        <div class="row-main">
+                          <div class="row-title">运营办公电脑</div>
+                          <div class="row-sub">2026-04-11 · 项目共用设备采购</div>
+                        </div>
+                        <div><span class="chip">项目级</span></div>
+                      <div>—</div>
+                      <div class="amount red">¥7,999</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="detail-top">
+                <div class="mini-box">
+                  <div class="label">归属层级</div>
+                  <div class="value" id="detail-scope" style="font-size:20px">订单级</div>
+                </div>
+                <div class="mini-box">
+                  <div class="label">关联店铺</div>
+                  <div class="value" id="detail-shop" style="font-size:20px">乐宝零食店</div>
+                </div>
+                <div class="mini-box">
+                  <div class="label" id="detail-link-label">关联订单</div>
+                  <div class="value" id="detail-link" style="font-size:20px">695205...</div>
+                </div>
+                <div class="mini-box">
+                  <div class="label">金额</div>
+                  <div class="value" id="detail-amount" style="font-size:20px; color: var(--red);">¥10</div>
+                </div>
+              </div>
+
+              <div class="detail-body">
+                <div class="detail-card">
+                  <h3>当前记录详情</h3>
+                  <div class="detail-lines">
+                    <div class="detail-line"><span>开支日期</span><strong id="detail-date">2026-04-15</strong></div>
+                    <div class="detail-line"><span>分类</span><strong id="detail-category">售后补偿</strong></div>
+                    <div class="detail-line"><span>店铺</span><strong id="detail-store-row">乐宝零食店</strong></div>
+                    <div class="detail-line"><span>平台</span><strong id="detail-platform">抖店</strong></div>
+                    <div class="detail-line"><span id="detail-extra-label">收件人</span><strong id="detail-extra-value">丽</strong></div>
+                    <div class="detail-line"><span id="detail-status-label">订单状态</span><strong id="detail-status-value">已发货</strong></div>
+                    <div class="detail-line"><span>备注</span><strong id="detail-remark">客户反馈瓶盖破损，补偿返现 10 元。</strong></div>
+                  </div>
+                </div>
+
+                <div class="detail-card">
+                  <h3>利润影响</h3>
+                  <div class="profit">
+                    <div class="mini-box">
+                      <div class="label" id="impact-1-label">订单利润</div>
+                      <div class="value" id="impact-1-value" style="font-size:22px; color: var(--red);">-10</div>
+                      <div class="note" id="impact-1-note">只影响这一个订单</div>
+                    </div>
+                    <div class="mini-box">
+                      <div class="label" id="impact-2-label">店铺经营利润</div>
+                      <div class="value" id="impact-2-value" style="font-size:22px; color: var(--red);">-10</div>
+                      <div class="note" id="impact-2-note">乐宝店同步减少</div>
+                    </div>
+                    <div class="mini-box">
+                      <div class="label" id="impact-3-label">总盘经营利润</div>
+                      <div class="value" id="impact-3-value" style="font-size:22px; color: var(--red);">-10</div>
+                      <div class="note" id="impact-3-note">总盘也会减掉</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+  <script>
+    const stateMap = {
+      order: {
+        category: "售后补偿",
+        detailScope: "订单级",
+        detailShop: "乐宝零食店",
+        detailLinkLabel: "关联订单",
+        detailLink: "695205...",
+        detailAmount: "¥10",
+        detailDate: "2026-04-15",
+        detailCategory: "售后补偿",
+        detailStoreRow: "乐宝零食店",
+        detailPlatform: "抖店",
+        detailExtraLabel: "收件人",
+        detailExtraValue: "丽",
+        detailStatusLabel: "订单状态",
+        detailStatusValue: "已发货",
+        detailRemark: "客户反馈瓶盖破损，补偿返现 10 元。",
+        impact1Label: "订单利润",
+        impact1Value: "-10",
+        impact1Note: "只影响这一个订单",
+        impact2Label: "店铺经营利润",
+        impact2Value: "-10",
+        impact2Note: "乐宝店同步减少",
+        impact3Label: "总盘经营利润",
+        impact3Value: "-10",
+        impact3Note: "总盘也会减掉",
+        helper: [
+          "买电脑：切到“项目级开支”，店铺和订单自动隐藏或留空。",
+          "某店买软件：切到“店铺级开支”，保留店铺，订单不填。",
+          "售后返现：从历史订单点“新增开支”跳过来，订单预填。"
+        ]
+      },
+      store: {
+        category: "软件服务",
+        detailScope: "店铺级",
+        detailShop: "乐宝零食店",
+        detailLinkLabel: "关联说明",
+        detailLink: "不绑定订单",
+        detailAmount: "¥99",
+        detailDate: "2026-04-15",
+        detailCategory: "软件服务",
+        detailStoreRow: "乐宝零食店",
+        detailPlatform: "抖店",
+        detailExtraLabel: "费用对象",
+        detailExtraValue: "自动发货软件月费",
+        detailStatusLabel: "订单影响",
+        detailStatusValue: "不直接绑定订单",
+        detailRemark: "乐宝零食店自动发货软件月费，归店铺经营开支。",
+        impact1Label: "订单利润",
+        impact1Value: "不影响",
+        impact1Note: "不会压到具体某个订单",
+        impact2Label: "店铺经营利润",
+        impact2Value: "-99",
+        impact2Note: "乐宝店单独减少",
+        impact3Label: "总盘经营利润",
+        impact3Value: "-99",
+        impact3Note: "总盘也会减掉",
+        helper: [
+          "店铺级开支适合软件服务费、打单工具、店铺专用素材。",
+          "这类钱不应该硬挂在某个订单上，不然后面复盘会混乱。",
+          "利润页里，它会进入该店铺经营利润，也进入总盘。"
+        ]
+      },
+      project: {
+        category: "设备采购",
+        detailScope: "项目级",
+        detailShop: "—",
+        detailLinkLabel: "归属说明",
+        detailLink: "项目共用",
+        detailAmount: "¥7,999",
+        detailDate: "2026-04-11",
+        detailCategory: "设备采购",
+        detailStoreRow: "—",
+        detailPlatform: "—",
+        detailExtraLabel: "费用对象",
+        detailExtraValue: "运营办公电脑",
+        detailStatusLabel: "店铺分摊",
+        detailStatusValue: "不分摊",
+        detailRemark: "电脑用于整个网店项目运营，只进总盘经营开支。",
+        impact1Label: "订单利润",
+        impact1Value: "不影响",
+        impact1Note: "任何单订单都不直接承担",
+        impact2Label: "店铺经营利润",
+        impact2Value: "不分摊",
+        impact2Note: "当前规则下不压到各店",
+        impact3Label: "总盘经营利润",
+        impact3Value: "-7999",
+        impact3Note: "只在总盘层面体现",
+        helper: [
+          "项目级开支适合电脑、打印机、项目通用素材和共用会员。",
+          "它不归某一家店，也不归某个订单，避免强行分摊。",
+          "财务报表里默认只影响总盘经营利润。"
+        ]
+      }
+    };
+
+    const tabs = document.querySelectorAll("[data-scope-tab]");
+    const rows = document.querySelectorAll("[data-record]");
+    const sections = document.querySelectorAll("[data-scope-section]");
+
+    function setText(id, value) {
+      const node = document.getElementById(id);
+      if (node) node.textContent = value;
+    }
+
+    function setScope(scope) {
+      const state = stateMap[scope];
+      tabs.forEach((tab) => tab.classList.toggle("active", tab.dataset.scopeTab === scope));
+      rows.forEach((row) => row.classList.toggle("active", row.dataset.record === scope));
+      sections.forEach((section) => section.classList.toggle("hidden", section.dataset.scopeSection !== scope));
+
+      document.getElementById("scope-category-value").textContent = state.category;
+      setText("detail-scope", state.detailScope);
+      setText("detail-shop", state.detailShop);
+      setText("detail-link-label", state.detailLinkLabel);
+      setText("detail-link", state.detailLink);
+      setText("detail-amount", state.detailAmount);
+      setText("detail-date", state.detailDate);
+      setText("detail-category", state.detailCategory);
+      setText("detail-store-row", state.detailStoreRow);
+      setText("detail-platform", state.detailPlatform);
+      setText("detail-extra-label", state.detailExtraLabel);
+      setText("detail-extra-value", state.detailExtraValue);
+      setText("detail-status-label", state.detailStatusLabel);
+      setText("detail-status-value", state.detailStatusValue);
+      setText("detail-remark", state.detailRemark);
+      setText("impact-1-label", state.impact1Label);
+      setText("impact-1-value", state.impact1Value);
+      setText("impact-1-note", state.impact1Note);
+      setText("impact-2-label", state.impact2Label);
+      setText("impact-2-value", state.impact2Value);
+      setText("impact-2-note", state.impact2Note);
+      setText("impact-3-label", state.impact3Label);
+      setText("impact-3-value", state.impact3Value);
+      setText("impact-3-note", state.impact3Note);
+
+      const helper = document.getElementById("scope-helper");
+      helper.innerHTML = `<h3>真实使用方式</h3><ul>${state.helper.map((line) => `<li>${line}</li>`).join("")}</ul>`;
+    }
+
+    tabs.forEach((tab) => {
+      tab.addEventListener("click", () => setScope(tab.dataset.scopeTab));
+    });
+
+    rows.forEach((row) => {
+      row.addEventListener("click", () => setScope(row.dataset.record));
+    });
+  </script>
+</body>
+</html>

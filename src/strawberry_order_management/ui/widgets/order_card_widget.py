@@ -8,6 +8,7 @@ import re
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
+    QCompleter,
     QComboBox,
     QFrame,
     QGridLayout,
@@ -31,7 +32,7 @@ from strawberry_order_management.models import ParsedOrder, ProcurementItem
 class OrderCardWidget(QWidget):
     product_library_requested = Signal(str, str)
     procurement_template_requested = Signal(object)
-    ORDER_STATUS_OPTIONS = ("已发货", "待发货", "已拍单未发货")
+    ORDER_STATUS_OPTIONS = ("已发货", "待发货", "已拍单未发货", "已完成售后")
     DEFAULT_PLATFORM_FEE_RATE = "0.06"
     DEFAULT_DELIVERY_NOTE_PATTERN = re.compile(r"^请电话送货上门谢谢【\d+】$")
 
@@ -71,35 +72,38 @@ class OrderCardWidget(QWidget):
         self.custom_cost_row_widgets: list[QWidget] = []
         self._platform_fee_amount_overridden = False
         self._suspend_financial_recalculation = False
-        self.procurement_rows: list[tuple[QComboBox, QLineEdit, QLineEdit, QLineEdit, QPushButton]] = []
+        self.procurement_rows: list[
+            tuple[QComboBox, QLineEdit, QLineEdit, QLineEdit, QPushButton, QPushButton]
+        ] = []
 
-        self.procurement_product_1_combo, self.procurement_quantity_1_edit, self.procurement_cost_1_edit, self.procurement_tracking_number_1_edit, self.procurement_save_1_button = (
-            self._build_procurement_row(0)
-        )
-        self.procurement_product_2_combo, self.procurement_quantity_2_edit, self.procurement_cost_2_edit, self.procurement_tracking_number_2_edit, self.procurement_save_2_button = (
-            self._build_procurement_row(1)
-        )
-        self.procurement_product_3_combo, self.procurement_quantity_3_edit, self.procurement_cost_3_edit, self.procurement_tracking_number_3_edit, self.procurement_save_3_button = (
-            self._build_procurement_row(2)
-        )
+        (
+            self.procurement_product_1_combo,
+            self.procurement_quantity_1_edit,
+            self.procurement_cost_1_edit,
+            self.procurement_tracking_number_1_edit,
+            self.procurement_save_1_button,
+            self.procurement_clear_tracking_1_button,
+        ) = self._build_procurement_row(0)
+        (
+            self.procurement_product_2_combo,
+            self.procurement_quantity_2_edit,
+            self.procurement_cost_2_edit,
+            self.procurement_tracking_number_2_edit,
+            self.procurement_save_2_button,
+            self.procurement_clear_tracking_2_button,
+        ) = self._build_procurement_row(1)
+        (
+            self.procurement_product_3_combo,
+            self.procurement_quantity_3_edit,
+            self.procurement_cost_3_edit,
+            self.procurement_tracking_number_3_edit,
+            self.procurement_save_3_button,
+            self.procurement_clear_tracking_3_button,
+        ) = self._build_procurement_row(2)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(12)
-        layout.addWidget(
-            self._build_section_card(
-                "订单概览",
-                "OrderSummaryCard",
-                self._build_overview_body(),
-            )
-        )
-        layout.addWidget(
-            self._build_section_card(
-                "收件信息",
-                "OrderShippingCard",
-                self._build_shipping_body(),
-            )
-        )
         layout.addWidget(
             self._build_section_card(
                 "采购信息",
@@ -112,6 +116,20 @@ class OrderCardWidget(QWidget):
                 "财务信息",
                 "FinancialSectionCard",
                 self._build_financial_body(),
+            )
+        )
+        layout.addWidget(
+            self._build_section_card(
+                "订单概览",
+                "OrderSummaryCard",
+                self._build_overview_body(),
+            )
+        )
+        layout.addWidget(
+            self._build_section_card(
+                "收件信息",
+                "OrderShippingCard",
+                self._build_shipping_body(),
             )
         )
         layout.addStretch(1)
@@ -127,7 +145,7 @@ class OrderCardWidget(QWidget):
             for item in product_presets
             if self._to_text(item.get("name")).strip()
         ]
-        for index, (combo, _, _, _, _) in enumerate(self.procurement_rows):
+        for index, (combo, _, _, _, _, _) in enumerate(self.procurement_rows):
             current = combo.currentText().strip()
             combo.blockSignals(True)
             combo.clear()
@@ -205,7 +223,7 @@ class OrderCardWidget(QWidget):
             normalized_items = self._procurement_items_from_template(
                 self._find_template_for_specification(self._to_text(getattr(order, "specification", "")))
             )
-        for index, (combo, quantity_edit, cost_edit, tracking_edit, _) in enumerate(self.procurement_rows):
+        for index, (combo, quantity_edit, cost_edit, tracking_edit, _, _) in enumerate(self.procurement_rows):
             item = normalized_items[index] if index < len(normalized_items) else ProcurementItem("", "", "", "")
             combo.setCurrentText(self._to_text(item.product_name))
             quantity_edit.setText(self._to_text(item.quantity))
@@ -247,13 +265,20 @@ class OrderCardWidget(QWidget):
             custom_cost_labels=tuple(label.text().strip() for label in self.custom_cost_label_edits),
             custom_cost_values=tuple(edit.text().strip() for edit in self.custom_cost_value_edits),
             procurement_items=tuple(
-                ProcurementItem(*self._normalized_procurement_row_values(combo, quantity_edit, cost_edit, tracking_edit))
-                for combo, quantity_edit, cost_edit, tracking_edit, _ in self.procurement_rows
+                ProcurementItem(
+                    *self._normalized_procurement_row_values(
+                        combo,
+                        quantity_edit,
+                        cost_edit,
+                        tracking_edit,
+                    )
+                )
+                for combo, quantity_edit, cost_edit, tracking_edit, _, _ in self.procurement_rows
             ),
         )
 
     def emit_product_library_request(self, index: int) -> None:
-        combo, _, cost_edit, _, _ = self.procurement_rows[index]
+        combo, _, cost_edit, _, _, _ = self.procurement_rows[index]
         product_name = combo.currentText().strip()
         cost = cost_edit.text().strip()
         if not product_name:
@@ -273,8 +298,13 @@ class OrderCardWidget(QWidget):
                         "tracking_number": "",
                     }
                     for product_name, quantity, cost, _ in (
-                        self._normalized_procurement_row_values(combo, quantity_edit, cost_edit, tracking_edit)
-                        for combo, quantity_edit, cost_edit, tracking_edit, _ in self.procurement_rows
+                        self._normalized_procurement_row_values(
+                            combo,
+                            quantity_edit,
+                            cost_edit,
+                            tracking_edit,
+                        )
+                        for combo, quantity_edit, cost_edit, tracking_edit, _, _ in self.procurement_rows
                     )
                 ],
             }
@@ -286,15 +316,18 @@ class OrderCardWidget(QWidget):
         grid.setContentsMargins(0, 0, 0, 0)
         grid.setHorizontalSpacing(12)
         grid.setVerticalSpacing(10)
+        grid.setColumnStretch(0, 1)
+        grid.setColumnStretch(1, 1)
+        grid.setColumnStretch(2, 1)
 
-        grid.addWidget(self._field_block("下单时间", self.placed_at_edit), 0, 0)
-        grid.addWidget(self._field_block("订单状态", self.order_status_edit), 0, 1)
+        grid.addWidget(self._field_block("下单时间", self.placed_at_edit), 0, 0, 1, 2)
+        grid.addWidget(self._field_block("订单状态", self.order_status_edit), 0, 2)
         grid.addWidget(self._field_block("数量", self.quantity_edit), 1, 0)
-        grid.addWidget(self._field_block("商品名称", self.product_name_edit), 2, 0, 1, 2)
-        grid.addWidget(self._field_block("规格", self.specification_edit), 3, 0, 1, 2)
-        grid.addWidget(self._field_block("SKU 图片", self.sku_image_label), 4, 0)
-        grid.addWidget(self._field_block("订单金额", self.order_amount_edit), 4, 1)
-        grid.addWidget(self._field_block("商家收入", self.income_amount_edit), 5, 0, 1, 2)
+        grid.addWidget(self._field_block("商家收入", self.income_amount_edit), 1, 1)
+        grid.addWidget(self._field_block("订单金额", self.order_amount_edit), 1, 2)
+        grid.addWidget(self._field_block("商品名称", self.product_name_edit), 2, 0, 1, 3)
+        grid.addWidget(self._field_block("规格", self.specification_edit), 3, 0, 1, 3)
+        grid.addWidget(self._field_block("SKU 图片", self.sku_image_label), 4, 0, 1, 3)
         return body
 
     def _build_shipping_body(self) -> QWidget:
@@ -341,12 +374,16 @@ class OrderCardWidget(QWidget):
             grid.addWidget(row_widget, 3 + index, 0, 1, 2)
         return body
 
-    def _build_procurement_row(self, index: int) -> tuple[QComboBox, QLineEdit, QLineEdit, QLineEdit, QPushButton]:
+    def _build_procurement_row(
+        self,
+        index: int,
+    ) -> tuple[QComboBox, QLineEdit, QLineEdit, QLineEdit, QPushButton, QPushButton]:
         product_combo = QComboBox()
         product_combo.setEditable(True)
         product_combo.setObjectName("OrderValueEdit")
         product_combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
         product_combo.setMinimumWidth(220)
+        self._configure_procurement_completer(product_combo)
 
         quantity_edit = self._build_line_edit()
         quantity_edit.setPlaceholderText("数量")
@@ -360,14 +397,27 @@ class OrderCardWidget(QWidget):
         tracking_edit.setPlaceholderText("快递单号")
         tracking_edit.setMinimumWidth(170)
 
-        save_button = QPushButton("入库")
-        save_button.setObjectName("SecondaryActionButton")
-        save_button.setMaximumWidth(86)
+        clear_button = self._build_procurement_action_button("清空")
+        clear_button.clicked.connect(tracking_edit.clear)
+
+        save_button = self._build_procurement_action_button("入库")
 
         product_combo.currentTextChanged.connect(partial(self._handle_procurement_product_changed, index))
+        product_combo.lineEdit().textEdited.connect(
+            partial(self._show_procurement_completions, product_combo)
+        )
         save_button.clicked.connect(partial(self.emit_product_library_request, index))
-        self.procurement_rows.append((product_combo, quantity_edit, cost_edit, tracking_edit, save_button))
-        return product_combo, quantity_edit, cost_edit, tracking_edit, save_button
+        self.procurement_rows.append(
+            (product_combo, quantity_edit, cost_edit, tracking_edit, save_button, clear_button)
+        )
+        return product_combo, quantity_edit, cost_edit, tracking_edit, save_button, clear_button
+
+    @staticmethod
+    def _build_procurement_action_button(text: str) -> QPushButton:
+        button = QPushButton(text)
+        button.setObjectName("SecondaryActionButton")
+        button.setMaximumWidth(68)
+        return button
 
     def _build_procurement_row_card(self, title: str, row_widget: QWidget) -> QWidget:
         card = QFrame()
@@ -382,23 +432,46 @@ class OrderCardWidget(QWidget):
         return card
 
     def _procurement_row_widget(self, index: int) -> QWidget:
-        combo, quantity_edit, cost_edit, tracking_edit, save_button = self.procurement_rows[index]
+        combo, quantity_edit, cost_edit, tracking_edit, save_button, clear_button = self.procurement_rows[index]
         row = QWidget()
         layout = QHBoxLayout(row)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
-        layout.addWidget(combo, 3)
+        layout.addWidget(combo, 2)
         layout.addWidget(quantity_edit, 1)
         layout.addWidget(cost_edit, 1)
         layout.addWidget(tracking_edit, 2)
+        layout.addWidget(clear_button, 0)
         layout.addWidget(save_button, 0)
         return row
 
     def _handle_procurement_product_changed(self, index: int, _: str) -> None:
         self._apply_preset_to_slot(index)
 
+    @staticmethod
+    def _configure_procurement_completer(combo: QComboBox) -> None:
+        completer = combo.completer()
+        if completer is None:
+            completer = QCompleter(combo.model(), combo)
+            combo.setCompleter(completer)
+        completer.setModel(combo.model())
+        completer.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
+        completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+
+    @staticmethod
+    def _show_procurement_completions(combo: QComboBox, text: str) -> None:
+        if not text.strip():
+            return
+        completer = combo.completer()
+        if completer is None:
+            return
+        completer.setCompletionPrefix(text)
+        if completer.completionCount() > 0:
+            completer.complete()
+
     def _apply_preset_to_slot(self, index: int) -> None:
-        combo, quantity_edit, cost_edit, _, _ = self.procurement_rows[index]
+        combo, quantity_edit, cost_edit, _, _, _ = self.procurement_rows[index]
         selected_name = combo.currentText().strip()
         if not selected_name:
             return
@@ -428,7 +501,7 @@ class OrderCardWidget(QWidget):
         self.platform_fee_rate_edit.textChanged.connect(self._handle_platform_fee_rate_changed)
         self.platform_fee_amount_edit.textEdited.connect(self._handle_platform_fee_amount_edited)
         self.other_cost_edit.textChanged.connect(self._recalculate_financials)
-        for _, quantity_edit, cost_edit, _, _ in self.procurement_rows:
+        for _, quantity_edit, cost_edit, _, _, _ in self.procurement_rows:
             quantity_edit.textChanged.connect(self._recalculate_financials)
             cost_edit.textChanged.connect(self._recalculate_financials)
         for edit in self.custom_cost_value_edits:
@@ -473,14 +546,18 @@ class OrderCardWidget(QWidget):
 
     def _sum_procurement_costs(self) -> Decimal:
         total = Decimal("0")
-        for _, quantity_edit, cost_edit, _, _ in self.procurement_rows:
+        for _, quantity_edit, cost_edit, _, _, _ in self.procurement_rows:
             quantity = parse_decimal(quantity_edit.text() or "1")
             cost = parse_decimal(cost_edit.text())
             total += quantity * cost
         return total.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
     def _combined_procurement_tracking_number(self) -> str:
-        values = [tracking_edit.text().strip() for _, _, _, tracking_edit, _ in self.procurement_rows if tracking_edit.text().strip()]
+        values = [
+            tracking_edit.text().strip()
+            for _, _, _, tracking_edit, _, _ in self.procurement_rows
+            if tracking_edit.text().strip()
+        ]
         return " / ".join(values)
 
     def _should_apply_template(self, procurement_items: list[ProcurementItem], specification: str) -> bool:

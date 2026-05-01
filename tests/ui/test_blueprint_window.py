@@ -1,3 +1,4 @@
+from PySide6.QtGui import QPalette
 from PySide6.QtWidgets import QApplication, QComboBox, QListWidget, QStackedWidget, QWidget
 
 from strawberry_order_management.ui.blueprint_window import BlueprintWindow
@@ -9,6 +10,8 @@ def test_build_preview_app_reuses_qapplication_instance():
 
     assert isinstance(app, QApplication)
     assert app.applicationName() == "草莓订单管理系统 UI 蓝图预览"
+    assert app.styleSheet()
+    assert app.palette().color(QPalette.ColorRole.ToolTipBase).name().lower() == "#ffffff"
     assert build_preview_app() is app
 
 

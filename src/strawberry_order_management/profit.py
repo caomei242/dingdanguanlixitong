@@ -2,25 +2,44 @@ from __future__ import annotations
 
 from calendar import monthrange
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
 from strawberry_order_management.finance import format_money, parse_decimal
 
-_FIXED_ORDER_STATUS_OPTIONS = ("已发货", "待发货", "已拍单未发货")
+_FIXED_ORDER_STATUS_OPTIONS = ("已发货", "待发货", "已拍单未发货", "已完成售后")
 _ORDER_STATUS_ALIASES = {"未发货": "待发货", "已下单未发货": "已拍单未发货"}
 _REFUND_AFTER_SALE_TYPES = {"仅退款", "退货退款", "部分退款"}
 _REFUND_AFTER_SALE_STATUSES = {"已退款", "已退货"}
 
 
-def list_available_months(rows: list[dict[str, Any]]) -> list[str]:
+def list_available_months(
+    rows: list[dict[str, Any]],
+    expense_rows: list[dict[str, Any]] | None = None,
+) -> list[str]:
     month_keys = {
         parsed["month_key"]
         for parsed in (_parse_history_row(row) for row in rows)
         if parsed["month_key"]
     }
+    month_keys.update(
+        parsed["month_key"]
+        for parsed in (_parse_expense_row(row) for row in (expense_rows or []))
+        if parsed["month_key"]
+    )
+    month_keys.add(_current_month_key())
     return sorted(month_keys, reverse=True)
+
+
+def resolve_preferred_month_key(available_months: list[str], month_key: str | None = None) -> str:
+    requested_month = str(month_key or "").strip()
+    if requested_month and requested_month in available_months:
+        return requested_month
+    current_month = _current_month_key()
+    if current_month in available_months:
+        return current_month
+    return available_months[0] if available_months else ""
 
 
 def build_profit_overview(
@@ -31,8 +50,8 @@ def build_profit_overview(
 ) -> dict[str, Any]:
     normalized_rows = [_parse_history_row(row) for row in rows]
     normalized_expenses = [_parse_expense_row(row) for row in (expense_rows or [])]
-    available_months = list_available_months(rows)
-    selected_month = month_key or (available_months[0] if available_months else "")
+    available_months = list_available_months(rows, expense_rows=expense_rows)
+    selected_month = resolve_preferred_month_key(available_months, month_key)
     month_rows = [row for row in normalized_rows if row["month_key"] == selected_month]
     month_expenses = [row for row in normalized_expenses if row["month_key"] == selected_month]
     visible_shop_names = _resolve_visible_shop_names(shop_names, month_rows)
@@ -47,6 +66,17 @@ def build_profit_overview(
     daily_reference_key = _resolve_daily_reference_key(month_rows, selected_month)
     daily_rows = [row for row in month_rows if row["date_key"] == daily_reference_key]
     daily_expenses = [row for row in month_expenses if row["date_key"] == daily_reference_key]
+    weekly_range = _resolve_weekly_reference_range(month_rows, selected_month)
+    weekly_rows = [
+        row
+        for row in month_rows
+        if weekly_range["start_date"] and weekly_range["start_date"] <= row["date_key"] <= weekly_range["end_date"]
+    ]
+    weekly_expenses = [
+        row
+        for row in month_expenses
+        if weekly_range["start_date"] and weekly_range["start_date"] <= row["date_key"] <= weekly_range["end_date"]
+    ]
     daily_income_total = sum((row["income"] for row in daily_rows), Decimal("0"))
     daily_expense_totals = _sum_expense_components(daily_rows)
     daily_extra_expense_totals = _sum_external_expense_components(daily_expenses)
@@ -56,6 +86,15 @@ def build_profit_overview(
     daily_gross_profit_total = _sum_gross_profit(daily_rows, daily_income_total, daily_expense_total)
     daily_order_count = len(daily_rows)
     daily_active_shops = len({row["shop_name"] for row in daily_rows if row["shop_name"]})
+    weekly_income_total = sum((row["income"] for row in weekly_rows), Decimal("0"))
+    weekly_expense_totals = _sum_expense_components(weekly_rows)
+    weekly_extra_expense_totals = _sum_external_expense_components(weekly_expenses)
+    weekly_expense_total = _expense_total_from_components(weekly_expense_totals) + _expense_total_from_components(
+        weekly_extra_expense_totals
+    )
+    weekly_gross_profit_total = _sum_gross_profit(weekly_rows, weekly_income_total, weekly_expense_total)
+    weekly_order_count = len(weekly_rows)
+    weekly_active_shops = len({row["shop_name"] for row in weekly_rows if row["shop_name"]})
 
     previous_month_key = _shift_month_key(selected_month, -1)
     previous_year_key = _shift_year_key(selected_month, -1)
@@ -139,6 +178,15 @@ def build_profit_overview(
             "order_count": str(daily_order_count),
             "active_shops": str(daily_active_shops),
         },
+        "weekly_totals": {
+            "date_range": weekly_range["label"],
+            "income": format_money(weekly_income_total),
+            "expense": format_money(weekly_expense_total),
+            "gross_profit": format_money(weekly_gross_profit_total),
+            "profit_rate": _format_profit_rate(weekly_gross_profit_total, weekly_income_total),
+            "order_count": str(weekly_order_count),
+            "active_shops": str(weekly_active_shops),
+        },
         "comparisons": {
             "mom_gross_profit": _format_change_percent(gross_profit_total, previous_month_profit),
             "yoy_gross_profit": _format_change_percent(gross_profit_total, previous_year_profit),
@@ -165,8 +213,8 @@ def build_daily_profit_sections(
 ) -> list[dict[str, Any]]:
     normalized_rows = [_parse_history_row(row) for row in rows]
     normalized_expenses = [_parse_expense_row(row) for row in (expense_rows or [])]
-    available_months = list_available_months(rows)
-    selected_month = month_key or (available_months[0] if available_months else "")
+    available_months = list_available_months(rows, expense_rows=expense_rows)
+    selected_month = resolve_preferred_month_key(available_months, month_key)
 
     filtered_rows = [
         row
@@ -421,6 +469,10 @@ def _resolve_visible_shop_names(shop_names: list[str], rows: list[dict[str, Any]
     return configured + historical
 
 
+def _current_month_key() -> str:
+    return datetime.now().strftime("%Y-%m")
+
+
 def _resolve_daily_reference_key(rows: list[dict[str, Any]], selected_month: str) -> str:
     if not selected_month:
         return ""
@@ -433,6 +485,41 @@ def _resolve_daily_reference_key(rows: list[dict[str, Any]], selected_month: str
     if not available_dates:
         return ""
     return available_dates[-1]
+
+
+def _resolve_weekly_reference_range(rows: list[dict[str, Any]], selected_month: str) -> dict[str, str]:
+    if not selected_month:
+        return {"start_date": "", "end_date": "", "label": ""}
+    try:
+        year_part, month_part = selected_month.split("-")
+        year = int(year_part)
+        month = int(month_part)
+    except ValueError:
+        return {"start_date": "", "end_date": "", "label": ""}
+
+    today = datetime.now()
+    if selected_month == today.strftime("%Y-%m"):
+        reference_dt = today
+    else:
+        available_dates = sorted({row["date_key"] for row in rows if row["date_key"]})
+        if available_dates:
+            reference_dt = datetime.strptime(available_dates[-1], "%Y-%m-%d")
+        else:
+            reference_dt = datetime(year, month, 1)
+
+    month_start = datetime(year, month, 1)
+    month_end = datetime(year, month, monthrange(year, month)[1])
+    week_start = reference_dt - timedelta(days=reference_dt.weekday())
+    week_end = week_start + timedelta(days=6)
+    clamped_start = max(week_start, month_start)
+    clamped_end = min(week_end, month_end)
+    start_key = clamped_start.strftime("%Y-%m-%d")
+    end_key = clamped_end.strftime("%Y-%m-%d")
+    return {
+        "start_date": start_key,
+        "end_date": end_key,
+        "label": f"{start_key} 至 {end_key}",
+    }
 
 
 def _shift_month_key(month_key: str, delta_months: int) -> str:

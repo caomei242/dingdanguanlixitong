@@ -22,15 +22,17 @@ from strawberry_order_management.profit import (
     build_daily_profit_sections,
     build_profit_overview,
     list_available_months,
+    resolve_preferred_month_key,
 )
 
-_ORDER_STATUS_OPTIONS = ("全部状态", "已发货", "待发货", "已拍单未发货")
+_ORDER_STATUS_OPTIONS = ("全部状态", "已发货", "待发货", "已拍单未发货", "已完成售后")
 _PLATFORM_OPTIONS = ("全部平台", "抖店", "微信小店")
 
 
 class _IncomeTrendChart(QFrame):
     def __init__(self) -> None:
         super().__init__()
+        self.setObjectName("ProfitTrendCanvas")
         self.series_points: list[dict[str, Any]] = []
         self._plot_points: list[tuple[QPointF, dict[str, Any]]] = []
         self._hovered_index: int | None = None
@@ -303,6 +305,7 @@ class ProfitPage(QWidget):
         self._shop_names: list[str] = []
         self.day_cards: list[_DailyDayCard] = []
         self.metric_value_labels: dict[str, QLabel] = {}
+        self.weekly_metric_value_labels: dict[str, QLabel] = {}
         self.daily_metric_value_labels: dict[str, QLabel] = {}
 
         self.tabs = QTabWidget()
@@ -339,6 +342,10 @@ class ProfitPage(QWidget):
         self.month_summary_heading.setObjectName("SectionTitle")
         self.month_scope_label = QLabel("—")
         self.month_scope_label.setObjectName("MutedText")
+        self.weekly_summary_heading = QLabel("本周经营")
+        self.weekly_summary_heading.setObjectName("SectionTitle")
+        self.weekly_scope_label = QLabel("—")
+        self.weekly_scope_label.setObjectName("MutedText")
         self.daily_summary_heading = QLabel("今日经营")
         self.daily_summary_heading.setObjectName("SectionTitle")
         self.daily_scope_label = QLabel("—")
@@ -352,11 +359,15 @@ class ProfitPage(QWidget):
             label.setObjectName("HistoryMiniSummaryValue")
 
         overview_tab = self._build_overview_tab()
+        weekly_tab = self._build_weekly_tab()
         daily_tab = self._build_daily_tab()
         self.tabs.addTab(overview_tab, "大盘")
+        self.tabs.addTab(weekly_tab, "每周经营")
         self.tabs.addTab(daily_tab, "每日账目明细")
 
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(12)
         layout.addWidget(self.tabs)
 
         self.overview_month_combo.currentTextChanged.connect(self._handle_shared_month_changed)
@@ -547,6 +558,56 @@ class ProfitPage(QWidget):
         scroll.setWidget(container)
         return scroll
 
+    def _build_weekly_tab(self) -> QWidget:
+        container = QWidget()
+        container.setObjectName("ProfitWeeklyTab")
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(16)
+
+        header_card = QFrame()
+        header_card.setObjectName("ProfitWeeklyHeader")
+        header_layout = QHBoxLayout(header_card)
+        header_layout.setContentsMargins(16, 14, 16, 14)
+        header_layout.setSpacing(12)
+        title_box = QVBoxLayout()
+        title_box.setContentsMargins(0, 0, 0, 0)
+        title_box.setSpacing(4)
+        title = QLabel("每周经营")
+        title.setObjectName("SectionTitle")
+        title_box.addWidget(title)
+        header_layout.addLayout(title_box, 1)
+        header_layout.addWidget(self.weekly_scope_label)
+
+        metric_grid = QGridLayout()
+        metric_grid.setContentsMargins(0, 0, 0, 0)
+        metric_grid.setHorizontalSpacing(12)
+        metric_grid.setVerticalSpacing(12)
+        for index, (key, title) in enumerate(
+            (
+                ("gross_profit", "当周毛利润"),
+                ("profit_rate", "当周利润率"),
+                ("income", "当周收入"),
+                ("expense", "当周总支出"),
+                ("order_count", "当周订单数"),
+                ("active_shops", "当周出单店铺"),
+            )
+        ):
+            card = _MetricCard(title)
+            self.weekly_metric_value_labels[key] = card.value_label
+            metric_grid.addWidget(card, index // 3, index % 3)
+
+        layout.addWidget(header_card)
+        layout.addWidget(self.weekly_summary_heading)
+        layout.addLayout(metric_grid)
+        layout.addStretch(1)
+
+        scroll = QScrollArea()
+        scroll.setObjectName("ProfitWeeklyScroll")
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(container)
+        return scroll
+
     def _build_daily_tab(self) -> QWidget:
         container = QWidget()
         container.setObjectName("ProfitDailyTab")
@@ -597,10 +658,8 @@ class ProfitPage(QWidget):
         return container
 
     def _refresh(self) -> None:
-        available_months = list_available_months(self._rows)
-        current_month = self._current_month_key()
-        if current_month not in available_months:
-            current_month = available_months[0] if available_months else ""
+        available_months = list_available_months(self._rows, expense_rows=self._expense_rows)
+        current_month = resolve_preferred_month_key(available_months, self._selected_month_key())
         self._set_month_options(available_months, current_month)
         self._refresh_shop_options()
         self._render_overview()
@@ -617,15 +676,18 @@ class ProfitPage(QWidget):
                     combo.setCurrentIndex(index)
             combo.blockSignals(False)
 
-    def _current_month_key(self) -> str:
+    def _selected_month_key(self) -> str:
         month_key = self.overview_month_combo.currentText().strip()
         if month_key:
             return month_key
         month_key = self.daily_month_combo.currentText().strip()
         if month_key:
             return month_key
-        available = list_available_months(self._rows)
-        return available[0] if available else ""
+        return ""
+
+    def _current_month_key(self) -> str:
+        available = list_available_months(self._rows, expense_rows=self._expense_rows)
+        return resolve_preferred_month_key(available, self._selected_month_key())
 
     def _handle_shared_month_changed(self, month_key: str) -> None:
         if not month_key:
@@ -671,6 +733,10 @@ class ProfitPage(QWidget):
         for key in ("gross_profit", "profit_rate", "income", "expense", "order_count", "active_shops"):
             self.metric_value_labels[key].setText(totals.get(key, "--"))
         self.month_scope_label.setText(self._current_month_key() or "暂无月份")
+        weekly_totals = overview.get("weekly_totals", {})
+        for key in ("gross_profit", "profit_rate", "income", "expense", "order_count", "active_shops"):
+            self.weekly_metric_value_labels[key].setText(weekly_totals.get(key, "--"))
+        self.weekly_scope_label.setText(weekly_totals.get("date_range", "") or "暂无本周数据")
         daily_totals = overview.get("daily_totals", {})
         for key in ("gross_profit", "profit_rate", "income", "expense", "order_count", "active_shops"):
             self.daily_metric_value_labels[key].setText(daily_totals.get(key, "--"))

@@ -49,6 +49,22 @@ def test_address_extractor_widget_supports_inline_phone_code_format(qtbot):
     assert widget.status_label.text() == "提取成功"
 
 
+def test_address_extractor_widget_supports_wechat_shop_virtual_number_format(qtbot):
+    widget = AddressExtractorWidget()
+    qtbot.addWidget(widget)
+
+    widget.input_edit.setPlainText(
+        "潇寒（9530)，18401352224-9530，河北省石家庄市裕华区裕华区塔南路位同新村南区位同新村南区多层4幢1单元102（拨打请输入分机号9530）"
+    )
+    widget.extract_button.click()
+
+    assert widget.output_one.toPlainText() == (
+        "潇寒18401352224河北省石家庄市裕华区裕华区塔南路位同新村南区位同新村南区多层4幢1单元102"
+    )
+    assert widget.output_two.toPlainText() == "请电话送货上门谢谢【9530】"
+    assert widget.status_label.text() == "提取成功"
+
+
 def test_address_extractor_widget_copies_each_output(qtbot):
     widget = AddressExtractorWidget()
     qtbot.addWidget(widget)

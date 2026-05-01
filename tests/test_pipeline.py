@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import base64
 import pytest
@@ -322,6 +323,260 @@ def test_order_pipeline_extracts_order_from_ocr_then_helper_text():
     assert calls == ["ocr:b'fake-image-bytes'", "helper:订单编号 6"]
 
 
+def test_order_pipeline_extracts_multiple_orders_from_one_ocr_result():
+    raw_text = """
+    订单编号 6925968364688539154
+    下单时间 2026-04-29 15:58:48
+    订单状态 待发货
+    商品信息
+    【明日达】赵露丝同款27000澳大利亚进口婴儿水宝宝水高端矿泉水
+    500ml/瓶*12袋(赵露思同款澳版)
+    单价/数量 ¥150.00 x1
+    商家收入金额 ¥60.00
+    收货信息 桃子 [8131] 17804472821 山东省潍坊市寿光市洛城街道永泰花园小区 [8131]
+
+    订单编号 6925956120875073042
+    下单时间 2026-04-29 15:29:31
+    订单状态 待发货
+    商品信息
+    【明日达】赵露丝同款27000澳大利亚进口婴儿水宝宝水高端矿泉水
+    500ml/瓶*12袋(赵露思同款澳版)
+    单价/数量 ¥325.00 x1
+    商家收入金额 ¥130.00
+    收货信息 桃子 [4317] 18413059360 山东省潍坊市寿光市洛城街道永泰花园小区 [4317]
+    """
+
+    class OcrStub:
+        def extract_text(self, image_bytes: bytes) -> str:
+            return raw_text
+
+    class HelperStub:
+        def enrich_text(self, extracted_text: str) -> str:
+            return extracted_text
+
+    pipeline = OrderPipeline(OcrStub(), HelperStub(), None)
+
+    results = pipeline.extract_order_batch(b"fake-image-bytes")
+
+    assert [item["ok"] for item in results] == [True, True]
+    assert [item["order"].order_id for item in results] == [
+        "6925968364688539154",
+        "6925956120875073042",
+    ]
+    assert [item["order"].delivery_note for item in results] == [
+        "请电话送货上门谢谢【8131】",
+        "请电话送货上门谢谢【4317】",
+    ]
+
+
+def test_order_pipeline_falls_back_to_partial_order_when_required_fields_are_missing():
+    raw_text = """
+    订单编号 6925796821603614616
+    下单时间 2026-04-22 20:44:47
+    商品
+    【明日达】赵露丝同款27000澳大利亚进口婴儿水宝宝水高偏矿泉水
+    1L/桶*12瓶(赵露思同款 澳洲升级...)
+    单价/数量 ¥355.00 x1
+    收货信息 张春娜[2666]15789799611山西省太原市小店区北营街道富力金禧城A区5栋1单元2402[2666]
+    """
+
+    class OcrStub:
+        def extract_text(self, image_bytes: bytes) -> str:
+            return raw_text
+
+    class HelperStub:
+        def enrich_text(self, extracted_text: str) -> str:
+            return extracted_text
+
+    pipeline = OrderPipeline(OcrStub(), HelperStub(), None)
+
+    order = pipeline.extract_order(b"fake-image-bytes")
+
+    assert order.order_id == "6925796821603614616"
+    assert order.placed_at == "2026-04-22 20:44:47"
+    assert order.product_name == "【明日达】赵露丝同款27000澳大利亚进口婴儿水宝宝水高偏矿泉水"
+    assert order.specification == "1L/桶*12瓶(赵露思同款 澳洲升级...)"
+    assert order.quantity == "1"
+    assert order.order_amount == "355.00"
+    assert order.recipient_name == "张春娜"
+    assert order.phone_number == "15789799611"
+    assert order.code == "2666"
+    assert order.address == "山西省太原市小店区北营街道富力金禧城A区5栋1单元2402"
+    assert order.delivery_note == "请电话送货上门谢谢【2666】"
+
+
+def test_order_pipeline_batch_falls_back_to_partial_order_when_required_fields_are_missing():
+    raw_text = """
+    订单编号 6925796821603614616
+    下单时间 2026-04-22 20:44:47
+    商品
+    【明日达】赵露丝同款27000澳大利亚进口婴儿水宝宝水高偏矿泉水
+    1L/桶*12瓶(赵露思同款 澳洲升级...)
+    单价/数量 ¥355.00 x1
+    收货信息 张春娜[2666]15789799611山西省太原市小店区北营街道富力金禧城A区5栋1单元2402[2666]
+    """
+
+    class OcrStub:
+        def extract_text(self, image_bytes: bytes) -> str:
+            return raw_text
+
+    class HelperStub:
+        def enrich_text(self, extracted_text: str) -> str:
+            return extracted_text
+
+    pipeline = OrderPipeline(OcrStub(), HelperStub(), None)
+
+    results = pipeline.extract_order_batch(b"fake-image-bytes")
+
+    assert len(results) == 1
+    assert results[0]["ok"] is True
+    assert results[0]["error"] == ""
+    assert results[0]["order"].order_id == "6925796821603614616"
+    assert results[0]["order"].recipient_name == "张春娜"
+    assert results[0]["order"].delivery_note == "请电话送货上门谢谢【2666】"
+
+
+def test_order_pipeline_ocr_multi_order_chunks_independently():
+    raw_by_image = {
+        b"chunk-1": """
+        订单编号 6925968364688539154
+        下单时间 2026-04-29 15:58:48
+        订单状态 待发货
+        商品信息 测试商品一
+        单价/数量 ¥150.00 x1
+        商家收入金额 ¥60.00
+        收货信息 桃子 [8131] 17804472821 山东省潍坊市寿光市 [8131]
+        """,
+        b"chunk-2": """
+        订单编号 6925956120875073042
+        下单时间 2026-04-29 15:29:31
+        订单状态 待发货
+        商品信息 测试商品二
+        单价/数量 ¥325.00 x1
+        商家收入金额 ¥130.00
+        收货信息 桃子 [4317] 18413059360 山东省潍坊市寿光市 [4317]
+        """,
+        b"chunk-3": """
+        订单编号 6925000000000000003
+        下单时间 2026-04-29 15:01:00
+        订单状态 待发货
+        商品信息 测试商品三
+        单价/数量 ¥200.00 x1
+        商家收入金额 ¥80.00
+        收货信息 桃子 [3333] 18100000003 山东省潍坊市寿光市 [3333]
+        """,
+    }
+    progress_messages = []
+
+    class OcrStub:
+        def __init__(self) -> None:
+            self.calls: list[bytes] = []
+
+        def extract_text(self, image_bytes: bytes) -> str:
+            self.calls.append(image_bytes)
+            return raw_by_image[image_bytes]
+
+    class HelperStub:
+        def enrich_text(self, extracted_text: str) -> str:
+            return extracted_text
+
+    class SplitterStub:
+        def split(self, image_bytes: bytes):
+            assert image_bytes == b"full-image"
+            return [
+                SimpleNamespace(index=1, image_bytes=b"chunk-1", bbox=(0, 0, 100, 100), confidence=0.9),
+                SimpleNamespace(index=2, image_bytes=b"chunk-2", bbox=(0, 100, 100, 200), confidence=0.9),
+                SimpleNamespace(index=3, image_bytes=b"chunk-3", bbox=(0, 200, 100, 300), confidence=0.9),
+            ]
+
+    ocr = OcrStub()
+    pipeline = OrderPipeline(ocr, HelperStub(), None, image_splitter=SplitterStub())
+
+    results = pipeline.extract_order_batch(b"full-image", on_progress=progress_messages.append)
+
+    assert ocr.calls == [b"chunk-1", b"chunk-2", b"chunk-3"]
+    assert [item["ok"] for item in results] == [True, True, True]
+    assert [item["order"].order_id for item in results] == [
+        "6925968364688539154",
+        "6925956120875073042",
+        "6925000000000000003",
+    ]
+    assert [item["source_image_bytes"] for item in results] == [b"chunk-1", b"chunk-2", b"chunk-3"]
+    assert "检测到多单截图，正在切成 3 单..." in progress_messages
+    assert "正在识别第 2/3 单..." in progress_messages
+
+
+def test_order_pipeline_keeps_other_chunks_when_one_chunk_ocr_fails():
+    raw_by_image = {
+        b"chunk-1": """
+        订单编号 6925968364688539154
+        下单时间 2026-04-29 15:58:48
+        订单状态 待发货
+        商品信息 测试商品一
+        单价/数量 ¥150.00 x1
+        商家收入金额 ¥60.00
+        收货信息 桃子 [8131] 17804472821 山东省潍坊市寿光市 [8131]
+        """,
+        b"chunk-3": """
+        订单编号 6925000000000000003
+        下单时间 2026-04-29 15:01:00
+        订单状态 待发货
+        商品信息 测试商品三
+        单价/数量 ¥200.00 x1
+        商家收入金额 ¥80.00
+        收货信息 桃子 [3333] 18100000003 山东省潍坊市寿光市 [3333]
+        """,
+    }
+    progress_messages = []
+
+    class OcrStub:
+        def extract_text(self, image_bytes: bytes) -> str:
+            if image_bytes == b"chunk-2":
+                raise ValueError("MCP OCR 响应超时，请重试")
+            return raw_by_image[image_bytes]
+
+    class HelperStub:
+        def enrich_text(self, extracted_text: str) -> str:
+            return extracted_text
+
+    class SplitterStub:
+        def split(self, image_bytes: bytes):
+            return [
+                SimpleNamespace(index=1, image_bytes=b"chunk-1", bbox=(0, 0, 100, 100), confidence=0.9),
+                SimpleNamespace(index=2, image_bytes=b"chunk-2", bbox=(0, 100, 100, 200), confidence=0.9),
+                SimpleNamespace(index=3, image_bytes=b"chunk-3", bbox=(0, 200, 100, 300), confidence=0.9),
+            ]
+
+    pipeline = OrderPipeline(OcrStub(), HelperStub(), None, image_splitter=SplitterStub())
+
+    results = pipeline.extract_order_batch(b"full-image", on_progress=progress_messages.append)
+
+    assert [item["ok"] for item in results] == [True, False, True]
+    assert results[1]["index"] == 2
+    assert "第 2 单识别失败" in results[1]["error"]
+    assert "可重试或手动补录" in results[1]["error"]
+    assert "第 2 单识别失败，可重试或手动补录" in progress_messages
+
+
+def test_order_pipeline_reports_progress_stages():
+    raw_text = Path("tests/fixtures/ocr/jd_order_01.txt").read_text(encoding="utf-8")
+    progress_messages = []
+
+    class OcrStub:
+        def extract_text(self, image_bytes: bytes) -> str:
+            return raw_text
+
+    class HelperStub:
+        def enrich_text(self, extracted_text: str) -> str:
+            return extracted_text
+
+    pipeline = OrderPipeline(OcrStub(), HelperStub(), None)
+
+    pipeline.extract_order(b"fake-image-bytes", on_progress=progress_messages.append)
+
+    assert progress_messages == ["OCR识别中...", "辅助整理中...", "解析订单中..."]
+
+
 def test_ocr_client_posts_image_bytes_and_returns_text(monkeypatch: pytest.MonkeyPatch):
     captured: dict[str, object] = {}
 
@@ -380,6 +635,9 @@ def test_ocr_client_supports_minimax_image_understanding_style_prompt(
     assert "订单编号 / 下单时间 / 订单状态 / 商品信息 / 单价/数量 / 商家收入金额 / 收货信息" in captured["json"]["messages"][0]["content"]
     assert "不要总结、改写、翻译、解释" in captured["json"]["messages"][0]["content"]
     assert "姓名 [编号] 手机号 地址 [编号]" in captured["json"]["messages"][1]["content"]
+    assert "微信小店" in captured["json"]["messages"][1]["content"]
+    assert "姓名（分机号） 手机号-分机号 地址（拨打请输入分机号）" in captured["json"]["messages"][1]["content"]
+    assert "详细收货信息 / 收件人 / 收货地址 / 虚拟号 / 分机号" in captured["json"]["messages"][1]["content"]
     assert captured["json"]["messages"][1]["content"].endswith(
         f"[Image base64:{expected_base64}]"
     )
@@ -407,6 +665,20 @@ def test_ocr_client_raises_readable_error_when_text_missing(monkeypatch: pytest.
     client = OCRClient("https://ocr.example.com/", "secret")
 
     with pytest.raises(ValueError, match="OCR API response missing 'text'"):
+        client.extract_text(b"image-bytes")
+
+
+def test_ocr_client_raises_friendly_error_on_network_failure(monkeypatch: pytest.MonkeyPatch):
+    def fake_post(url, headers=None, json=None, timeout=None):
+        raise requests.ConnectionError("HTTPSConnectionPool(host='api.minimaxi.com')")
+
+    monkeypatch.setattr(
+        "strawberry_order_management.services.ocr_client.requests.post", fake_post
+    )
+
+    client = OCRClient("https://api.minimaxi.com/v1", "secret")
+
+    with pytest.raises(ValueError, match="截图识别服务连接失败，请检查网络、代理或 API 配置后重试"):
         client.extract_text(b"image-bytes")
 
 
@@ -508,6 +780,9 @@ def test_helper_client_supports_minimax_openai_compatible_endpoint(
     assert captured["json"]["model"] == "MiniMax-M2.5"
     assert "订单编号" in captured["json"]["messages"][0]["content"]
     assert "收货信息 姓名 [编号] 手机号 地址 [编号]" in captured["json"]["messages"][0]["content"]
+    assert "微信小店" in captured["json"]["messages"][0]["content"]
+    assert "姓名（分机号） 手机号-分机号 地址（拨打请输入分机号）" in captured["json"]["messages"][0]["content"]
+    assert "订单号 / 商品 / 实收款/优惠信息 / 详细收货信息 / 收件人 / 收货地址 / 虚拟号 / 分机号" in captured["json"]["messages"][0]["content"]
     assert "不要加 Markdown，不要加 JSON，不要加代码块" in captured["json"]["messages"][0]["content"]
     assert "字段名后面不要加中文冒号" in captured["json"]["messages"][0]["content"]
     assert captured["json"]["messages"][1]["content"].endswith("ocr raw text")
@@ -564,6 +839,20 @@ def test_helper_client_raises_readable_error_when_text_missing(monkeypatch: pyte
     client = HelperClient("https://helper.example.com/", "secret")
 
     with pytest.raises(ValueError, match="Helper API response missing 'text'"):
+        client.enrich_text("raw text")
+
+
+def test_helper_client_raises_friendly_error_on_network_failure(monkeypatch: pytest.MonkeyPatch):
+    def fake_post(url, headers=None, json=None, timeout=None):
+        raise requests.Timeout("HTTPSConnectionPool(host='api.minimaxi.com')")
+
+    monkeypatch.setattr(
+        "strawberry_order_management.services.helper_client.requests.post", fake_post
+    )
+
+    client = HelperClient("https://api.minimaxi.com/v1", "secret")
+
+    with pytest.raises(ValueError, match="辅助整理服务连接失败，请检查网络、代理或 API 配置后重试"):
         client.enrich_text("raw text")
 
 
@@ -950,3 +1239,27 @@ def test_build_feishu_payload_rejects_invalid_placed_at_format():
 
     with pytest.raises(ValueError, match="placed_at must be in 'YYYY-MM-DD HH:MM:SS' format"):
         build_feishu_payload(order)
+
+
+def test_build_feishu_payload_accepts_placed_at_without_seconds():
+    order = ParsedOrder(
+        order_id="3735824608022632960",
+        placed_at="2026-04-20 09:55",
+        order_status="已发货",
+        product_name="测试商品",
+        quantity="1",
+        order_amount="355.00",
+        income_amount="142.00",
+        recipient_name="潇寒",
+        phone_number="18401352224",
+        code="9530",
+        address="河北省石家庄市裕华区",
+        delivery_note="请电话送货上门谢谢【9530】",
+        platform="微信小店",
+    )
+
+    payload = build_feishu_payload(order)
+
+    assert payload["订单日期"] == "2026/04/20"
+    assert payload["下单时间"] == "09:55:00"
+    assert payload["平台"] == "微信小店"

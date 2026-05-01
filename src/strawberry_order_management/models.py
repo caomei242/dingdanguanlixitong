@@ -38,9 +38,9 @@ class ParsedOrder:
     custom_cost_values: tuple[str, str, str] = ("", "", "")
     procurement_items: tuple["ProcurementItem", "ProcurementItem", "ProcurementItem"] = field(
         default_factory=lambda: (
-            ProcurementItem("", "", ""),
-            ProcurementItem("", "", ""),
-            ProcurementItem("", "", ""),
+            ProcurementItem("", "", "", "", ""),
+            ProcurementItem("", "", "", "", ""),
+            ProcurementItem("", "", "", "", ""),
         )
     )
 
@@ -51,6 +51,7 @@ class ProcurementItem:
     quantity: str
     cost: str
     tracking_number: str = ""
+    jd_link: str = ""
 
 
 @dataclass(frozen=True)

@@ -84,6 +84,48 @@ def test_expense_page_can_build_order_scope_payload_and_emit_save(qtbot):
     ]
 
 
+def test_expense_page_order_scope_allows_shop_and_platform_correction(qtbot):
+    page = ExpensePage()
+    qtbot.addWidget(page)
+    page.set_shop_names(["乐宝零食店", "欢宝零食店"])
+    page.set_order_rows(
+        [
+            _history_row(
+                record_id="row-1",
+                shop_name="乐宝零食店",
+                order_id="6952059303468209543",
+                recipient="丽",
+                platform="抖店",
+            )
+        ]
+    )
+
+    captured: list[tuple[str, dict]] = []
+    page.save_requested.connect(lambda record_id, payload: captured.append((record_id, payload)))
+
+    assert page.shop_combo.isEnabled()
+    assert page.platform_combo.isEnabled()
+    page.shop_combo.setCurrentText("欢宝零食店")
+    page.platform_combo.setCurrentText("微信小店")
+    page.category_combo.setCurrentText("软件服务")
+    page.amount_edit.setText("42")
+
+    qtbot.mouseClick(page.save_button, Qt.MouseButton.LeftButton)
+
+    assert captured[0][1]["shop_name"] == "欢宝零食店"
+    assert captured[0][1]["platform"] == "微信小店"
+
+
+def test_expense_page_category_combo_keeps_common_options(qtbot):
+    page = ExpensePage()
+    qtbot.addWidget(page)
+
+    options = [page.category_combo.itemText(index) for index in range(page.category_combo.count())]
+
+    assert "软件服务" in options
+    assert "售后补偿" in options
+
+
 def test_expense_page_filters_rows_and_updates_detail(qtbot):
     page = ExpensePage()
     qtbot.addWidget(page)

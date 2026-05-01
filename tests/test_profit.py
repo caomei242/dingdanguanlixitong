@@ -140,11 +140,57 @@ def _expense_rows():
     ]
 
 
-def test_list_available_months_descending():
+class _FakeProfitDateTime(real_datetime):
+    @classmethod
+    def now(cls, tz=None):
+        return cls(2026, 4, 16, 9, 0, 0)
+
+
+def test_list_available_months_descending(monkeypatch):
+    class _FakeDateTime(real_datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return cls(2026, 4, 16, 9, 0, 0)
+
+    monkeypatch.setattr(profit_module, "datetime", _FakeDateTime)
+
     assert list_available_months(_rows()) == ["2026-04", "2026-03", "2025-04"]
 
 
-def test_build_profit_overview_aggregates_totals_rankings_and_comparisons():
+def test_list_available_months_merges_order_expense_and_current_month(monkeypatch):
+    class _FakeDateTime(real_datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return cls(2026, 5, 1, 9, 0, 0)
+
+    monkeypatch.setattr(profit_module, "datetime", _FakeDateTime)
+
+    expense_rows = [
+        {
+            "record_id": "expense-feb",
+            "expense_date": "2026-02-03",
+            "scope_type": "店铺级",
+            "shop_name": "乐宝零食店",
+            "order_id": "",
+            "platform": "",
+            "category": "软件服务",
+            "amount": "20.00",
+            "remark": "二月店铺订阅",
+        }
+    ]
+
+    assert list_available_months(_rows(), expense_rows=expense_rows) == [
+        "2026-05",
+        "2026-04",
+        "2026-03",
+        "2026-02",
+        "2025-04",
+    ]
+
+
+def test_build_profit_overview_aggregates_totals_rankings_and_comparisons(monkeypatch):
+    monkeypatch.setattr(profit_module, "datetime", _FakeProfitDateTime)
+
     overview = build_profit_overview(
         _rows(),
         ["乐宝零食店", "欢宝零食店", "灵宝零食店"],
@@ -158,6 +204,15 @@ def test_build_profit_overview_aggregates_totals_rankings_and_comparisons():
         "gross_profit": "90.20",
         "profit_rate": "39.22%",
         "order_count": "3",
+        "active_shops": "2",
+    }
+    assert overview["weekly_totals"] == {
+        "date_range": "2026-04-13 至 2026-04-19",
+        "income": "180.00",
+        "expense": "104.80",
+        "gross_profit": "75.20",
+        "profit_rate": "41.78%",
+        "order_count": "2",
         "active_shops": "2",
     }
     assert overview["comparisons"] == {
@@ -187,6 +242,7 @@ def test_build_profit_overview_aggregates_totals_rankings_and_comparisons():
         "已发货": 3,
         "待发货": 0,
         "已拍单未发货": 0,
+        "已完成售后": 0,
     }
     assert len(overview["trend_series"]["income"]) == 30
     assert overview["trend_series"]["income"][11] == {
@@ -278,6 +334,44 @@ def test_build_profit_overview_reduces_income_when_after_sale_refund_exists():
     assert overview["trend_series"]["gross_profit"][12]["amount"] == "65.20"
 
 
+def test_build_profit_overview_defaults_to_current_month_from_merged_month_pool(monkeypatch):
+    class _FakeDateTime(real_datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return cls(2026, 5, 1, 9, 0, 0)
+
+    monkeypatch.setattr(profit_module, "datetime", _FakeDateTime)
+
+    overview = build_profit_overview(
+        _rows(),
+        ["乐宝零食店", "欢宝零食店"],
+        expense_rows=[
+            {
+                "record_id": "expense-may",
+                "expense_date": "2026-05-01",
+                "scope_type": "店铺级",
+                "shop_name": "乐宝零食店",
+                "order_id": "",
+                "platform": "",
+                "category": "软件服务",
+                "amount": "30.00",
+                "remark": "五月店铺订阅",
+            }
+        ],
+    )
+
+    assert overview["month_key"] == "2026-05"
+    assert overview["available_months"] == ["2026-05", "2026-04", "2026-03", "2025-04"]
+    assert overview["totals"] == {
+        "income": "0.00",
+        "expense": "30.00",
+        "gross_profit": "0.00",
+        "profit_rate": "--",
+        "order_count": "0",
+        "active_shops": "0",
+    }
+
+
 def test_build_profit_overview_uses_today_with_zero_when_current_month_has_no_today_data(monkeypatch):
     class _FakeDateTime(real_datetime):
         @classmethod
@@ -301,9 +395,20 @@ def test_build_profit_overview_uses_today_with_zero_when_current_month_has_no_to
         "order_count": "0",
         "active_shops": "0",
     }
+    assert overview["weekly_totals"] == {
+        "date_range": "2026-04-13 至 2026-04-19",
+        "income": "180.00",
+        "expense": "104.80",
+        "gross_profit": "75.20",
+        "profit_rate": "41.78%",
+        "order_count": "2",
+        "active_shops": "2",
+    }
 
 
-def test_build_daily_profit_sections_shows_each_day_and_each_shop():
+def test_build_daily_profit_sections_shows_each_day_and_each_shop(monkeypatch):
+    monkeypatch.setattr(profit_module, "datetime", _FakeProfitDateTime)
+
     sections = build_daily_profit_sections(
         _rows(),
         ["乐宝零食店", "欢宝零食店", "灵宝零食店"],
@@ -343,7 +448,14 @@ def test_build_daily_profit_sections_shows_each_day_and_each_shop():
     }
 
 
-def test_build_daily_profit_sections_includes_order_and_store_expenses_but_not_project_expense_in_shop_rows():
+def test_build_daily_profit_sections_includes_order_and_store_expenses_but_not_project_expense_in_shop_rows(monkeypatch):
+    class _FakeDateTime(real_datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return cls(2026, 4, 16, 9, 0, 0)
+
+    monkeypatch.setattr(profit_module, "datetime", _FakeDateTime)
+
     sections = build_daily_profit_sections(
         _rows(),
         ["乐宝零食店", "欢宝零食店", "灵宝零食店"],
@@ -373,7 +485,9 @@ def test_build_daily_profit_sections_includes_order_and_store_expenses_but_not_p
     }
 
 
-def test_build_daily_profit_sections_supports_filters():
+def test_build_daily_profit_sections_supports_filters(monkeypatch):
+    monkeypatch.setattr(profit_module, "datetime", _FakeProfitDateTime)
+
     sections = build_daily_profit_sections(
         _rows(),
         ["乐宝零食店", "欢宝零食店"],

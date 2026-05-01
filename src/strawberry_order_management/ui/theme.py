@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from PySide6.QtGui import QColor, QPalette
+from PySide6.QtWidgets import QApplication
+
 APP_STYLESHEET = """
 QWidget {
     color: #20304a;
@@ -13,11 +16,17 @@ QMainWindow {
 
 QScrollArea,
 QAbstractScrollArea {
-    background: transparent;
+    background: #f6f8fc;
     border: none;
 }
 
 QAbstractScrollArea::corner {
+    background: #f6f8fc;
+    border: none;
+}
+
+QAbstractScrollArea::viewport,
+QScrollArea > QWidget#qt_scrollarea_viewport {
     background: #f6f8fc;
     border: none;
 }
@@ -98,11 +107,11 @@ QFrame#WindowSidebar {
 }
 
 QFrame#WindowContentShell,
-QFrame#ShellFrame,
 QFrame#EntryActionBar,
 QFrame#CardFrame,
 QFrame#ProfitOverviewHeader,
 QFrame#ProfitTrendCard,
+QFrame#ProfitTrendCanvas,
 QFrame#ProfitInsightCard,
 QFrame#ProfitMetricCard,
 QFrame#ProfitSummaryChip,
@@ -117,11 +126,19 @@ QFrame#FinancialSectionCard,
 QFrame#ProcurementRowCard,
 QFrame#IntakeSupportCard,
 QFrame#EntryCaptureCard,
+QFrame#EntryBatchSelectorCard,
 QFrame#EntryExtractorInputCard,
 QFrame#EntryExtractorResultCard {
     background: rgba(255, 255, 255, 0.96);
     border: 1px solid #e3e9f4;
-    border-radius: 24px;
+    border-radius: 14px;
+}
+
+QFrame#WindowContentShell,
+QFrame#ShellFrame {
+    background: rgba(255, 255, 255, 0.96);
+    border: 1px solid #e3e9f4;
+    border-radius: 16px;
 }
 
 QFrame#EntryActionBar {
@@ -141,14 +158,14 @@ QFrame#HistoryStatusCard,
 QFrame#HistoryStickyActionBar {
     background: rgba(255, 255, 255, 0.98);
     border: 1px solid #dbe4f2;
-    border-radius: 22px;
+    border-radius: 14px;
 }
 
 QFrame#SettingsStickyActionBar,
 QFrame#SettingsNavPane {
     background: rgba(255, 255, 255, 0.98);
     border: 1px solid #dbe4f2;
-    border-radius: 22px;
+    border-radius: 14px;
 }
 
 QFrame#HistoryStickyActionBar {
@@ -160,15 +177,40 @@ QFrame#HistoryStatusCard[active="true"] {
     border: 1px solid #bdd0ff;
 }
 
+QFrame#AutoOrderGroupCard {
+    background: #f2f6ff;
+    border: 1px solid #d7e4ff;
+    border-radius: 14px;
+}
+
+QFrame#AutoOrderTableHeader {
+    background: rgba(255, 255, 255, 0.75);
+    border: 1px solid #dfe8fb;
+    border-radius: 12px;
+}
+
+QFrame#AutoOrderSlotRow {
+    background: rgba(255, 255, 255, 0.92);
+    border: 1px solid #e5ecfb;
+    border-radius: 12px;
+}
+
 QLabel#BrandTitle {
     color: #ff4b6e;
-    font-size: 26px;
+    font-size: 30px;
     font-weight: 800;
 }
 
 QLabel#BrandSubtitle {
     color: #7e8aa5;
     font-size: 12px;
+}
+
+QFrame#BrandDivider {
+    background: #e4eaf3;
+    border: none;
+    min-height: 1px;
+    max-height: 1px;
 }
 
 QListWidget {
@@ -190,21 +232,21 @@ QListWidget::item {
 }
 
 QListWidget::item:selected {
-    background: #4a7cff;
+    background: #3478f6;
     color: #ffffff;
 }
 
 QPushButton {
-    background: #4a7cff;
+    background: #3478f6;
     color: white;
     border: none;
-    border-radius: 14px;
+    border-radius: 10px;
     padding: 7px 11px;
     font-weight: 600;
 }
 
 QPushButton:hover {
-    background: #3d70f0;
+    background: #2f6fe5;
 }
 
 QPushButton:disabled {
@@ -214,12 +256,25 @@ QPushButton:disabled {
 
 QPushButton#SecondaryActionButton {
     background: #eef4ff;
-    color: #3f67d9;
+    color: #2f64d6;
     border: 1px solid #cddcff;
 }
 
 QPushButton#SecondaryActionButton:hover {
     background: #e3ecff;
+}
+
+QPushButton#BatchOrderButton {
+    background: #eef4ff;
+    color: #2f64d6;
+    border: 1px solid #cddcff;
+    text-align: left;
+}
+
+QPushButton#BatchOrderButton:checked {
+    background: #3478f6;
+    color: #ffffff;
+    border: 1px solid #3478f6;
 }
 
 QPushButton#DangerActionButton {
@@ -235,15 +290,11 @@ QPushButton#DangerActionButton:hover {
 QLineEdit, QTextEdit, QComboBox, QDateEdit {
     background: #ffffff;
     border: 1px solid #d9e2f1;
-    border-radius: 10px;
+    border-radius: 9px;
     padding: 7px 10px;
-    selection-background-color: #4a7cff;
+    selection-background-color: #3478f6;
     selection-color: #ffffff;
     color: #20304a;
-}
-
-QTextEdit {
-    min-height: 60px;
 }
 
 QComboBox,
@@ -258,7 +309,20 @@ QDateEdit::drop-down {
     subcontrol-position: top right;
     width: 26px;
     border: none;
-    background: transparent;
+    border-left: 1px solid #e3ebf8;
+    background: #f3f7ff;
+    border-top-right-radius: 9px;
+    border-bottom-right-radius: 9px;
+}
+
+QComboBox::down-arrow,
+QDateEdit::down-arrow {
+    width: 0;
+    height: 0;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 6px solid #5f74a0;
+    margin-right: 8px;
 }
 
 QComboBox QAbstractItemView,
@@ -266,7 +330,7 @@ QDateEdit QAbstractItemView {
     background: #ffffff;
     color: #20304a;
     border: 1px solid #d9e2f1;
-    selection-background-color: #4a7cff;
+    selection-background-color: #3478f6;
     selection-color: #ffffff;
     outline: none;
 }
@@ -283,11 +347,15 @@ QLabel#SectionTitle {
 
 QTabWidget::pane {
     border: none;
-    background: transparent;
+    background: #f6f8fc;
 }
 
 QTabWidget#ProfitSegmentTabs::pane {
     border: none;
+    background: #f6f8fc;
+}
+
+QTabBar {
     background: transparent;
 }
 
@@ -305,24 +373,77 @@ QTabBar::tab {
 
 QTabBar::tab:selected {
     background: #ffffff;
-    color: #1f2b44;
+    color: #3478f6;
+}
+
+QFrame#SettingsSectionNav {
+    background: #eef3fb;
+    border: 1px solid #dce6f4;
+    border-radius: 18px;
+}
+
+QPushButton#SettingsSectionTab {
+    background: transparent;
+    color: #63728b;
+    border: 1px solid transparent;
+    border-radius: 14px;
+    padding: 8px 15px;
+    font-weight: 700;
+}
+
+QPushButton#SettingsSectionTab:hover {
+    background: rgba(255, 255, 255, 0.7);
+    color: #2f64d6;
+}
+
+QPushButton#SettingsSectionTab:checked {
+    background: #ffffff;
+    color: #3478f6;
+    border: 1px solid #cbdcff;
 }
 
 QTabWidget#ProfitSegmentTabs QTabBar::tab {
-    background: #eef3ff;
-    color: #5f7396;
-    border: 1px solid #d7e2f6;
-    border-bottom: none;
-    padding: 10px 22px;
-    margin-right: 6px;
-    border-top-left-radius: 14px;
-    border-top-right-radius: 14px;
+    background: #eef3fb;
+    color: #63728b;
+    border: 1px solid #dce6f4;
+    padding: 8px 20px;
+    margin-right: 8px;
+    border-radius: 16px;
     font-weight: 700;
+}
+
+QTabWidget#ProfitSegmentTabs QTabBar::tab:hover {
+    background: #ffffff;
+    color: #2f64d6;
+    border: 1px solid #cbdcff;
 }
 
 QTabWidget#ProfitSegmentTabs QTabBar::tab:selected {
     background: #ffffff;
-    color: #1f2b44;
+    color: #3478f6;
+    border: 1px solid #cbdcff;
+}
+
+QSplitter::handle {
+    background: #f6f8fc;
+    border: none;
+}
+
+QSplitter::handle:hover {
+    background: #dde7f7;
+}
+
+QToolTip {
+    background: #ffffff;
+    color: #20304a;
+    border: 1px solid #d9e2f1;
+    padding: 6px 8px;
+}
+
+QFrame#ProfitTrendCanvas {
+    background: #ffffff;
+    border: 1px solid #e8eef8;
+    border-radius: 12px;
 }
 
 QLabel#MutedText {
@@ -385,5 +506,46 @@ QTextEdit#HighlightedValueEdit {
 """
 
 
+def build_light_palette() -> QPalette:
+    palette = QPalette()
+    role_colors = {
+        QPalette.ColorRole.Window: QColor("#e9eef5"),
+        QPalette.ColorRole.WindowText: QColor("#20304a"),
+        QPalette.ColorRole.Base: QColor("#ffffff"),
+        QPalette.ColorRole.AlternateBase: QColor("#f6f8fc"),
+        QPalette.ColorRole.Button: QColor("#ffffff"),
+        QPalette.ColorRole.ButtonText: QColor("#20304a"),
+        QPalette.ColorRole.Text: QColor("#20304a"),
+        QPalette.ColorRole.ToolTipBase: QColor("#ffffff"),
+        QPalette.ColorRole.ToolTipText: QColor("#20304a"),
+        QPalette.ColorRole.Highlight: QColor("#3478f6"),
+        QPalette.ColorRole.HighlightedText: QColor("#ffffff"),
+        QPalette.ColorRole.PlaceholderText: QColor("#8d9ab4"),
+    }
+    disabled_overrides = {
+        QPalette.ColorRole.WindowText: QColor("#7d8cad"),
+        QPalette.ColorRole.ButtonText: QColor("#7d8cad"),
+        QPalette.ColorRole.Text: QColor("#7d8cad"),
+        QPalette.ColorRole.Highlight: QColor("#b8c7e6"),
+        QPalette.ColorRole.HighlightedText: QColor("#ffffff"),
+    }
+    for group in (QPalette.ColorGroup.Active, QPalette.ColorGroup.Inactive, QPalette.ColorGroup.Disabled):
+        for role, color in role_colors.items():
+            palette.setColor(group, role, color)
+        if group is QPalette.ColorGroup.Disabled:
+            for role, color in disabled_overrides.items():
+                palette.setColor(group, role, color)
+    return palette
+
+
+def configure_light_appearance(app: QApplication) -> None:
+    app.setStyle("Fusion")
+    app.setPalette(build_light_palette())
+    app.setStyleSheet(APP_STYLESHEET)
+
+
 def apply_theme(widget) -> None:
-    widget.setStyleSheet(APP_STYLESHEET)
+    app = QApplication.instance()
+    if app is not None:
+        configure_light_appearance(app)
+    widget.setStyleSheet("")

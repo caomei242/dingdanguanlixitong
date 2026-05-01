@@ -1,0 +1,503 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>历史详情头部预览</title>
+  <style>
+    :root {
+      --bg: #f4f7fb;
+      --card: rgba(255,255,255,.96);
+      --line: #dbe4f2;
+      --line-strong: #cdd8ec;
+      --text: #1f2b44;
+      --muted: #7383a0;
+      --blue: #4a7cff;
+      --blue-soft: #eef4ff;
+      --green: #11a36a;
+      --danger: #ef6b7c;
+      --shadow: 0 12px 28px rgba(42, 67, 114, .08);
+      --radius: 22px;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: linear-gradient(180deg, #eef3fa 0%, #f6f9fd 100%);
+      color: var(--text);
+      font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+
+    .page {
+      max-width: 1600px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+
+    .hero {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 28px;
+      box-shadow: var(--shadow);
+      padding: 22px 24px;
+      margin-bottom: 18px;
+    }
+
+    .hero h1 {
+      margin: 0 0 6px;
+      font-size: 30px;
+      line-height: 1.15;
+    }
+
+    .hero p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 15px;
+    }
+
+    .variant {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 26px;
+      box-shadow: var(--shadow);
+      padding: 22px;
+      margin-bottom: 20px;
+    }
+
+    .variant-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: end;
+      gap: 16px;
+      margin-bottom: 18px;
+    }
+
+    .variant-title {
+      font-size: 24px;
+      font-weight: 800;
+      margin: 0;
+    }
+
+    .variant-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: var(--blue-soft);
+      color: #3d67de;
+      font-weight: 700;
+      font-size: 13px;
+    }
+
+    .variant-desc {
+      margin: 8px 0 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .preview-shell {
+      background: #f6f8fc;
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      overflow: hidden;
+    }
+
+    .toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 14px 18px;
+      background: rgba(255,255,255,.9);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .title-stack h3 {
+      margin: 0 0 4px;
+      font-size: 16px;
+    }
+
+    .title-stack p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .actions {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .btn {
+      border: 0;
+      border-radius: 14px;
+      padding: 11px 16px;
+      font-weight: 700;
+      font-size: 14px;
+      cursor: default;
+    }
+
+    .btn-primary { background: var(--blue); color: #fff; }
+    .btn-danger { background: #fff0f3; color: #dd4e68; border: 1px solid #f3c4cf; }
+
+    .summary-grid {
+      display: grid;
+      grid-template-columns: 1.25fr repeat(3, .85fr);
+      gap: 12px;
+      padding: 18px;
+    }
+
+    .summary-card, .wide-card, .meta-card, .detail-card, .legend-card {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      padding: 16px 18px;
+    }
+
+    .summary-card .label,
+    .meta-label,
+    .mini-label {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      margin-bottom: 10px;
+    }
+
+    .summary-card .value {
+      font-size: 18px;
+      line-height: 1.25;
+      font-weight: 800;
+    }
+
+    .summary-card .sub,
+    .meta-sub {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: #ecfbf4;
+      color: var(--green);
+      font-weight: 800;
+      font-size: 14px;
+    }
+
+    .body-grid {
+      display: grid;
+      grid-template-columns: 1.25fr 1fr;
+      gap: 14px;
+      padding: 0 18px 18px;
+    }
+
+    .meta-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .meta-value {
+      font-size: 16px;
+      font-weight: 700;
+      line-height: 1.4;
+    }
+
+    .sticky-bar {
+      position: sticky;
+      top: 0;
+      z-index: 5;
+      display: grid;
+      grid-template-columns: 1.4fr .9fr 1fr .9fr auto;
+      gap: 12px;
+      padding: 16px 18px;
+      background: rgba(255,255,255,.96);
+      backdrop-filter: blur(10px);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .sticky-chip {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 12px 14px;
+      min-height: 72px;
+    }
+
+    .sticky-chip .value {
+      font-size: 18px;
+      font-weight: 800;
+      line-height: 1.3;
+    }
+
+    .sticky-chip .value.small {
+      font-size: 16px;
+    }
+
+    .two-line {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .mini-grid {
+      display: grid;
+      grid-template-columns: 1.3fr 1fr;
+      gap: 12px;
+      padding: 18px;
+    }
+
+    .proc-list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .proc-item {
+      background: #f8fbff;
+      border: 1px solid #d9e5fb;
+      border-radius: 16px;
+      padding: 12px 14px;
+    }
+
+    .kpi-strip {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      padding: 18px;
+      border-bottom: 1px solid #ebf0f7;
+      background: linear-gradient(180deg, rgba(245,248,253,.7), rgba(255,255,255,0));
+    }
+
+    .kpi-box {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 14px 16px;
+      min-height: 94px;
+    }
+
+    .kpi-box .value {
+      font-size: 22px;
+      font-weight: 800;
+      line-height: 1.25;
+    }
+
+    .kpi-box .value.money { color: #1c305e; }
+    .kpi-box .value.green { color: var(--green); }
+
+    .footer-note {
+      margin-top: 12px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    @media (max-width: 1200px) {
+      .summary-grid,
+      .sticky-bar,
+      .mini-grid,
+      .kpi-strip,
+      .body-grid,
+      .meta-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <section class="hero">
+      <h1>历史详情头部预览</h1>
+      <p>只重画“选中订单后第一眼看到什么”，核心目标是减少下拉，先把你最常看的信息顶出来。</p>
+    </section>
+
+    <section class="variant">
+      <div class="variant-head">
+        <div>
+          <h2 class="variant-title">方案 A：四个核心信息先顶出来</h2>
+          <p class="variant-desc">最稳妥，先看到收货人、收入、下单时间、订单状态，商品和采购摘要放下一层。</p>
+        </div>
+        <span class="variant-tag">推荐度：高</span>
+      </div>
+      <div class="preview-shell">
+        <div class="toolbar">
+          <div class="title-stack">
+            <h3>乐宝零食店</h3>
+            <p>确认写入飞书 · 已写入飞书</p>
+          </div>
+          <div class="actions">
+            <button class="btn btn-primary">保存修改并重新写入飞书</button>
+            <button class="btn btn-danger">删除</button>
+          </div>
+        </div>
+        <div class="summary-grid">
+          <div class="summary-card">
+            <div class="label">收货人</div>
+            <div class="value">丽</div>
+            <div class="sub">15795949269 · 编号 6026</div>
+          </div>
+          <div class="summary-card">
+            <div class="label">收入</div>
+            <div class="value">118.00</div>
+          </div>
+          <div class="summary-card">
+            <div class="label">下单时间</div>
+            <div class="value">2026-04-14<br>21:31:59</div>
+          </div>
+          <div class="summary-card">
+            <div class="label">订单状态</div>
+            <div class="value"><span class="status-pill">已发货</span></div>
+          </div>
+        </div>
+        <div class="mini-grid">
+          <div class="wide-card">
+            <div class="mini-label">商品摘要</div>
+            <div class="meta-value">【明日达】赵露思同款27000澳大利亚进口婴儿水宝宝高端矿泉水</div>
+            <div class="meta-sub">规格：500ml / 1 · 订单金额：295.00 · 平台：抖店</div>
+          </div>
+          <div class="wide-card">
+            <div class="mini-label">采购摘要</div>
+            <div class="meta-value">27000-赵露思款-500ml / 1 / 59.9</div>
+            <div class="meta-sub">采购快递单号：YT99887766</div>
+          </div>
+        </div>
+      </div>
+      <div class="footer-note">适合你现在的使用方式：先核对人、钱、时间、状态，再决定要不要往下看细节。</div>
+    </section>
+
+    <section class="variant">
+      <div class="variant-head">
+        <div>
+          <h2 class="variant-title">方案 B：订单抬头卡</h2>
+          <p class="variant-desc">把收货人做成“抬头”，右边摆收入、时间、状态，视觉最像一个被选中的订单档案。</p>
+        </div>
+        <span class="variant-tag">适合高频核单</span>
+      </div>
+      <div class="preview-shell">
+        <div class="toolbar">
+          <div class="title-stack">
+            <h3>乐宝零食店</h3>
+            <p>确认写入飞书 · 已写入飞书</p>
+          </div>
+          <div class="actions">
+            <button class="btn btn-primary">保存修改并重新写入飞书</button>
+            <button class="btn btn-danger">删除</button>
+          </div>
+        </div>
+        <div class="kpi-strip">
+          <div class="kpi-box">
+            <div class="mini-label">收货人</div>
+            <div class="value">丽</div>
+            <div class="meta-sub">15795949269 / 广西北海</div>
+          </div>
+          <div class="kpi-box">
+            <div class="mini-label">收入</div>
+            <div class="value money">118.00</div>
+          </div>
+          <div class="kpi-box">
+            <div class="mini-label">下单时间</div>
+            <div class="value small">04-14 21:31:59</div>
+          </div>
+          <div class="kpi-box">
+            <div class="mini-label">状态</div>
+            <div class="value green">已发货</div>
+          </div>
+        </div>
+        <div class="body-grid">
+          <div class="detail-card">
+            <div class="mini-label">订单速览</div>
+            <div class="meta-grid">
+              <div class="meta-card">
+                <div class="meta-label">商品</div>
+                <div class="meta-value">赵露思同款27000婴儿水</div>
+              </div>
+              <div class="meta-card">
+                <div class="meta-label">规格</div>
+                <div class="meta-value">500ml / 1</div>
+              </div>
+              <div class="meta-card">
+                <div class="meta-label">订单金额</div>
+                <div class="meta-value">295.00</div>
+              </div>
+              <div class="meta-card">
+                <div class="meta-label">平台</div>
+                <div class="meta-value">抖店</div>
+              </div>
+            </div>
+          </div>
+          <div class="detail-card">
+            <div class="mini-label">采购速览</div>
+            <div class="proc-list">
+              <div class="proc-item">采购1：27000-赵露思款-500ml / 数量 1 / 成本 59.9</div>
+              <div class="proc-item">快递单号：YT99887766</div>
+              <div class="proc-item">备注：客户地址在海城区高德街道，派送前请联系</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="footer-note">视觉更完整，但会把商品和采购都提前展示得更重一些。</div>
+    </section>
+
+    <section class="variant">
+      <div class="variant-head">
+        <div>
+          <h2 class="variant-title">方案 C：吸顶关键信息条</h2>
+          <p class="variant-desc">把最重要的 4 个字段做成吸顶条，往下滚时也一直看得到，最适合长详情页。</p>
+        </div>
+        <span class="variant-tag">适合长页面</span>
+      </div>
+      <div class="preview-shell">
+        <div class="sticky-bar">
+          <div class="sticky-chip">
+            <div class="mini-label">收货人</div>
+            <div class="value">丽 / 15795949269</div>
+          </div>
+          <div class="sticky-chip">
+            <div class="mini-label">收入</div>
+            <div class="value">118.00</div>
+          </div>
+          <div class="sticky-chip">
+            <div class="mini-label">下单时间</div>
+            <div class="value small">04-14 21:31:59</div>
+          </div>
+          <div class="sticky-chip">
+            <div class="mini-label">状态</div>
+            <div class="value small">已发货</div>
+          </div>
+          <div class="actions">
+            <button class="btn btn-primary">保存修改并重新写入飞书</button>
+          </div>
+        </div>
+        <div class="body-grid" style="padding-top:18px;">
+          <div class="detail-card">
+            <div class="mini-label">第一屏先看什么</div>
+            <div class="two-line">
+              <div class="meta-card">
+                <div class="meta-label">商品摘要</div>
+                <div class="meta-value">【明日达】赵露思同款27000澳大利亚进口婴儿水宝宝高端矿泉水</div>
+              </div>
+              <div class="meta-card">
+                <div class="meta-label">采购摘要</div>
+                <div class="meta-value">27000-赵露思款-500ml / 1 / 59.9</div>
+              </div>
+            </div>
+          </div>
+          <div class="detail-card">
+            <div class="mini-label">继续下拉再看</div>
+            <div class="meta-sub" style="font-size:14px; line-height:1.8;">
+              订单基础信息、收货地址、备注、财务信息、同步信息都放在下面。<br>
+              但你滚动时，上面的收货人 / 收入 / 下单时间 / 状态不会消失。
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="footer-note">如果你经常往下翻地址、采购、财务，这版会最省脑力。</div>
+    </section>
+  </div>
+</body>
+</html>

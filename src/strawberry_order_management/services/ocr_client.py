@@ -14,12 +14,17 @@ class OCRClient:
         if "minimax" in self.base_url.lower():
             return self._extract_via_minimax(image_bytes)
 
-        response = requests.post(
-            f"{self.base_url}/ocr",
-            headers={"Authorization": f"Bearer {self.api_key}"},
-            files={"file": ("order.png", image_bytes, "image/png")},
-            timeout=30,
-        )
+        try:
+            response = requests.post(
+                f"{self.base_url}/ocr",
+                headers={"Authorization": f"Bearer {self.api_key}"},
+                files={"file": ("order.png", image_bytes, "image/png")},
+                timeout=30,
+            )
+        except requests.RequestException as exc:
+            raise ValueError(
+                f"截图识别服务连接失败，请检查网络、代理或 API 配置后重试。原始错误：{exc}"
+            ) from exc
         response.raise_for_status()
         try:
             payload = response.json()
@@ -52,6 +57,8 @@ class OCRClient:
                             "content": (
                                 "请识别这张订单截图，输出尽量完整、可解析的中文文本。"
                                 "收货信息请尽量保留“姓名 [编号] 手机号 地址 [编号]”这种顺序。"
+                                "如果是微信小店虚拟号，请保留“姓名（分机号） 手机号-分机号 地址（拨打请输入分机号）”这种原始结构。"
+                                "如果是微信电脑端订单，请尽量保留“详细收货信息 / 收件人 / 收货地址 / 虚拟号 / 分机号”这些标签。"
                                 f"[Image base64:{encoded_image}]"
                             ),
                         },
@@ -68,6 +75,10 @@ class OCRClient:
                     "当前 MiniMax 套餐不支持截图 OCR 模型。请更换支持视觉/OCR 的接口，或后续给我单独的 OCR API。"
                 ) from exc
             raise
+        except requests.RequestException as exc:
+            raise ValueError(
+                f"截图识别服务连接失败，请检查网络、代理或 API 配置后重试。原始错误：{exc}"
+            ) from exc
         try:
             payload = response.json()
         except ValueError as exc:

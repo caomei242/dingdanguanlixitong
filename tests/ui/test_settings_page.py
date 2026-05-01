@@ -1,4 +1,4 @@
-from PySide6.QtWidgets import QFrame, QLabel, QListWidget, QScrollArea, QStackedWidget
+from PySide6.QtWidgets import QFrame, QLabel, QPushButton, QScrollArea, QStackedWidget
 
 from strawberry_order_management.ui.main_window import MainWindow
 from strawberry_order_management.ui.pages.history_page import HistoryPage
@@ -28,6 +28,7 @@ def test_settings_page_load_payload_preserves_global_product_library_and_total_t
             "shops": [
                 {
                     "name": "乐宝零食店",
+                    "platform": "微信小店",
                     "wiki_url": "https://my.feishu.cn/wiki/QTXMwCDpQi9n6VkfDxJc5mNTnjh?table=tbl_xxx",
                     "app_token": "app_token_1",
                     "table_id": "tbl_xxx",
@@ -61,6 +62,7 @@ def test_settings_page_load_payload_preserves_global_product_library_and_total_t
     assert page.product_default_cost_edit.text() == "12.50"
     assert page.shop_selector.currentText() == "乐宝零食店"
     assert page.intake_default_shop_selector.currentText() == "乐宝零食店"
+    assert page.shop_platform_selector.currentText() == "微信小店"
     assert page.shop_wiki_url_edit.text() == "https://my.feishu.cn/wiki/QTXMwCDpQi9n6VkfDxJc5mNTnjh?table=tbl_total"
     assert page.shop_app_token_edit.text() == "app_token_total"
     assert page.shop_table_id_edit.text() == "tbl_total"
@@ -104,9 +106,11 @@ def test_settings_page_to_payload_persists_global_product_library_and_total_tabl
 
     page.product_name_edit.setText("澳大利亚进口婴儿水")
     page.product_default_cost_edit.setText("12.50")
+    page.product_jd_link_edit.setText("https://item.jd.com/1001.html")
     page.save_product_button.click()
     page.product_name_edit.setText("草莓")
     page.product_default_cost_edit.setText("8.20")
+    page.product_jd_link_edit.setText("https://item.jd.com/1002.html")
     page.save_product_button.click()
 
     page.shop_wiki_url_edit.setText("https://my.feishu.cn/wiki/QTXMwCDpQi9n6VkfDxJc5mNTnjh?table=tbl_total")
@@ -116,6 +120,7 @@ def test_settings_page_to_payload_persists_global_product_library_and_total_tabl
     page.shop_mapping_edits["shop_name"].setText("店铺列")
     page.shop_mapping_edits["platform"].setText("平台列")
     page.shop_name_edit.setText("乐宝零食店")
+    page.shop_platform_selector.setCurrentText("微信小店")
     page.shop_mapping_edits["remark"].setText("备注列")
     page.shop_mapping_edits["order_date"].setText("订单日期列")
     page.shop_mapping_edits["order_time"].setText("下单时间列")
@@ -137,8 +142,16 @@ def test_settings_page_to_payload_persists_global_product_library_and_total_tabl
     payload = page.to_payload()
 
     assert payload["global_product_library"] == [
-        {"name": "澳大利亚进口婴儿水", "default_cost": "12.50"},
-        {"name": "草莓", "default_cost": "8.20"},
+        {
+            "name": "澳大利亚进口婴儿水",
+            "default_cost": "12.50",
+            "jd_link": "https://item.jd.com/1001.html",
+        },
+        {
+            "name": "草莓",
+            "default_cost": "8.20",
+            "jd_link": "https://item.jd.com/1002.html",
+        },
     ]
     assert payload["feishu_table_wiki_url"] == "https://my.feishu.cn/wiki/QTXMwCDpQi9n6VkfDxJc5mNTnjh?table=tbl_total"
     assert payload["feishu_table_app_token"] == "app_token_total"
@@ -154,6 +167,7 @@ def test_settings_page_to_payload_persists_global_product_library_and_total_tabl
         "珍宝零食店",
         "悦宝零食店",
     ]
+    assert payload["shops"][0]["platform"] == "微信小店"
 
 
 def test_settings_page_preserves_procurement_templates_in_payload(qtbot):
@@ -187,6 +201,264 @@ def test_settings_page_preserves_procurement_templates_in_payload(qtbot):
             ],
         }
     ]
+
+
+def test_settings_page_load_payload_preserves_jd_links_and_accounts(qtbot):
+    page = SettingsPage()
+    qtbot.addWidget(page)
+
+    page.load_payload(
+        {
+            "product_presets": [
+                {
+                    "name": "27000-澳洲版-1升装",
+                    "default_cost": "89",
+                    "jd_link": "https://item.jd.com/27000.html",
+                }
+            ],
+            "jd_accounts": [
+                {
+                    "name": "京东账号A",
+                    "environment": "/Users/gd/.jd/account-a",
+                    "enabled": True,
+                    "priority": 1,
+                },
+                {
+                    "name": "京东账号B",
+                    "environment": "profile-b",
+                    "enabled": False,
+                    "priority": 2,
+                },
+            ],
+        }
+    )
+
+    assert page.product_selector.currentText() == "27000-澳洲版-1升装"
+    assert page.product_default_cost_edit.text() == "89"
+    assert page.product_jd_link_edit.text() == "https://item.jd.com/27000.html"
+    assert page.jd_account_selector.count() == 2
+    assert page.jd_account_name_edit.text() == "京东账号A"
+    assert page.jd_account_environment_edit.text() == "/Users/gd/.jd/account-a"
+    assert page.jd_account_enabled_checkbox.isChecked() is True
+    assert page.jd_account_priority_edit.text() == "1"
+
+
+def test_settings_page_to_payload_persists_jd_accounts(qtbot):
+    page = SettingsPage()
+    qtbot.addWidget(page)
+
+    page.jd_account_name_edit.setText("京东账号A")
+    page.jd_account_environment_edit.setText("/Users/gd/.jd/account-a")
+    page.jd_account_enabled_checkbox.setChecked(True)
+    page.jd_account_address_slot_verified_checkbox.setChecked(True)
+    page.jd_account_priority_edit.setText("1")
+    page.save_jd_account_button.click()
+
+    payload = page.to_payload()
+
+    assert payload["jd_accounts"] == [
+        {
+            "name": "京东账号A",
+            "environment": "/Users/gd/.jd/account-a",
+            "enabled": True,
+            "address_slot_verified": True,
+            "priority": 1,
+        }
+    ]
+
+
+def test_settings_page_load_payload_preserves_address_slot_verified(qtbot):
+    page = SettingsPage()
+    qtbot.addWidget(page)
+
+    page.load_payload(
+        {
+            "jd_accounts": [
+                {
+                    "name": "京东账号A",
+                    "environment": "/Users/gd/.jd/account-a",
+                    "enabled": True,
+                    "address_slot_verified": True,
+                    "priority": 1,
+                },
+                {
+                    "name": "京东账号B",
+                    "environment": "/Users/gd/.jd/account-b",
+                    "enabled": True,
+                    "address_slot_verified": False,
+                    "priority": 2,
+                },
+            ]
+        }
+    )
+
+    assert page.jd_account_selector.currentText() == "京东账号A"
+    assert page.jd_account_address_slot_verified_checkbox.isChecked() is True
+
+    page.jd_account_selector.setCurrentText("京东账号B")
+
+    assert page.jd_account_address_slot_verified_checkbox.isChecked() is False
+
+
+def test_settings_page_emits_auto_order_check_request_with_current_payload(qtbot):
+    page = SettingsPage()
+    qtbot.addWidget(page)
+
+    page.auto_order_bridge_enabled_checkbox.setChecked(True)
+    page.auto_order_bridge_base_url_edit.setText("http://127.0.0.1:9000")
+    page.auto_order_bridge_api_key_edit.setText("bridge-key")
+    page.jd_account_name_edit.setText("京东账号A")
+    page.jd_account_environment_edit.setText("/Users/gd/.jd/account-a")
+    page.jd_account_enabled_checkbox.setChecked(True)
+    page.jd_account_address_slot_verified_checkbox.setChecked(True)
+    page.jd_account_priority_edit.setText("1")
+    page.save_jd_account_button.click()
+
+    with qtbot.waitSignal(page.auto_order_check_requested, timeout=1000) as blocker:
+        page.run_auto_order_check_button.click()
+
+    payload = blocker.args[0]
+    assert payload["auto_order_bridge_enabled"] is True
+    assert payload["auto_order_bridge_base_url"] == "http://127.0.0.1:9000"
+    assert payload["jd_accounts"][0]["address_slot_verified"] is True
+
+
+def test_settings_page_emits_auto_order_service_restart_request_with_current_payload(qtbot):
+    page = SettingsPage()
+    qtbot.addWidget(page)
+
+    page.auto_order_bridge_enabled_checkbox.setChecked(True)
+    page.auto_order_bridge_base_url_edit.setText("http://127.0.0.1:9010")
+    page.auto_order_bridge_api_key_edit.setText("bridge-key")
+
+    with qtbot.waitSignal(page.auto_order_service_restart_requested, timeout=1000) as blocker:
+        page.restart_auto_order_service_button.click()
+
+    payload = blocker.args[0]
+    assert payload["auto_order_bridge_enabled"] is True
+    assert payload["auto_order_bridge_base_url"] == "http://127.0.0.1:9010"
+    assert payload["auto_order_bridge_api_key"] == "bridge-key"
+
+
+def test_settings_page_load_and_save_auto_order_http_bridge_config(qtbot):
+    page = SettingsPage()
+    qtbot.addWidget(page)
+
+    page.load_payload(
+        {
+            "auto_order_bridge_enabled": True,
+            "auto_order_bridge_base_url": "http://127.0.0.1:9000",
+            "auto_order_bridge_api_key": "bridge-key",
+            "auto_order_bridge_submit_path": "/auto-order/tasks",
+            "auto_order_bridge_poll_path_template": "/auto-order/tasks/{task_id}",
+            "auto_order_bridge_poll_interval_seconds": 5,
+            "auto_order_bridge_timeout_seconds": 1800,
+        }
+    )
+
+    assert page.auto_order_bridge_enabled_checkbox.isChecked() is True
+    assert page.auto_order_bridge_base_url_edit.text() == "http://127.0.0.1:9000"
+    assert page.auto_order_bridge_api_key_edit.text() == "bridge-key"
+    assert page.auto_order_bridge_submit_path_edit.text() == "/auto-order/tasks"
+    assert page.auto_order_bridge_poll_path_template_edit.text() == "/auto-order/tasks/{task_id}"
+    assert page.auto_order_bridge_poll_interval_seconds_edit.text() == "5"
+    assert page.auto_order_bridge_timeout_seconds_edit.text() == "1800"
+
+    payload = page.to_payload()
+
+    assert payload["auto_order_bridge_enabled"] is True
+    assert payload["auto_order_bridge_base_url"] == "http://127.0.0.1:9000"
+    assert payload["auto_order_bridge_api_key"] == "bridge-key"
+    assert payload["auto_order_bridge_submit_path"] == "/auto-order/tasks"
+    assert payload["auto_order_bridge_poll_path_template"] == "/auto-order/tasks/{task_id}"
+    assert payload["auto_order_bridge_poll_interval_seconds"] == 5
+    assert payload["auto_order_bridge_timeout_seconds"] == 1800
+
+
+def test_settings_page_load_and_save_mobile_order_entry_config(qtbot):
+    page = SettingsPage()
+    qtbot.addWidget(page)
+
+    page.load_payload(
+        {
+            "mobile_order_entry_enabled": True,
+            "mobile_order_entry_host": "0.0.0.0",
+            "mobile_order_entry_port": 9021,
+            "mobile_order_entry_api_key": "mobile-key",
+        }
+    )
+
+    assert page.mobile_order_entry_enabled_checkbox.isChecked() is True
+    assert page.mobile_order_entry_host_edit.text() == "0.0.0.0"
+    assert page.mobile_order_entry_port_edit.text() == "9021"
+    assert page.mobile_order_entry_api_key_edit.text() == "mobile-key"
+    assert page.mobile_order_entry_url_label.text() == "http://0.0.0.0:9021/mobile"
+
+    payload = page.to_payload()
+
+    assert payload["mobile_order_entry_enabled"] is True
+    assert payload["mobile_order_entry_host"] == "0.0.0.0"
+    assert payload["mobile_order_entry_port"] == 9021
+    assert payload["mobile_order_entry_api_key"] == "mobile-key"
+
+
+def test_settings_page_load_and_save_wechat_mp_config(qtbot):
+    page = SettingsPage()
+    qtbot.addWidget(page)
+
+    page.load_payload(
+        {
+            "wechat_mp_enabled": True,
+            "wechat_mp_token": "wechat-token",
+            "wechat_mp_encoding_aes_key": "abcdefghijklmnopqrstuvwxyz123456789ABCDEFG",
+            "wechat_mp_app_id": "wx1234567890",
+            "wechat_mp_app_secret": "secret-123",
+            "wechat_mp_tunnel_public_url": "https://orders.example.com/",
+            "wechat_mp_callback_path": "wechat/callback",
+            "wechat_mp_connection_status": "等待联调",
+        }
+    )
+
+    assert page.wechat_mp_enabled_checkbox.isChecked() is True
+    assert page.wechat_mp_token_edit.text() == "wechat-token"
+    assert (
+        page.wechat_mp_encoding_aes_key_edit.text()
+        == "abcdefghijklmnopqrstuvwxyz123456789ABCDEFG"
+    )
+    assert page.wechat_mp_app_id_edit.text() == "wx1234567890"
+    assert page.wechat_mp_app_secret_edit.text() == "secret-123"
+    assert page.wechat_mp_tunnel_public_url_edit.text() == "https://orders.example.com"
+    assert page.wechat_mp_callback_path_edit.text() == "/wechat/callback"
+    assert page.wechat_mp_callback_url_label.text() == "https://orders.example.com/wechat/callback"
+    assert page.wechat_mp_connection_status_label.text() == "等待联调"
+
+    payload = page.to_payload()
+
+    assert payload["wechat_mp_enabled"] is True
+    assert payload["wechat_mp_token"] == "wechat-token"
+    assert (
+        payload["wechat_mp_encoding_aes_key"]
+        == "abcdefghijklmnopqrstuvwxyz123456789ABCDEFG"
+    )
+    assert payload["wechat_mp_app_id"] == "wx1234567890"
+    assert payload["wechat_mp_app_secret"] == "secret-123"
+    assert payload["wechat_mp_tunnel_public_url"] == "https://orders.example.com"
+    assert payload["wechat_mp_callback_path"] == "/wechat/callback"
+    assert payload["wechat_mp_connection_status"] == "等待联调"
+
+
+def test_settings_page_updates_wechat_mp_callback_url_preview(qtbot):
+    page = SettingsPage()
+    qtbot.addWidget(page)
+
+    assert page.wechat_mp_callback_path_edit.text() == "/wechat/callback"
+    assert page.wechat_mp_callback_url_label.text() == "待填写 Cloudflare Tunnel 公网地址后生成"
+
+    page.wechat_mp_tunnel_public_url_edit.setText("https://demo.trycloudflare.com/")
+    page.wechat_mp_callback_path_edit.setText("wx/mp")
+
+    assert page.wechat_mp_callback_path_edit.text() == "/wx/mp"
+    assert page.wechat_mp_callback_url_label.text() == "https://demo.trycloudflare.com/wx/mp"
 
 
 def test_settings_page_load_payload_preserves_update_logs(qtbot):
@@ -577,23 +849,126 @@ def test_settings_page_wraps_content_in_scroll_area(qtbot):
     assert scroll_area.widget().objectName() == "PageContent"
 
 
-def test_settings_page_uses_sidebar_nav_and_content_stack(qtbot):
+def test_settings_page_uses_horizontal_section_nav_and_content_stack(qtbot):
     page = SettingsPage()
     qtbot.addWidget(page)
 
-    nav = page.findChild(QListWidget, "SettingsSectionNav")
+    nav = page.findChild(QFrame, "SettingsSectionNav")
     stack = page.findChild(QStackedWidget, "SettingsSectionStack")
+    buttons = nav.findChildren(QPushButton, "SettingsSectionTab")
 
     assert nav is not None
     assert stack is not None
-    assert nav.count() == 4
-    assert stack.count() == 4
-    assert [nav.item(index).text() for index in range(nav.count())] == [
+    assert len(buttons) == 5
+    assert stack.count() == 5
+    assert buttons == page.section_nav_buttons
+    assert all(button.isCheckable() for button in buttons)
+    assert page.section_button_group.exclusive() is True
+    assert stack.currentIndex() == 0
+    assert [button.isChecked() for button in buttons] == [True, False, False, False, False]
+    assert [button.text() for button in buttons] == [
         "接口配置",
         "商品库",
         "店铺映射",
+        "自动拍单服务",
         "更新日志",
     ]
+    assert [button.text() for button in page.section_nav_buttons] == [
+        "接口配置",
+        "商品库",
+        "店铺映射",
+        "自动拍单服务",
+        "更新日志",
+    ]
+
+
+def test_settings_page_switches_each_horizontal_section_to_matching_content(qtbot):
+    page = SettingsPage()
+    qtbot.addWidget(page)
+
+    stack = page.findChild(QStackedWidget, "SettingsSectionStack")
+
+    def assert_selected(index):
+        assert stack.currentIndex() == index
+        assert [button.isChecked() for button in page.section_nav_buttons] == [
+            button_index == index for button_index in range(len(page.section_nav_buttons))
+        ]
+
+    def current_content():
+        return stack.currentWidget().widget()
+
+    page.section_nav_buttons[0].click()
+    content = current_content()
+    assert_selected(0)
+    assert page.ocr_base_url_edit in content.findChildren(type(page.ocr_base_url_edit))
+    assert page.helper_base_url_edit in content.findChildren(type(page.helper_base_url_edit))
+    assert page.feishu_app_id_edit in content.findChildren(type(page.feishu_app_id_edit))
+
+    page.section_nav_buttons[1].click()
+    content = current_content()
+    assert_selected(1)
+    assert page.product_selector in content.findChildren(type(page.product_selector))
+    assert page.product_name_edit in content.findChildren(type(page.product_name_edit))
+    assert page.product_jd_link_edit in content.findChildren(type(page.product_jd_link_edit))
+    assert page.custom_cost_label_edits[0] in content.findChildren(type(page.custom_cost_label_edits[0]))
+
+    page.section_nav_buttons[2].click()
+    content = current_content()
+    assert stack.currentIndex() == 2
+    assert page.section_nav_buttons[2].isChecked() is True
+    assert page.shop_selector in content.findChildren(type(page.shop_selector))
+    assert page.shop_wiki_url_edit in content.findChildren(type(page.shop_wiki_url_edit))
+    assert page.show_enabled_only_checkbox in content.findChildren(type(page.show_enabled_only_checkbox))
+    assert page.mapping_row_widgets["店铺"] in content.findChildren(type(page.mapping_row_widgets["店铺"]))
+
+    page.section_nav_buttons[3].click()
+    content = current_content()
+    assert stack.currentIndex() == 3
+    assert page.section_nav_buttons[3].isChecked() is True
+    assert page.auto_order_bridge_enabled_checkbox in content.findChildren(
+        type(page.auto_order_bridge_enabled_checkbox)
+    )
+    assert page.auto_order_bridge_base_url_edit in content.findChildren(
+        type(page.auto_order_bridge_base_url_edit)
+    )
+    assert page.auto_order_bridge_submit_path_edit in content.findChildren(
+        type(page.auto_order_bridge_submit_path_edit)
+    )
+    assert page.auto_order_bridge_poll_path_template_edit in content.findChildren(
+        type(page.auto_order_bridge_poll_path_template_edit)
+    )
+
+    page.section_nav_buttons[4].click()
+    content = current_content()
+    assert_selected(4)
+    assert page.update_log_list in content.findChildren(type(page.update_log_list))
+    assert page.update_log_module_edit in content.findChildren(type(page.update_log_module_edit))
+    assert page.update_log_title_edit in content.findChildren(type(page.update_log_title_edit))
+    assert page.update_log_content_edit in content.findChildren(type(page.update_log_content_edit))
+
+
+def test_settings_page_auto_order_service_is_independent_section_with_fields(qtbot):
+    page = SettingsPage()
+    qtbot.addWidget(page)
+
+    stack = page.findChild(QStackedWidget, "SettingsSectionStack")
+    auto_order_button = page.section_nav_buttons[3]
+
+    auto_order_button.click()
+
+    content = stack.currentWidget().widget()
+    assert stack.currentIndex() == 3
+    assert auto_order_button.isChecked() is True
+    assert page.auto_order_bridge_enabled_checkbox in content.findChildren(
+        type(page.auto_order_bridge_enabled_checkbox)
+    )
+    assert page.auto_order_bridge_base_url_edit in content.findChildren(
+        type(page.auto_order_bridge_base_url_edit)
+    )
+    assert page.jd_account_selector in content.findChildren(type(page.jd_account_selector))
+    assert page.jd_account_environment_edit in content.findChildren(
+        type(page.jd_account_environment_edit)
+    )
 
 
 def test_settings_page_uses_three_column_mapping_grid(qtbot):
@@ -666,6 +1041,31 @@ def test_settings_page_checks_total_table_fields_and_highlights_missing(qtbot):
     assert page.shop_mapping_edits["shop_name"].styleSheet() == ""
 
 
+def test_settings_page_can_permanently_clear_missing_field_mappings(qtbot):
+    def inspect_fields(_payload: dict):
+        return {"店铺", "收入"}
+
+    page = SettingsPage(on_inspect_table_fields=inspect_fields)
+    qtbot.addWidget(page)
+
+    page.check_table_fields_button.click()
+    page.clear_missing_field_mappings_button.click()
+
+    assert page.mapping_edits["店铺"].text() == "店铺"
+    assert page.mapping_edits["收入"].text() == "收入"
+    assert page.mapping_edits["平台"].text() == ""
+    assert page.mapping_edits["订单编号"].text() == ""
+    assert page.mapping_edits["采购商品1"].text() == ""
+
+    payload = page.to_payload()
+    reloaded = SettingsPage()
+    qtbot.addWidget(reloaded)
+    reloaded.load_payload(payload)
+
+    assert reloaded.mapping_edits["平台"].text() == ""
+    assert reloaded.mapping_edits["订单编号"].text() == ""
+
+
 def test_settings_page_uses_default_shop_presets_and_default_selection(qtbot):
     page = SettingsPage()
     qtbot.addWidget(page)
@@ -681,21 +1081,31 @@ def test_settings_page_uses_default_shop_presets_and_default_selection(qtbot):
         "悦宝零食店",
     ]
     assert payload["selected_shop_name"] == "乐宝零食店"
+    assert payload["intake_default_platform"] == "抖店"
+    assert payload["intake_default_shop_name_douyin"] == "乐宝零食店"
+    assert payload["intake_default_shop_name_wechat"] == ""
     assert payload["intake_default_shop_name"] == "乐宝零食店"
     assert "草莓店" not in [shop["name"] for shop in payload["shops"]]
 
 
-def test_settings_page_persists_separate_intake_default_shop(qtbot):
+def test_settings_page_persists_platform_specific_intake_default_shops(qtbot):
     page = SettingsPage()
     qtbot.addWidget(page)
 
     page.shop_selector.setCurrentText("欢宝零食店")
-    page.intake_default_shop_selector.setCurrentText("君宝零食店")
+    page._shops.append({"name": "乐宝零食店--微信", "platform": "微信小店"})
+    page._shops = page._normalize_shops(page._shops)
+    page._refresh_shop_selector("欢宝零食店")
+    page._refresh_platform_default_shop_selectors("君宝零食店", "乐宝零食店--微信")
+    page.intake_default_platform_selector.setCurrentText("微信小店")
 
     payload = page.to_payload()
 
     assert payload["selected_shop_name"] == "欢宝零食店"
-    assert payload["intake_default_shop_name"] == "君宝零食店"
+    assert payload["intake_default_platform"] == "微信小店"
+    assert payload["intake_default_shop_name_douyin"] == "君宝零食店"
+    assert payload["intake_default_shop_name_wechat"] == "乐宝零食店--微信"
+    assert payload["intake_default_shop_name"] == "乐宝零食店--微信"
 
 
 def test_settings_page_persists_custom_cost_labels(qtbot):
@@ -784,7 +1194,7 @@ def test_settings_page_custom_cost_label_does_not_override_manual_mapping(qtbot)
     assert page.mapping_edits["自定义字段1"].text() == "费用A"
 
 
-def test_main_window_navigates_between_five_pages(qtbot):
+def test_main_window_navigates_between_six_pages(qtbot):
     window = MainWindow()
     qtbot.addWidget(window)
 
@@ -795,12 +1205,15 @@ def test_main_window_navigates_between_five_pages(qtbot):
     assert window.stack.currentWidget() is window.history_page
 
     window.nav.setCurrentRow(2)
-    assert window.stack.currentWidget() is window.profit_page
+    assert window.stack.currentWidget() is window.auto_order_page
 
     window.nav.setCurrentRow(3)
-    assert window.stack.currentWidget() is window.expense_page
+    assert window.stack.currentWidget() is window.profit_page
 
     window.nav.setCurrentRow(4)
+    assert window.stack.currentWidget() is window.expense_page
+
+    window.nav.setCurrentRow(5)
     assert window.stack.currentWidget() is window.settings_page
 
     window.nav.setCurrentRow(0)
@@ -878,8 +1291,53 @@ def test_main_window_prefers_intake_default_shop_name_for_entry_page(qtbot):
     qtbot.addWidget(window)
 
     assert window.settings_page.shop_selector.currentText() == "欢宝零食店"
-    assert window.settings_page.intake_default_shop_selector.currentText() == "君宝零食店"
+    assert window.settings_page.intake_default_douyin_shop_selector.currentText() == "君宝零食店"
     assert window.intake_page.shop_selector.currentText() == "君宝零食店"
+
+
+def test_main_window_applies_platform_specific_shop_defaults_on_entry_page(qtbot):
+    store = MemoryConfigStore(
+        {
+            "shops": [
+                {"name": "乐宝零食店", "platform": "抖店"},
+                {"name": "乐宝零食店—微信", "platform": "微信小店"},
+            ],
+            "selected_shop_name": "乐宝零食店",
+            "intake_default_platform": "抖店",
+            "intake_default_shop_name_douyin": "乐宝零食店",
+            "intake_default_shop_name_wechat": "乐宝零食店—微信",
+        }
+    )
+
+    window = MainWindow(config_store=store)
+    qtbot.addWidget(window)
+
+    assert window.intake_page.shop_selector.currentText() == "乐宝零食店"
+    assert window.intake_page.platform_selector.currentText() == "抖店"
+
+    window.intake_page.platform_selector.setCurrentText("微信小店")
+
+    assert window.intake_page.shop_selector.currentText() == "乐宝零食店—微信"
+    assert window.intake_page.platform_selector.currentText() == "微信小店"
+
+
+def test_main_window_infers_wechat_platform_for_legacy_wechat_shop_names(qtbot):
+    store = MemoryConfigStore(
+        {
+            "shops": [
+                {"name": "乐宝零食店"},
+                {"name": "乐宝零食店--微信"},
+            ],
+            "selected_shop_name": "乐宝零食店",
+            "intake_default_shop_name": "乐宝零食店--微信",
+        }
+    )
+
+    window = MainWindow(config_store=store)
+    qtbot.addWidget(window)
+
+    assert window.intake_page.shop_selector.currentText() == "乐宝零食店--微信"
+    assert window.intake_page.platform_selector.currentText() == "微信小店"
 
 
 def test_main_window_uses_default_shop_presets_when_config_is_empty(qtbot):

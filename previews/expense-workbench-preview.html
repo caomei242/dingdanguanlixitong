@@ -1,0 +1,1255 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>草莓订单管理系统 - 经营开支 UI 预览</title>
+  <style>
+    :root {
+      --bg: #eef3fb;
+      --surface: rgba(255, 255, 255, 0.9);
+      --card: #ffffff;
+      --line: #d7e2f1;
+      --line-strong: #c3d3ea;
+      --text: #24324a;
+      --muted: #7c8aa5;
+      --blue: #5c82ff;
+      --blue-strong: #3f6df4;
+      --blue-soft: #edf3ff;
+      --green: #27b07d;
+      --orange: #f39a45;
+      --red: #f0647d;
+      --shadow: 0 24px 60px rgba(44, 74, 130, 0.12);
+      --radius-xl: 24px;
+      --radius-lg: 18px;
+      --radius-md: 14px;
+      --radius-sm: 12px;
+      --font: "SF Pro Display", "PingFang SC", "Helvetica Neue", Arial, sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: var(--font);
+      background:
+        radial-gradient(circle at 20% 20%, rgba(104, 140, 255, 0.08), transparent 30%),
+        radial-gradient(circle at 80% 10%, rgba(255, 117, 117, 0.08), transparent 26%),
+        linear-gradient(180deg, #f7faff 0%, var(--bg) 100%);
+      color: var(--text);
+      padding: 28px;
+    }
+
+    .app-shell {
+      max-width: 1680px;
+      margin: 0 auto;
+      height: calc(100vh - 56px);
+      min-height: 920px;
+      border-radius: 28px;
+      overflow: hidden;
+      border: 1px solid rgba(195, 211, 234, 0.7);
+      background: rgba(255, 255, 255, 0.45);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(18px);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .titlebar {
+      height: 56px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      background: rgba(255, 255, 255, 0.72);
+      border-bottom: 1px solid rgba(195, 211, 234, 0.7);
+      flex-shrink: 0;
+    }
+
+    .lights {
+      position: absolute;
+      left: 20px;
+      display: flex;
+      gap: 8px;
+    }
+
+    .light {
+      width: 13px;
+      height: 13px;
+      border-radius: 999px;
+      box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12);
+    }
+
+    .light.red { background: #ff5f56; }
+    .light.yellow { background: #ffbd2d; }
+    .light.green { background: #28c840; }
+
+    .window-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: #52627f;
+      letter-spacing: 0.02em;
+    }
+
+    .workspace {
+      display: grid;
+      grid-template-columns: 208px 1fr;
+      min-height: 0;
+      flex: 1;
+    }
+
+    .sidebar {
+      background: rgba(246, 250, 255, 0.86);
+      border-right: 1px solid rgba(195, 211, 234, 0.7);
+      padding: 26px 18px 22px;
+      display: flex;
+      flex-direction: column;
+      gap: 22px;
+    }
+
+    .brand {
+      padding: 8px 10px;
+    }
+
+    .brand-mark {
+      font-size: 44px;
+      font-weight: 900;
+      color: #ff5f84;
+      line-height: 1;
+      letter-spacing: -0.06em;
+      margin-bottom: 8px;
+    }
+
+    .brand-sub {
+      font-size: 14px;
+      color: var(--muted);
+      font-weight: 600;
+    }
+
+    .nav-card {
+      background: rgba(255, 255, 255, 0.76);
+      border: 1px solid rgba(195, 211, 234, 0.9);
+      border-radius: 22px;
+      padding: 18px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .nav-item {
+      border: 0;
+      background: transparent;
+      color: #33435e;
+      padding: 14px 16px;
+      border-radius: 16px;
+      text-align: left;
+      font-size: 18px;
+      font-weight: 700;
+      cursor: default;
+    }
+
+    .nav-item.active {
+      background: linear-gradient(180deg, #6f93ff 0%, #4e7df7 100%);
+      color: white;
+      box-shadow: 0 16px 26px rgba(83, 122, 248, 0.24);
+    }
+
+    .main {
+      padding: 20px;
+      min-width: 0;
+    }
+
+    .page {
+      background: rgba(255, 255, 255, 0.7);
+      border: 1px solid rgba(195, 211, 234, 0.9);
+      border-radius: 26px;
+      min-height: 100%;
+      padding: 22px 22px 18px;
+      display: grid;
+      grid-template-rows: auto auto 1fr;
+      gap: 18px;
+    }
+
+    .page-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 20px;
+    }
+
+    .page-title {
+      font-size: 34px;
+      font-weight: 900;
+      letter-spacing: -0.03em;
+      margin: 0 0 6px;
+    }
+
+    .page-desc {
+      margin: 0;
+      font-size: 15px;
+      color: var(--muted);
+      line-height: 1.7;
+      max-width: 780px;
+    }
+
+    .head-actions {
+      display: flex;
+      gap: 12px;
+    }
+
+    .action {
+      border: 0;
+      border-radius: 999px;
+      padding: 12px 18px;
+      font-size: 14px;
+      font-weight: 800;
+      cursor: default;
+    }
+
+    .action.secondary {
+      background: #edf2fb;
+      color: #61708e;
+    }
+
+    .action.primary {
+      background: linear-gradient(180deg, #5f84ff 0%, #4674f5 100%);
+      color: white;
+      box-shadow: 0 12px 20px rgba(84, 119, 245, 0.22);
+    }
+
+    .layout-switch {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px;
+      border-radius: 18px;
+      background: rgba(235, 241, 251, 0.88);
+      border: 1px solid rgba(195, 211, 234, 0.8);
+      width: fit-content;
+    }
+
+    .switch-btn {
+      border: 0;
+      background: transparent;
+      padding: 12px 18px;
+      border-radius: 14px;
+      color: #5d6d88;
+      font-size: 14px;
+      font-weight: 800;
+      cursor: pointer;
+      transition: 0.2s ease;
+    }
+
+    .switch-btn.active {
+      background: white;
+      color: var(--text);
+      box-shadow: 0 10px 20px rgba(86, 112, 160, 0.12);
+    }
+
+    .layout-panels {
+      min-height: 0;
+      position: relative;
+    }
+
+    .panel {
+      display: none;
+      gap: 16px;
+      min-height: 100%;
+      height: 100%;
+    }
+
+    .panel.active {
+      display: grid;
+    }
+
+    .panel.a1 {
+      grid-template-columns: 420px 1fr;
+    }
+
+    .panel.a2 {
+      grid-template-rows: auto 1fr;
+    }
+
+    .panel.a3 {
+      grid-template-columns: 240px 420px 1fr;
+    }
+
+    .column,
+    .block,
+    .ledger-row,
+    .scope-item,
+    .detail-item,
+    .summary-card {
+      background: rgba(255, 255, 255, 0.92);
+      border: 1px solid rgba(195, 211, 234, 0.92);
+      border-radius: 22px;
+      box-shadow: 0 8px 16px rgba(83, 106, 146, 0.05);
+    }
+
+    .column {
+      padding: 18px;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .column.scroll {
+      overflow: auto;
+    }
+
+    .column-title,
+    .block-title {
+      font-size: 22px;
+      font-weight: 900;
+      letter-spacing: -0.03em;
+      margin: 0;
+    }
+
+    .muted {
+      font-size: 13px;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+    }
+
+    .field label {
+      font-size: 12px;
+      font-weight: 800;
+      color: #7a8baa;
+      letter-spacing: 0.01em;
+    }
+
+    .input,
+    .select,
+    .textarea,
+    .chip {
+      width: 100%;
+      border: 1px solid rgba(206, 218, 239, 0.95);
+      border-radius: 16px;
+      background: #fff;
+      color: var(--text);
+      font-size: 14px;
+      font-family: inherit;
+      padding: 14px 16px;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+    }
+
+    .textarea {
+      min-height: 104px;
+      resize: none;
+    }
+
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      width: auto;
+      padding: 9px 12px;
+      border-radius: 999px;
+      background: var(--blue-soft);
+      color: var(--blue-strong);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .pillbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .pill {
+      border-radius: 999px;
+      padding: 10px 14px;
+      background: #f4f7fd;
+      color: #61708d;
+      font-size: 13px;
+      font-weight: 800;
+      border: 1px solid rgba(208, 220, 240, 0.85);
+    }
+
+    .pill.active {
+      background: linear-gradient(180deg, #5f84ff 0%, #4b77f5 100%);
+      color: white;
+      border-color: transparent;
+      box-shadow: 0 10px 18px rgba(76, 117, 245, 0.22);
+    }
+
+    .summary-row {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+    }
+
+    .summary-card {
+      padding: 16px;
+    }
+
+    .summary-label {
+      font-size: 12px;
+      color: var(--muted);
+      font-weight: 800;
+      margin-bottom: 8px;
+    }
+
+    .summary-value {
+      font-size: 30px;
+      font-weight: 900;
+      letter-spacing: -0.03em;
+      margin-bottom: 4px;
+    }
+
+    .summary-note {
+      font-size: 12px;
+      color: #8ea0c0;
+    }
+
+    .ledger-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-height: 0;
+    }
+
+    .ledger-row {
+      padding: 16px;
+      display: grid;
+      grid-template-columns: 1.3fr .8fr .8fr .7fr .9fr;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .ledger-row.active {
+      border-color: rgba(80, 119, 245, 0.7);
+      box-shadow: 0 0 0 3px rgba(76, 117, 245, 0.08);
+    }
+
+    .ledger-main {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .ledger-title {
+      font-size: 16px;
+      font-weight: 900;
+    }
+
+    .ledger-sub {
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .amount {
+      font-size: 22px;
+      font-weight: 900;
+      text-align: right;
+      letter-spacing: -0.03em;
+    }
+
+    .amount.red { color: var(--red); }
+    .amount.orange { color: var(--orange); }
+    .amount.green { color: var(--green); }
+
+    .section-stack {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      min-height: 0;
+    }
+
+    .block {
+      padding: 18px;
+    }
+
+    .block-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    .tag {
+      font-size: 11px;
+      font-weight: 900;
+      color: #6f83a5;
+      background: #f4f7fd;
+      border: 1px solid rgba(208, 220, 240, 0.9);
+      border-radius: 999px;
+      padding: 7px 10px;
+    }
+
+    .tag.blue {
+      color: #446cf2;
+      background: #edf3ff;
+    }
+
+    .tag.green {
+      color: #1b9d6f;
+      background: #ebfbf5;
+    }
+
+    .scope-nav {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      overflow: auto;
+      min-height: 0;
+    }
+
+    .scope-item {
+      padding: 16px 14px;
+    }
+
+    .scope-item.active {
+      border-color: rgba(80, 119, 245, 0.7);
+      background: linear-gradient(180deg, #f6f9ff 0%, #eef4ff 100%);
+    }
+
+    .scope-name {
+      font-size: 16px;
+      font-weight: 900;
+      margin-bottom: 6px;
+    }
+
+    .scope-meta {
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    .detail-grid {
+      display: grid;
+      grid-template-columns: 1.2fr .8fr;
+      gap: 14px;
+    }
+
+    .detail-stack {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .detail-item {
+      padding: 14px;
+    }
+
+    .detail-item h4 {
+      margin: 0 0 10px;
+      font-size: 15px;
+      font-weight: 900;
+    }
+
+    .detail-lines {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .line {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      font-size: 13px;
+    }
+
+    .line span:first-child {
+      color: var(--muted);
+      font-weight: 700;
+    }
+
+    .line strong {
+      font-weight: 900;
+    }
+
+    .sticky-tools {
+      position: sticky;
+      top: 0;
+      z-index: 5;
+      padding-bottom: 8px;
+      background: linear-gradient(180deg, rgba(244, 248, 255, 0.98), rgba(244, 248, 255, 0.8) 72%, transparent);
+    }
+
+    .mini-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .mini-actions {
+      display: flex;
+      gap: 10px;
+    }
+
+    .btn {
+      border: 0;
+      border-radius: 14px;
+      padding: 11px 14px;
+      font-size: 13px;
+      font-weight: 800;
+      cursor: default;
+    }
+
+    .btn.soft {
+      background: #f2f5fb;
+      color: #687a98;
+    }
+
+    .btn.blue {
+      background: linear-gradient(180deg, #5f84ff 0%, #4975f5 100%);
+      color: white;
+      box-shadow: 0 10px 18px rgba(77, 118, 245, 0.2);
+    }
+
+    .btn.ghost {
+      background: #fff1f3;
+      color: #ef5f74;
+    }
+
+    .wide-table {
+      display: grid;
+      grid-template-columns: 1.2fr .8fr .8fr .8fr .8fr .9fr;
+      gap: 10px;
+      padding: 0 4px;
+      margin-bottom: 10px;
+    }
+
+    .wide-head {
+      font-size: 12px;
+      color: #8a9ab5;
+      font-weight: 800;
+      padding: 0 12px;
+    }
+
+    .helper-card {
+      background: linear-gradient(135deg, rgba(239, 244, 255, 0.96), rgba(255, 255, 255, 0.96));
+      border: 1px solid rgba(199, 214, 238, 0.9);
+      border-radius: 20px;
+      padding: 16px;
+    }
+
+    .helper-title {
+      margin: 0 0 8px;
+      font-size: 15px;
+      font-weight: 900;
+    }
+
+    .helper-list {
+      margin: 0;
+      padding-left: 18px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.75;
+    }
+
+    .divider {
+      height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(204, 216, 236, 0.85), transparent);
+      margin: 2px 0 6px;
+    }
+
+    @media (max-width: 1450px) {
+      body { padding: 16px; }
+      .workspace { grid-template-columns: 184px 1fr; }
+      .panel.a1 { grid-template-columns: 380px 1fr; }
+      .panel.a3 { grid-template-columns: 210px 380px 1fr; }
+      .summary-row { grid-template-columns: repeat(2, 1fr); }
+      .ledger-row { grid-template-columns: 1.3fr .8fr .8fr .9fr; }
+      .ledger-row > :nth-child(4) { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <div class="titlebar">
+      <div class="lights">
+        <span class="light red"></span>
+        <span class="light yellow"></span>
+        <span class="light green"></span>
+      </div>
+      <div class="window-title">草莓订单管理系统 · 经营开支 UI 预览</div>
+    </div>
+
+    <div class="workspace">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">草莓</div>
+          <div class="brand-sub">订单管理系统</div>
+        </div>
+
+        <div class="nav-card">
+          <button class="nav-item">订单录入</button>
+          <button class="nav-item">历史订单</button>
+          <button class="nav-item">财务报表</button>
+          <button class="nav-item active">经营开支</button>
+          <button class="nav-item">设置</button>
+        </div>
+      </aside>
+
+      <main class="main">
+        <section class="page">
+          <div class="page-head">
+            <div>
+              <h1 class="page-title">经营开支</h1>
+              <p class="page-desc">
+                同一页统一管理项目级、店铺级、订单级三类开支。你重点先看：录入会不会顺手、切换不同归属层级时会不会乱、回头查账时会不会一眼看清。
+              </p>
+            </div>
+            <div class="head-actions">
+              <button class="action secondary">草稿预览</button>
+              <button class="action primary">保存开支</button>
+            </div>
+          </div>
+
+          <div class="layout-switch" role="tablist" aria-label="布局切换">
+            <button class="switch-btn active" data-target="a1">方案 A1 · 左录右账</button>
+            <button class="switch-btn" data-target="a2">方案 A2 · 上录下账</button>
+            <button class="switch-btn" data-target="a3">方案 A3 · 三段工作台</button>
+          </div>
+
+          <div class="layout-panels">
+            <div class="panel a1 active" data-panel="a1">
+              <div class="column scroll">
+                <div class="sticky-tools">
+                  <div class="mini-toolbar">
+                    <div>
+                      <h2 class="column-title">开支录入</h2>
+                      <div class="muted">左边专心记账，右边随时对照最近记录。</div>
+                    </div>
+                    <div class="mini-actions">
+                      <button class="btn soft">清空</button>
+                      <button class="btn blue">新增一笔</button>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="pillbar">
+                  <span class="pill active">订单级开支</span>
+                  <span class="pill">店铺级开支</span>
+                  <span class="pill">项目级开支</span>
+                </div>
+
+                <div class="grid-2">
+                  <div class="field">
+                    <label>开支日期</label>
+                    <div class="select">2026-04-15</div>
+                  </div>
+                  <div class="field">
+                    <label>分类</label>
+                    <div class="select">售后补偿</div>
+                  </div>
+                  <div class="field">
+                    <label>归属店铺</label>
+                    <div class="select">乐宝零食店</div>
+                  </div>
+                  <div class="field">
+                    <label>平台</label>
+                    <div class="select">抖店</div>
+                  </div>
+                </div>
+
+                <div class="field">
+                  <label>关联订单</label>
+                  <div class="input">6952059303468209543 · 丽 · 乐宝零食店 · 已发货</div>
+                </div>
+
+                <div class="grid-2">
+                  <div class="field">
+                    <label>开支金额</label>
+                    <div class="input">10.00</div>
+                  </div>
+                  <div class="field">
+                    <label>计入利润</label>
+                    <div class="select">是</div>
+                  </div>
+                </div>
+
+                <div class="field">
+                  <label>备注</label>
+                  <div class="textarea">客户收货后反馈瓶盖破损，补偿返现 10 元，直接计入该订单额外开支。</div>
+                </div>
+
+                <div class="helper-card">
+                  <h3 class="helper-title">你以后会怎么用</h3>
+                  <ul class="helper-list">
+                    <li>订单返现：从历史订单点“新增开支”后自动跳过来，订单信息预填。</li>
+                    <li>乐宝店买软件：切到店铺级，关联订单留空，店铺选乐宝零食店。</li>
+                    <li>买电脑：切到项目级，店铺和订单都不填，只进总盘经营利润。</li>
+                  </ul>
+                </div>
+              </div>
+
+              <div class="column scroll">
+                <div class="sticky-tools">
+                  <div class="mini-toolbar">
+                    <div>
+                      <h2 class="column-title">开支台账</h2>
+                      <div class="muted">右边先看最近记录，再点开核对详情。</div>
+                    </div>
+                    <div class="mini-actions">
+                      <button class="btn soft">今天</button>
+                      <button class="btn soft">本周</button>
+                      <button class="btn blue">筛选</button>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="summary-row">
+                  <div class="summary-card">
+                    <div class="summary-label">今日开支</div>
+                    <div class="summary-value">¥109</div>
+                    <div class="summary-note">3 笔记录</div>
+                  </div>
+                  <div class="summary-card">
+                    <div class="summary-label">订单级</div>
+                    <div class="summary-value">¥10</div>
+                    <div class="summary-note">售后补偿 1 笔</div>
+                  </div>
+                  <div class="summary-card">
+                    <div class="summary-label">店铺级</div>
+                    <div class="summary-value">¥99</div>
+                    <div class="summary-note">软件服务费</div>
+                  </div>
+                  <div class="summary-card">
+                    <div class="summary-label">项目级</div>
+                    <div class="summary-value">¥0</div>
+                    <div class="summary-note">今天暂无</div>
+                  </div>
+                </div>
+
+                <div class="section-stack">
+                  <div class="block">
+                    <div class="block-head">
+                      <h3 class="block-title">最近开支</h3>
+                      <span class="tag blue">默认按最新在前</span>
+                    </div>
+                    <div class="wide-table">
+                      <div class="wide-head">开支摘要</div>
+                      <div class="wide-head">归属层级</div>
+                      <div class="wide-head">店铺</div>
+                      <div class="wide-head">关联订单</div>
+                      <div class="wide-head">分类</div>
+                      <div class="wide-head" style="text-align:right">金额</div>
+                    </div>
+
+                    <div class="ledger-list">
+                      <div class="ledger-row active">
+                        <div class="ledger-main">
+                          <div class="ledger-title">售后返现 10 元</div>
+                          <div class="ledger-sub">2026-04-15 · 丽 · 订单补偿</div>
+                        </div>
+                        <div><span class="chip">订单级</span></div>
+                        <div>乐宝零食店</div>
+                        <div>695205930346...</div>
+                        <div>售后补偿</div>
+                        <div class="amount red">¥10</div>
+                      </div>
+
+                      <div class="ledger-row">
+                        <div class="ledger-main">
+                          <div class="ledger-title">自动发货软件月费</div>
+                          <div class="ledger-sub">2026-04-15 · 店铺服务软件</div>
+                        </div>
+                        <div><span class="chip">店铺级</span></div>
+                        <div>乐宝零食店</div>
+                        <div>—</div>
+                        <div>软件服务</div>
+                        <div class="amount orange">¥99</div>
+                      </div>
+
+                      <div class="ledger-row">
+                        <div class="ledger-main">
+                          <div class="ledger-title">运营办公电脑</div>
+                          <div class="ledger-sub">2026-04-11 · 项目通用设备</div>
+                        </div>
+                        <div><span class="chip">项目级</span></div>
+                        <div>—</div>
+                        <div>—</div>
+                        <div>设备采购</div>
+                        <div class="amount red">¥7999</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="detail-grid">
+                    <div class="detail-stack">
+                      <div class="detail-item">
+                        <h4>当前选中详情</h4>
+                        <div class="detail-lines">
+                          <div class="line"><span>开支日期</span><strong>2026-04-15</strong></div>
+                          <div class="line"><span>归属层级</span><strong>订单级开支</strong></div>
+                          <div class="line"><span>店铺</span><strong>乐宝零食店</strong></div>
+                          <div class="line"><span>关联订单</span><strong>6952059303468209543</strong></div>
+                          <div class="line"><span>金额</span><strong>¥10.00</strong></div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="detail-stack">
+                      <div class="detail-item">
+                        <h4>对利润的影响</h4>
+                        <div class="detail-lines">
+                          <div class="line"><span>订单利润</span><strong class="amount red">-10.00</strong></div>
+                          <div class="line"><span>店铺经营利润</span><strong class="amount red">-10.00</strong></div>
+                          <div class="line"><span>总盘经营利润</span><strong class="amount red">-10.00</strong></div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="panel a2" data-panel="a2">
+              <div class="block">
+                <div class="block-head">
+                  <div>
+                    <h2 class="block-title">顶部录入区</h2>
+                    <div class="muted">更像一张紧凑的记账工作台，适合连续快速录入。</div>
+                  </div>
+                  <div class="mini-actions">
+                    <button class="btn soft">从历史订单带入</button>
+                    <button class="btn blue">保存并继续录下一笔</button>
+                  </div>
+                </div>
+
+                <div class="grid-3">
+                  <div class="field">
+                    <label>归属层级</label>
+                    <div class="select">店铺级开支</div>
+                  </div>
+                  <div class="field">
+                    <label>店铺</label>
+                    <div class="select">乐宝零食店</div>
+                  </div>
+                  <div class="field">
+                    <label>开支日期</label>
+                    <div class="select">2026-04-15</div>
+                  </div>
+                  <div class="field">
+                    <label>分类</label>
+                    <div class="select">软件服务</div>
+                  </div>
+                  <div class="field">
+                    <label>金额</label>
+                    <div class="input">99.00</div>
+                  </div>
+                  <div class="field">
+                    <label>计入利润</label>
+                    <div class="select">是</div>
+                  </div>
+                </div>
+
+                <div class="divider"></div>
+
+                <div class="field">
+                  <label>备注</label>
+                  <div class="textarea">乐宝零食店购买自动发货软件月服务，和具体订单无关，但需要计入店铺经营开支。</div>
+                </div>
+              </div>
+
+              <div class="column scroll">
+                <div class="sticky-tools">
+                  <div class="mini-toolbar">
+                    <div>
+                      <h2 class="column-title">台账视图</h2>
+                      <div class="muted">上面录完，下面直接看今天、本周、本月的明细和小计。</div>
+                    </div>
+                    <div class="mini-actions">
+                      <button class="btn soft">今天</button>
+                      <button class="btn soft">本月</button>
+                      <button class="btn blue">导出筛选</button>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="summary-row">
+                  <div class="summary-card">
+                    <div class="summary-label">今日总开支</div>
+                    <div class="summary-value">¥109</div>
+                    <div class="summary-note">订单级 10 / 店铺级 99</div>
+                  </div>
+                  <div class="summary-card">
+                    <div class="summary-label">本周总开支</div>
+                    <div class="summary-value">¥8,108</div>
+                    <div class="summary-note">含项目级电脑支出</div>
+                  </div>
+                  <div class="summary-card">
+                    <div class="summary-label">计入利润</div>
+                    <div class="summary-value">¥8,108</div>
+                    <div class="summary-note">当前全部计入</div>
+                  </div>
+                  <div class="summary-card">
+                    <div class="summary-label">不计入利润</div>
+                    <div class="summary-value">¥0</div>
+                    <div class="summary-note">预留给未来报销类</div>
+                  </div>
+                </div>
+
+                <div class="section-stack">
+                  <div class="block">
+                    <div class="block-head">
+                      <h3 class="block-title">按日期展开</h3>
+                      <span class="tag">适合密集记账</span>
+                    </div>
+
+                    <div class="ledger-list">
+                      <div class="detail-item">
+                        <h4>2026-04-15</h4>
+                        <div class="detail-lines">
+                          <div class="line"><span>订单级开支</span><strong>¥10.00</strong></div>
+                          <div class="line"><span>店铺级开支</span><strong>¥99.00</strong></div>
+                          <div class="line"><span>项目级开支</span><strong>¥0.00</strong></div>
+                        </div>
+                      </div>
+
+                      <div class="ledger-row active">
+                        <div class="ledger-main">
+                          <div class="ledger-title">售后返现 10 元</div>
+                          <div class="ledger-sub">绑定订单 6952059303468209543</div>
+                        </div>
+                        <div><span class="chip">订单级</span></div>
+                        <div>乐宝零食店</div>
+                        <div>售后补偿</div>
+                        <div class="amount red">¥10</div>
+                      </div>
+
+                      <div class="ledger-row">
+                        <div class="ledger-main">
+                          <div class="ledger-title">自动发货软件月费</div>
+                          <div class="ledger-sub">不绑定订单</div>
+                        </div>
+                        <div><span class="chip">店铺级</span></div>
+                        <div>乐宝零食店</div>
+                        <div>软件服务</div>
+                        <div class="amount orange">¥99</div>
+                      </div>
+
+                      <div class="detail-item">
+                        <h4>2026-04-11</h4>
+                        <div class="detail-lines">
+                          <div class="line"><span>项目级开支</span><strong>¥7,999.00</strong></div>
+                          <div class="line"><span>说明</span><strong>运营办公电脑</strong></div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="panel a3" data-panel="a3">
+              <div class="column scroll">
+                <div class="sticky-tools">
+                  <h2 class="column-title">开支分类</h2>
+                  <div class="muted">更像一个长期扩展用的经营开支中心。</div>
+                </div>
+
+                <div class="scope-nav">
+                  <div class="scope-item active">
+                    <div class="scope-name">全部开支</div>
+                    <div class="scope-meta">今天 3 笔，本周 5 笔，直接看全局经营成本。</div>
+                  </div>
+                  <div class="scope-item">
+                    <div class="scope-name">项目级开支</div>
+                    <div class="scope-meta">买电脑、买设备、项目通用素材。</div>
+                  </div>
+                  <div class="scope-item">
+                    <div class="scope-name">店铺级开支</div>
+                    <div class="scope-meta">软件服务费、代运营工具、店铺活动物料。</div>
+                  </div>
+                  <div class="scope-item">
+                    <div class="scope-name">订单级开支</div>
+                    <div class="scope-meta">返现、售后补偿、改单补贴。</div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="column scroll">
+                <div class="sticky-tools">
+                  <div class="mini-toolbar">
+                    <div>
+                      <h2 class="column-title">开支记录</h2>
+                      <div class="muted">中间像列表面板，负责选中、回看和快速筛选。</div>
+                    </div>
+                    <div class="mini-actions">
+                      <button class="btn soft">筛项目级</button>
+                      <button class="btn blue">新增开支</button>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="summary-row">
+                  <div class="summary-card">
+                    <div class="summary-label">项目级</div>
+                    <div class="summary-value">¥7,999</div>
+                    <div class="summary-note">只进总盘</div>
+                  </div>
+                  <div class="summary-card">
+                    <div class="summary-label">店铺级</div>
+                    <div class="summary-value">¥99</div>
+                    <div class="summary-note">乐宝零食店</div>
+                  </div>
+                  <div class="summary-card">
+                    <div class="summary-label">订单级</div>
+                    <div class="summary-value">¥10</div>
+                    <div class="summary-note">今天 1 笔</div>
+                  </div>
+                  <div class="summary-card">
+                    <div class="summary-label">合计</div>
+                    <div class="summary-value">¥8,108</div>
+                    <div class="summary-note">本周经营开支</div>
+                  </div>
+                </div>
+
+                <div class="ledger-list">
+                  <div class="ledger-row active">
+                    <div class="ledger-main">
+                      <div class="ledger-title">自动发货软件月费</div>
+                      <div class="ledger-sub">乐宝零食店 · 软件服务 · 2026-04-15</div>
+                    </div>
+                    <div><span class="chip">店铺级</span></div>
+                    <div>乐宝零食店</div>
+                    <div>—</div>
+                    <div>软件服务</div>
+                    <div class="amount orange">¥99</div>
+                  </div>
+
+                  <div class="ledger-row">
+                    <div class="ledger-main">
+                      <div class="ledger-title">售后返现 10 元</div>
+                      <div class="ledger-sub">订单 6952059303468209543 · 丽</div>
+                    </div>
+                    <div><span class="chip">订单级</span></div>
+                    <div>乐宝零食店</div>
+                    <div>695205930346...</div>
+                    <div>售后补偿</div>
+                    <div class="amount red">¥10</div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="column scroll">
+                <div class="sticky-tools">
+                  <div class="mini-toolbar">
+                    <div>
+                      <h2 class="column-title">详情与编辑</h2>
+                      <div class="muted">右边专门放详情、修改和利润归属。</div>
+                    </div>
+                    <div class="mini-actions">
+                      <button class="btn ghost">删除</button>
+                      <button class="btn blue">保存修改</button>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="grid-2">
+                  <div class="field">
+                    <label>归属层级</label>
+                    <div class="select">店铺级开支</div>
+                  </div>
+                  <div class="field">
+                    <label>店铺</label>
+                    <div class="select">乐宝零食店</div>
+                  </div>
+                  <div class="field">
+                    <label>开支日期</label>
+                    <div class="select">2026-04-15</div>
+                  </div>
+                  <div class="field">
+                    <label>分类</label>
+                    <div class="select">软件服务</div>
+                  </div>
+                </div>
+
+                <div class="grid-2">
+                  <div class="field">
+                    <label>金额</label>
+                    <div class="input">99.00</div>
+                  </div>
+                  <div class="field">
+                    <label>计入利润</label>
+                    <div class="select">是</div>
+                  </div>
+                </div>
+
+                <div class="field">
+                  <label>备注</label>
+                  <div class="textarea">乐宝零食店自动发货软件月费，和具体订单无关，但需要在店铺经营利润中体现。</div>
+                </div>
+
+                <div class="detail-grid">
+                  <div class="detail-item">
+                    <h4>飞书写入预期</h4>
+                    <div class="detail-lines">
+                      <div class="line"><span>店铺</span><strong>乐宝零食店</strong></div>
+                      <div class="line"><span>平台</span><strong>抖店</strong></div>
+                      <div class="line"><span>订单号</span><strong>留空</strong></div>
+                      <div class="line"><span>备注</span><strong>软件服务费</strong></div>
+                    </div>
+                  </div>
+
+                  <div class="detail-item">
+                    <h4>利润归属</h4>
+                    <div class="detail-lines">
+                      <div class="line"><span>总盘经营利润</span><strong class="amount red">-99.00</strong></div>
+                      <div class="line"><span>乐宝店利润</span><strong class="amount red">-99.00</strong></div>
+                      <div class="line"><span>单订单利润</span><strong>不影响</strong></div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="helper-card">
+                  <h3 class="helper-title">这个方案的感觉</h3>
+                  <ul class="helper-list">
+                    <li>更像一个“经营开支中心”。</li>
+                    <li>结构最清楚，但第一版实现会比 A1、A2 更重。</li>
+                    <li>适合你后面准备把费用管理做大、做细。</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <script>
+    const buttons = Array.from(document.querySelectorAll(".switch-btn"));
+    const panels = Array.from(document.querySelectorAll(".panel"));
+
+    buttons.forEach((button) => {
+      button.addEventListener("click", () => {
+        const target = button.dataset.target;
+        buttons.forEach((item) => item.classList.toggle("active", item === button));
+        panels.forEach((panel) => panel.classList.toggle("active", panel.dataset.panel === target));
+      });
+    });
+  </script>
+</body>
+</html>

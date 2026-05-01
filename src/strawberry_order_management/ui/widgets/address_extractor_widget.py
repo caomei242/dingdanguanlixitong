@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from PySide6.QtCore import Signal
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
     QFrame,
@@ -15,6 +16,8 @@ from strawberry_order_management.extractors.address import extract_address_paylo
 
 
 class AddressExtractorWidget(QWidget):
+    extracted = Signal(str, object)
+
     def __init__(self) -> None:
         super().__init__()
         self.input_edit = QTextEdit()
@@ -83,17 +86,22 @@ class AddressExtractorWidget(QWidget):
         return self.input_panel, self.results_panel
 
     def load_from_order(self, order) -> None:
-        payload = extract_address_payload(
-            f"{order.recipient_name}[{order.code}]"
-            f"{order.phone_number}{''.join(str(order.address).split())}[{order.code}]"
-        )
+        if str(order.code or "").strip():
+            raw_text = (
+                f"{order.recipient_name}[{order.code}]"
+                f"{order.phone_number}{''.join(str(order.address).split())}[{order.code}]"
+            )
+        else:
+            raw_text = f"{order.recipient_name}{order.phone_number}{''.join(str(order.address).split())}"
+        payload = extract_address_payload(raw_text)
         self.output_one.setPlainText(payload.cleaned_text)
         self.output_two.setPlainText(payload.delivery_note)
         self.status_label.setText("")
 
     def _extract(self) -> None:
+        raw_text = self.input_edit.toPlainText()
         try:
-            payload = extract_address_payload(self.input_edit.toPlainText())
+            payload = extract_address_payload(raw_text)
         except ValueError as exc:
             self.output_one.clear()
             self.output_two.clear()
@@ -102,7 +110,8 @@ class AddressExtractorWidget(QWidget):
 
         self.output_one.setPlainText(payload.cleaned_text)
         self.output_two.setPlainText(payload.delivery_note)
-        self.status_label.setText("")
+        self.status_label.setText("提取成功")
+        self.extracted.emit(raw_text, payload)
 
     def _copy_output(self, text: str, status_message: str) -> None:
         if not text.strip():

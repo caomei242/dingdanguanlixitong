@@ -2,3 +2,11 @@
 .worktrees/
 __pycache__/
 *.pyc
+.pytest_cache/
+.venv/
+build/
+dist/
+*.egg-info/
+.DS_Store
+.deprecated-launchers/
+.tmp_strawberry_icon.iconset/

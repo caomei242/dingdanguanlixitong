@@ -9,6 +9,7 @@ from pathlib import Path
 
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
+    QButtonGroup,
     QCheckBox,
     QComboBox,
     QFormLayout,
@@ -71,6 +72,12 @@ def _parse_timestamp(value: str) -> datetime | None:
 
 class SettingsPage(QWidget):
     save_requested = Signal(object)
+    auto_order_check_requested = Signal(object)
+    auto_order_service_restart_requested = Signal(object)
+    mobile_order_service_start_requested = Signal(object)
+    mobile_order_service_stop_requested = Signal(object)
+    mobile_order_service_test_requested = Signal(object)
+    WECHAT_MP_DEFAULT_CALLBACK_PATH = "/wechat/callback"
     DEFAULT_SHOPS = (
         "乐宝零食店",
         "欢宝零食店",
@@ -79,6 +86,7 @@ class SettingsPage(QWidget):
         "珍宝零食店",
         "悦宝零食店",
     )
+    PLATFORM_OPTIONS = ("抖店", "微信小店")
     DEFAULT_SELECTED_SHOP = "乐宝零食店"
     RECOMMENDED_FIELD_MAPPING = {
         "店铺": "店铺",
@@ -326,15 +334,70 @@ class SettingsPage(QWidget):
         self.helper_api_key_edit = QLineEdit()
         self.feishu_app_id_edit = QLineEdit()
         self.feishu_app_secret_edit = QLineEdit()
+        self.auto_order_bridge_enabled_checkbox = QCheckBox("启用本地 HTTP 自动拍单桥接")
+        self.auto_order_bridge_base_url_edit = QLineEdit()
+        self.auto_order_bridge_api_key_edit = QLineEdit()
+        self.auto_order_bridge_submit_path_edit = QLineEdit()
+        self.auto_order_bridge_poll_path_template_edit = QLineEdit()
+        self.auto_order_bridge_poll_interval_seconds_edit = QLineEdit()
+        self.auto_order_bridge_timeout_seconds_edit = QLineEdit()
+        self.run_auto_order_check_button = QPushButton("真实拍单自检")
+        self.restart_auto_order_service_button = QPushButton("重启服务")
+        self.auto_order_check_result_label = QLabel("")
+        self.auto_order_check_result_label.setObjectName("MutedText")
+        self.auto_order_check_result_label.setWordWrap(True)
+        self.auto_order_service_status_label = QLabel("")
+        self.auto_order_service_status_label.setObjectName("MutedText")
+        self.auto_order_service_status_label.setWordWrap(True)
+        self.mobile_order_entry_enabled_checkbox = QCheckBox("启用手机助手入口")
+        self.mobile_order_entry_host_edit = QLineEdit()
+        self.mobile_order_entry_port_edit = QLineEdit()
+        self.mobile_order_entry_api_key_edit = QLineEdit()
+        self.mobile_order_entry_url_label = QLabel("")
+        self.mobile_order_entry_url_label.setObjectName("MutedText")
+        self.mobile_order_entry_url_label.setWordWrap(True)
+        self.mobile_order_entry_status_label = QLabel("")
+        self.mobile_order_entry_status_label.setObjectName("MutedText")
+        self.mobile_order_entry_status_label.setWordWrap(True)
+        self.start_mobile_order_service_button = QPushButton("启动")
+        self.stop_mobile_order_service_button = QPushButton("停止")
+        self.test_mobile_order_service_button = QPushButton("测试连接")
+        self.wechat_mp_enabled_checkbox = QCheckBox("启用微信公众号回调")
+        self.wechat_mp_token_edit = QLineEdit()
+        self.wechat_mp_encoding_aes_key_edit = QLineEdit()
+        self.wechat_mp_app_id_edit = QLineEdit()
+        self.wechat_mp_app_secret_edit = QLineEdit()
+        self.wechat_mp_tunnel_public_url_edit = QLineEdit()
+        self.wechat_mp_callback_path_edit = QLineEdit()
+        self.wechat_mp_callback_url_label = QLabel("")
+        self.wechat_mp_callback_url_label.setObjectName("MutedText")
+        self.wechat_mp_callback_url_label.setWordWrap(True)
+        self.wechat_mp_connection_status_label = QLabel("")
+        self.wechat_mp_connection_status_label.setObjectName("MutedText")
+        self.wechat_mp_connection_status_label.setWordWrap(True)
         self.product_selector = QComboBox()
         self.product_name_edit = QLineEdit()
         self.product_cost_edit = QLineEdit()
+        self.product_jd_link_edit = QLineEdit()
         self.product_default_cost_edit = self.product_cost_edit
         self.add_product_button = QPushButton("新增商品")
         self.save_product_button = QPushButton("保存商品")
         self.remove_product_button = QPushButton("删除商品")
+        self.jd_account_selector = QComboBox()
+        self.jd_account_name_edit = QLineEdit()
+        self.jd_account_environment_edit = QLineEdit()
+        self.jd_account_enabled_checkbox = QCheckBox("启用")
+        self.jd_account_address_slot_verified_checkbox = QCheckBox("地址槽已验证")
+        self.jd_account_priority_edit = QLineEdit()
+        self.add_jd_account_button = QPushButton("新增账号")
+        self.save_jd_account_button = QPushButton("保存账号")
+        self.remove_jd_account_button = QPushButton("删除账号")
         self.shop_selector = QComboBox()
         self.intake_default_shop_selector = QComboBox()
+        self.intake_default_platform_selector = QComboBox()
+        self.intake_default_douyin_shop_selector = QComboBox()
+        self.intake_default_wechat_shop_selector = QComboBox()
+        self.shop_platform_selector = QComboBox()
         self.shop_name_edit = QLineEdit()
         self.shop_wiki_url_edit = QLineEdit()
         self.shop_app_token_edit = QLineEdit()
@@ -343,6 +406,8 @@ class SettingsPage(QWidget):
         self.add_shop_button = QPushButton("新增店铺")
         self.save_shop_button = QPushButton("保存店铺")
         self.check_table_fields_button = QPushButton("检测总表字段")
+        self.clear_missing_field_mappings_button = QPushButton("永久清空缺失字段映射")
+        self.clear_missing_field_mappings_button.setEnabled(False)
         self.remove_shop_button = QPushButton("删除店铺")
         self.save_button = QPushButton("保存/应用")
         self.status_label = QLabel("")
@@ -363,9 +428,11 @@ class SettingsPage(QWidget):
         self._on_inspect_table_fields = on_inspect_table_fields
         self.ocr_mcp_command_edit.setText(_preferred_mcp_command())
         self._product_presets: list[dict[str, str]] = []
+        self._jd_accounts: list[dict[str, object]] = []
         self._procurement_templates: list[dict[str, object]] = []
         self._update_logs: list[dict[str, str]] = []
         self._update_logs_initialized = False
+        self._last_missing_field_names: set[str] = set()
         self._shops: list[dict[str, str]] = [
             {"name": name} for name in self.DEFAULT_SHOPS
         ]
@@ -378,6 +445,8 @@ class SettingsPage(QWidget):
             alias: self.mapping_edits[key]
             for alias, key in self.FIELD_MAPPING_ALIASES.items()
         }
+        self.shop_platform_selector.addItems(list(self.PLATFORM_OPTIONS))
+        self.intake_default_platform_selector.addItems(list(self.PLATFORM_OPTIONS))
 
         api_form = QFormLayout()
         api_form.addRow("使用 MCP OCR", self.ocr_use_mcp_checkbox)
@@ -389,6 +458,44 @@ class SettingsPage(QWidget):
         api_form.addRow("飞书 App ID", self.feishu_app_id_edit)
         api_form.addRow("飞书 App Secret", self.feishu_app_secret_edit)
 
+        auto_order_bridge_form = QFormLayout()
+        auto_order_bridge_form.addRow("启用桥接", self.auto_order_bridge_enabled_checkbox)
+        auto_order_bridge_form.addRow("Base URL", self.auto_order_bridge_base_url_edit)
+        auto_order_bridge_form.addRow("API Key", self.auto_order_bridge_api_key_edit)
+        auto_order_bridge_form.addRow("创建任务路径", self.auto_order_bridge_submit_path_edit)
+        auto_order_bridge_form.addRow("查询任务路径模板", self.auto_order_bridge_poll_path_template_edit)
+        auto_order_bridge_form.addRow("轮询间隔秒数", self.auto_order_bridge_poll_interval_seconds_edit)
+        auto_order_bridge_form.addRow("超时秒数", self.auto_order_bridge_timeout_seconds_edit)
+        auto_order_bridge_form.addRow("服务状态", self.auto_order_service_status_label)
+        auto_order_bridge_form.addRow("服务控制", self.restart_auto_order_service_button)
+        auto_order_bridge_form.addRow("环境自检", self.run_auto_order_check_button)
+        auto_order_bridge_form.addRow("自检结果", self.auto_order_check_result_label)
+
+        mobile_order_button_row = QHBoxLayout()
+        mobile_order_button_row.addWidget(self.start_mobile_order_service_button)
+        mobile_order_button_row.addWidget(self.stop_mobile_order_service_button)
+        mobile_order_button_row.addWidget(self.test_mobile_order_service_button)
+
+        mobile_order_form = QFormLayout()
+        mobile_order_form.addRow("启用入口", self.mobile_order_entry_enabled_checkbox)
+        mobile_order_form.addRow("Host", self.mobile_order_entry_host_edit)
+        mobile_order_form.addRow("Port", self.mobile_order_entry_port_edit)
+        mobile_order_form.addRow("API Key", self.mobile_order_entry_api_key_edit)
+        mobile_order_form.addRow("当前访问地址", self.mobile_order_entry_url_label)
+        mobile_order_form.addRow("服务状态", self.mobile_order_entry_status_label)
+        mobile_order_form.addRow("服务控制", mobile_order_button_row)
+
+        wechat_mp_form = QFormLayout()
+        wechat_mp_form.addRow("启用接入", self.wechat_mp_enabled_checkbox)
+        wechat_mp_form.addRow("Token", self.wechat_mp_token_edit)
+        wechat_mp_form.addRow("EncodingAESKey", self.wechat_mp_encoding_aes_key_edit)
+        wechat_mp_form.addRow("AppID", self.wechat_mp_app_id_edit)
+        wechat_mp_form.addRow("AppSecret", self.wechat_mp_app_secret_edit)
+        wechat_mp_form.addRow("Cloudflare Tunnel 公网地址", self.wechat_mp_tunnel_public_url_edit)
+        wechat_mp_form.addRow("回调路径", self.wechat_mp_callback_path_edit)
+        wechat_mp_form.addRow("最终回调 URL", self.wechat_mp_callback_url_label)
+        wechat_mp_form.addRow("连接状态", self.wechat_mp_connection_status_label)
+
         product_button_row = QHBoxLayout()
         product_button_row.addWidget(self.add_product_button)
         product_button_row.addWidget(self.save_product_button)
@@ -398,21 +505,39 @@ class SettingsPage(QWidget):
         product_form.addRow("已保存商品", self.product_selector)
         product_form.addRow("商品名称", self.product_name_edit)
         product_form.addRow("默认成本", self.product_cost_edit)
+        product_form.addRow("京东链接", self.product_jd_link_edit)
         custom_cost_form = QFormLayout()
         custom_cost_form.addRow("自定义字段1", self.custom_cost_label_edits[0])
         custom_cost_form.addRow("自定义字段2", self.custom_cost_label_edits[1])
         custom_cost_form.addRow("自定义字段3", self.custom_cost_label_edits[2])
 
+        jd_account_button_row = QHBoxLayout()
+        jd_account_button_row.addWidget(self.add_jd_account_button)
+        jd_account_button_row.addWidget(self.save_jd_account_button)
+        jd_account_button_row.addWidget(self.remove_jd_account_button)
+
+        jd_account_form = QFormLayout()
+        jd_account_form.addRow("已保存账号", self.jd_account_selector)
+        jd_account_form.addRow("账号名", self.jd_account_name_edit)
+        jd_account_form.addRow("环境路径/标识", self.jd_account_environment_edit)
+        jd_account_form.addRow("是否启用", self.jd_account_enabled_checkbox)
+        jd_account_form.addRow("地址槽已验证", self.jd_account_address_slot_verified_checkbox)
+        jd_account_form.addRow("优先级", self.jd_account_priority_edit)
+
         shop_button_row = QHBoxLayout()
         shop_button_row.addWidget(self.add_shop_button)
         shop_button_row.addWidget(self.save_shop_button)
         shop_button_row.addWidget(self.check_table_fields_button)
+        shop_button_row.addWidget(self.clear_missing_field_mappings_button)
         shop_button_row.addWidget(self.remove_shop_button)
 
         shop_form = QFormLayout()
         shop_form.addRow("已保存店铺", self.shop_selector)
-        shop_form.addRow("录单默认店铺", self.intake_default_shop_selector)
+        shop_form.addRow("录单默认平台", self.intake_default_platform_selector)
+        shop_form.addRow("抖店默认店铺", self.intake_default_douyin_shop_selector)
+        shop_form.addRow("微信默认店铺", self.intake_default_wechat_shop_selector)
         shop_form.addRow("店铺名称", self.shop_name_edit)
+        shop_form.addRow("默认平台", self.shop_platform_selector)
         shop_form.addRow("总表链接", self.shop_wiki_url_edit)
         shop_form.addRow("总表 App Token", self.shop_app_token_edit)
         shop_form.addRow("总表 Table ID", self.shop_table_id_edit)
@@ -466,40 +591,55 @@ class SettingsPage(QWidget):
             self._build_tab_card("店铺与总表信息", shop_form, shop_button_row),
             self._build_tab_card("字段映射", self.show_enabled_only_checkbox, mapping_grid),
         )
+        auto_order_section = self._build_settings_section(
+            "自动拍单服务",
+            "",
+            self._build_tab_card("自动拍单桥接", auto_order_bridge_form),
+            self._build_tab_card("京东账号环境", jd_account_form, jd_account_button_row),
+            self._build_tab_card("手机助手入口", mobile_order_form),
+            self._build_tab_card("微信公众号 / Cloudflare Tunnel", wechat_mp_form),
+        )
         update_log_section = self._build_settings_section(
             "更新日志",
             "",
             self._build_update_log_tab(),
         )
 
-        self.section_nav = QListWidget()
-        self.section_nav.setObjectName("SettingsSectionNav")
-        self.section_nav.setFixedWidth(156)
-        self.section_nav.addItems(["接口配置", "商品库", "店铺映射", "更新日志"])
-
-        nav_frame = QFrame()
-        nav_frame.setObjectName("SettingsNavPane")
-        nav_layout = QVBoxLayout(nav_frame)
-        nav_layout.setContentsMargins(14, 14, 14, 14)
-        nav_layout.setSpacing(10)
-        nav_layout.addWidget(self.section_nav, 1)
-
         self.section_stack = QStackedWidget()
         self.section_stack.setObjectName("SettingsSectionStack")
         self.section_stack.addWidget(api_section)
         self.section_stack.addWidget(product_section)
         self.section_stack.addWidget(mapping_section)
+        self.section_stack.addWidget(auto_order_section)
         self.section_stack.addWidget(update_log_section)
 
+        self.section_titles = ["接口配置", "商品库", "店铺映射", "自动拍单服务", "更新日志"]
+        self.section_nav = QFrame()
+        self.section_nav.setObjectName("SettingsSectionNav")
+        nav_layout = QHBoxLayout(self.section_nav)
+        nav_layout.setContentsMargins(12, 10, 12, 10)
+        nav_layout.setSpacing(8)
+        self.section_button_group = QButtonGroup(self)
+        self.section_button_group.setExclusive(True)
+        self.section_nav_buttons: list[QPushButton] = []
+        for index, section_title in enumerate(self.section_titles):
+            button = QPushButton(section_title)
+            button.setObjectName("SettingsSectionTab")
+            button.setCheckable(True)
+            self.section_button_group.addButton(button, index)
+            self.section_nav_buttons.append(button)
+            nav_layout.addWidget(button)
+        nav_layout.addStretch(1)
+
         body = QWidget()
-        body_layout = QHBoxLayout(body)
+        body_layout = QVBoxLayout(body)
         body_layout.setContentsMargins(0, 0, 0, 0)
-        body_layout.setSpacing(14)
-        body_layout.addWidget(nav_frame, 0)
+        body_layout.setSpacing(10)
+        body_layout.addWidget(self.section_nav, 0)
         body_layout.addWidget(self.section_stack, 1)
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(0, 0, 0, 0)
+        root.setContentsMargins(16, 16, 16, 16)
         root.setSpacing(12)
         root.addWidget(header_bar)
         root.addWidget(body, 1)
@@ -507,27 +647,59 @@ class SettingsPage(QWidget):
         self.add_product_button.clicked.connect(self._handle_add_product)
         self.save_product_button.clicked.connect(self._handle_save_product)
         self.remove_product_button.clicked.connect(self._handle_remove_product)
+        self.add_jd_account_button.clicked.connect(self._handle_add_jd_account)
+        self.save_jd_account_button.clicked.connect(self._handle_save_jd_account)
+        self.remove_jd_account_button.clicked.connect(self._handle_remove_jd_account)
         self.add_shop_button.clicked.connect(self._handle_add_shop)
         self.save_shop_button.clicked.connect(self._handle_save_shop)
         self.check_table_fields_button.clicked.connect(self._handle_check_table_fields)
+        self.clear_missing_field_mappings_button.clicked.connect(self._handle_clear_missing_field_mappings)
         self.remove_shop_button.clicked.connect(self._handle_remove_shop)
+        self.run_auto_order_check_button.clicked.connect(self._emit_auto_order_check_requested)
+        self.restart_auto_order_service_button.clicked.connect(self._emit_auto_order_service_restart_requested)
+        self.start_mobile_order_service_button.clicked.connect(self._emit_mobile_order_service_start_requested)
+        self.stop_mobile_order_service_button.clicked.connect(self._emit_mobile_order_service_stop_requested)
+        self.test_mobile_order_service_button.clicked.connect(self._emit_mobile_order_service_test_requested)
         self.add_update_log_button.clicked.connect(self._handle_add_update_log)
         self.save_update_log_button.clicked.connect(self._handle_save_update_log)
         self.delete_update_log_button.clicked.connect(self._handle_remove_update_log)
         self.update_log_list.currentRowChanged.connect(self._load_selected_update_log)
         self.product_selector.currentIndexChanged.connect(self._load_selected_product)
+        self.jd_account_selector.currentIndexChanged.connect(self._load_selected_jd_account)
         self.shop_selector.currentIndexChanged.connect(self._load_selected_shop)
-        self.section_nav.currentRowChanged.connect(self.section_stack.setCurrentIndex)
+        self.intake_default_platform_selector.currentTextChanged.connect(self._sync_legacy_intake_default_shop_selector)
+        self.intake_default_douyin_shop_selector.currentTextChanged.connect(self._sync_legacy_intake_default_shop_selector)
+        self.intake_default_wechat_shop_selector.currentTextChanged.connect(self._sync_legacy_intake_default_shop_selector)
+        self.section_button_group.idClicked.connect(self.section_stack.setCurrentIndex)
+        self.section_stack.currentChanged.connect(self._sync_section_nav)
         self.show_enabled_only_checkbox.toggled.connect(self._update_mapping_visibility)
         for edit in self.mapping_edits.values():
             edit.textChanged.connect(self._update_mapping_visibility)
+        self.mobile_order_entry_host_edit.textChanged.connect(lambda _text: self._refresh_mobile_order_entry_url())
+        self.mobile_order_entry_port_edit.textChanged.connect(lambda _text: self._refresh_mobile_order_entry_url())
+        self.wechat_mp_tunnel_public_url_edit.textChanged.connect(
+            lambda _text: self._refresh_wechat_mp_callback_url()
+        )
+        self.wechat_mp_callback_path_edit.textChanged.connect(self._handle_wechat_mp_callback_path_changed)
         for index, edit in enumerate(self.custom_cost_label_edits):
             edit.textChanged.connect(lambda _text, idx=index: self._handle_custom_cost_label_changed(idx))
-        self.section_nav.setCurrentRow(0)
+        self.section_stack.setCurrentIndex(0)
+        self._sync_section_nav(0)
         self._load_field_mapping(None, use_defaults=True)
         for index in range(3):
             self._handle_custom_cost_label_changed(index)
+        self.auto_order_bridge_submit_path_edit.setText("/auto-order/tasks")
+        self.auto_order_bridge_poll_path_template_edit.setText("/auto-order/tasks/{task_id}")
+        self.auto_order_bridge_poll_interval_seconds_edit.setText("3")
+        self.auto_order_bridge_timeout_seconds_edit.setText("1200")
+        self.mobile_order_entry_host_edit.setText("127.0.0.1")
+        self.mobile_order_entry_port_edit.setText("9020")
+        self.wechat_mp_callback_path_edit.setText(self.WECHAT_MP_DEFAULT_CALLBACK_PATH)
+        self._refresh_mobile_order_entry_url()
+        self._refresh_wechat_mp_callback_url()
         self._refresh_shop_selector(self.DEFAULT_SELECTED_SHOP)
+        self._refresh_intake_default_platform_selector("抖店")
+        self._refresh_platform_default_shop_selectors(self.DEFAULT_SELECTED_SHOP, "")
         self._refresh_intake_default_shop_selector(self.DEFAULT_SELECTED_SHOP)
 
     def to_payload(self) -> dict:
@@ -540,6 +712,36 @@ class SettingsPage(QWidget):
             "helper_api_key": self.helper_api_key_edit.text().strip(),
             "feishu_app_id": self.feishu_app_id_edit.text().strip(),
             "feishu_app_secret": self.feishu_app_secret_edit.text().strip(),
+            "auto_order_bridge_enabled": self.auto_order_bridge_enabled_checkbox.isChecked(),
+            "auto_order_bridge_base_url": self.auto_order_bridge_base_url_edit.text().strip(),
+            "auto_order_bridge_api_key": self.auto_order_bridge_api_key_edit.text().strip(),
+            "auto_order_bridge_submit_path": self.auto_order_bridge_submit_path_edit.text().strip() or "/auto-order/tasks",
+            "auto_order_bridge_poll_path_template": self.auto_order_bridge_poll_path_template_edit.text().strip()
+            or "/auto-order/tasks/{task_id}",
+            "auto_order_bridge_poll_interval_seconds": self._safe_int(
+                self.auto_order_bridge_poll_interval_seconds_edit.text(),
+                3,
+            ),
+            "auto_order_bridge_timeout_seconds": self._safe_int(
+                self.auto_order_bridge_timeout_seconds_edit.text(),
+                1200,
+            ),
+            "mobile_order_entry_enabled": self.mobile_order_entry_enabled_checkbox.isChecked(),
+            "mobile_order_entry_host": self.mobile_order_entry_host_edit.text().strip() or "127.0.0.1",
+            "mobile_order_entry_port": self._safe_int(self.mobile_order_entry_port_edit.text(), 9020),
+            "mobile_order_entry_api_key": self.mobile_order_entry_api_key_edit.text().strip(),
+            "wechat_mp_enabled": self.wechat_mp_enabled_checkbox.isChecked(),
+            "wechat_mp_token": self.wechat_mp_token_edit.text().strip(),
+            "wechat_mp_encoding_aes_key": self.wechat_mp_encoding_aes_key_edit.text().strip(),
+            "wechat_mp_app_id": self.wechat_mp_app_id_edit.text().strip(),
+            "wechat_mp_app_secret": self.wechat_mp_app_secret_edit.text().strip(),
+            "wechat_mp_tunnel_public_url": self._normalize_wechat_mp_tunnel_public_url(
+                self.wechat_mp_tunnel_public_url_edit.text()
+            ),
+            "wechat_mp_callback_path": self._normalize_wechat_mp_callback_path(
+                self.wechat_mp_callback_path_edit.text()
+            ),
+            "wechat_mp_connection_status": self.wechat_mp_connection_status_label.text().strip(),
             "feishu_table_wiki_url": self.shop_wiki_url_edit.text().strip(),
             "feishu_table_app_token": self.shop_app_token_edit.text().strip(),
             "feishu_table_id": self.shop_table_id_edit.text().strip(),
@@ -549,12 +751,17 @@ class SettingsPage(QWidget):
             "show_only_enabled_mappings": self.show_enabled_only_checkbox.isChecked(),
             "product_presets": [dict(item) for item in self._product_presets],
             "global_product_library": [dict(item) for item in self._product_presets],
+            "jd_accounts": [dict(item) for item in self._jd_accounts],
             "procurement_templates": [self._copy_procurement_template(item) for item in self._procurement_templates],
             "update_logs_initialized": self._update_logs_initialized,
             "update_logs": [self._copy_update_log(item) for item in self._update_logs],
-            "shops": [{"name": shop["name"]} for shop in self._shops],
+            "shops": [self._copy_shop(item) for item in self._shops],
             "selected_shop_name": self.shop_selector.currentText().strip() or self.DEFAULT_SELECTED_SHOP,
-            "intake_default_shop_name": self.intake_default_shop_selector.currentText().strip() or self.DEFAULT_SELECTED_SHOP,
+            "intake_default_platform": self.intake_default_platform_selector.currentText().strip() or "抖店",
+            "intake_default_shop_name_douyin": self.intake_default_douyin_shop_selector.currentText().strip()
+            or self.DEFAULT_SELECTED_SHOP,
+            "intake_default_shop_name_wechat": self.intake_default_wechat_shop_selector.currentText().strip(),
+            "intake_default_shop_name": self._selected_platform_default_shop() or self.DEFAULT_SELECTED_SHOP,
         }
 
     def load_payload(self, payload: dict) -> None:
@@ -566,6 +773,44 @@ class SettingsPage(QWidget):
         self.helper_api_key_edit.setText(self._clean_text(payload.get("helper_api_key")))
         self.feishu_app_id_edit.setText(self._clean_text(payload.get("feishu_app_id")))
         self.feishu_app_secret_edit.setText(self._clean_text(payload.get("feishu_app_secret")))
+        self.auto_order_bridge_enabled_checkbox.setChecked(bool(payload.get("auto_order_bridge_enabled")))
+        self.auto_order_bridge_base_url_edit.setText(self._clean_text(payload.get("auto_order_bridge_base_url")))
+        self.auto_order_bridge_api_key_edit.setText(self._clean_text(payload.get("auto_order_bridge_api_key")))
+        self.auto_order_bridge_submit_path_edit.setText(
+            self._clean_text(payload.get("auto_order_bridge_submit_path")) or "/auto-order/tasks"
+        )
+        self.auto_order_bridge_poll_path_template_edit.setText(
+            self._clean_text(payload.get("auto_order_bridge_poll_path_template"))
+            or "/auto-order/tasks/{task_id}"
+        )
+        self.auto_order_bridge_poll_interval_seconds_edit.setText(
+            str(self._safe_int(payload.get("auto_order_bridge_poll_interval_seconds"), 3))
+        )
+        self.auto_order_bridge_timeout_seconds_edit.setText(
+            str(self._safe_int(payload.get("auto_order_bridge_timeout_seconds"), 1200))
+        )
+        self.mobile_order_entry_enabled_checkbox.setChecked(bool(payload.get("mobile_order_entry_enabled")))
+        self.mobile_order_entry_host_edit.setText(
+            self._clean_text(payload.get("mobile_order_entry_host")) or "127.0.0.1"
+        )
+        self.mobile_order_entry_port_edit.setText(
+            str(self._safe_int(payload.get("mobile_order_entry_port"), 9020))
+        )
+        self.mobile_order_entry_api_key_edit.setText(self._clean_text(payload.get("mobile_order_entry_api_key")))
+        self._refresh_mobile_order_entry_url()
+        self.wechat_mp_enabled_checkbox.setChecked(bool(payload.get("wechat_mp_enabled")))
+        self.wechat_mp_token_edit.setText(self._clean_text(payload.get("wechat_mp_token")))
+        self.wechat_mp_encoding_aes_key_edit.setText(self._clean_text(payload.get("wechat_mp_encoding_aes_key")))
+        self.wechat_mp_app_id_edit.setText(self._clean_text(payload.get("wechat_mp_app_id")))
+        self.wechat_mp_app_secret_edit.setText(self._clean_text(payload.get("wechat_mp_app_secret")))
+        self.wechat_mp_tunnel_public_url_edit.setText(
+            self._normalize_wechat_mp_tunnel_public_url(payload.get("wechat_mp_tunnel_public_url"))
+        )
+        self.wechat_mp_callback_path_edit.setText(
+            self._normalize_wechat_mp_callback_path(payload.get("wechat_mp_callback_path"))
+        )
+        self.set_wechat_mp_connection_status(self._clean_text(payload.get("wechat_mp_connection_status")))
+        self._refresh_wechat_mp_callback_url()
         custom_cost_labels = payload.get("custom_cost_labels") or ["", "", ""]
         for index, edit in enumerate(self.custom_cost_label_edits):
             value = custom_cost_labels[index] if index < len(custom_cost_labels) else ""
@@ -578,10 +823,17 @@ class SettingsPage(QWidget):
             {
                 "name": self._clean_text(item.get("name")),
                 "default_cost": self._clean_text(item.get("default_cost")),
+                "jd_link": self._clean_text(item.get("jd_link")),
             }
             for item in product_presets
             if isinstance(item, dict) and self._clean_text(item.get("name"))
         ]
+        self._jd_accounts = [
+            self._normalize_jd_account(item, index + 1)
+            for index, item in enumerate(payload.get("jd_accounts", []))
+            if isinstance(item, dict)
+        ]
+        self._jd_accounts = [item for item in self._jd_accounts if item["name"]]
         self._procurement_templates = [
             self._normalize_procurement_template(item)
             for item in payload.get("procurement_templates", [])
@@ -625,7 +877,10 @@ class SettingsPage(QWidget):
             or self._clean_text(legacy_shop.get("table_name"))
         )
         loaded_shops = [
-            {"name": self._clean_text(shop.get("name"))}
+            {
+                "name": self._clean_text(shop.get("name")),
+                "platform": self._clean_text(shop.get("platform")),
+            }
             for shop in payload.get("shops", [])
             if isinstance(shop, dict) and self._clean_text(shop.get("name"))
         ]
@@ -638,15 +893,37 @@ class SettingsPage(QWidget):
             self._handle_custom_cost_label_changed(index)
         self._clear_missing_field_highlight()
         self._refresh_product_selector()
-        self._refresh_shop_selector(
-            self._clean_text(payload.get("selected_shop_name")) or self.DEFAULT_SELECTED_SHOP
-        )
-        self._refresh_intake_default_shop_selector(
+        self._refresh_jd_account_selector()
+        selected_shop_name = self._clean_text(payload.get("selected_shop_name")) or self.DEFAULT_SELECTED_SHOP
+        legacy_default_shop_name = (
             self._clean_text(payload.get("intake_default_shop_name"))
-            or self._clean_text(payload.get("selected_shop_name"))
+            or selected_shop_name
             or self.DEFAULT_SELECTED_SHOP
         )
+        default_platform = self._normalize_platform(
+            payload.get("intake_default_platform")
+            or self._platform_for_saved_shop(legacy_default_shop_name)
+        )
+        douyin_default_shop = self._resolve_platform_default_shop(
+            "抖店",
+            self._clean_text(payload.get("intake_default_shop_name_douyin")),
+            legacy_default_shop_name,
+            selected_shop_name,
+        )
+        wechat_default_shop = self._resolve_platform_default_shop(
+            "微信小店",
+            self._clean_text(payload.get("intake_default_shop_name_wechat")),
+            legacy_default_shop_name,
+            selected_shop_name,
+        )
+        self._refresh_shop_selector(selected_shop_name)
+        self._refresh_intake_default_platform_selector(default_platform)
+        self._refresh_platform_default_shop_selectors(douyin_default_shop, wechat_default_shop)
+        self._refresh_intake_default_shop_selector(self._selected_platform_default_shop() or self.DEFAULT_SELECTED_SHOP)
         self._refresh_update_log_list()
+        self.set_auto_order_check_result("")
+        self.set_auto_order_service_status("")
+        self.set_mobile_order_service_status("")
 
     def _emit_save_requested(self) -> None:
         if self.shop_wiki_url_edit.text().strip() and self._on_resolve_shop_link is not None:
@@ -660,9 +937,97 @@ class SettingsPage(QWidget):
             self.status_label.setText("已从飞书链接解析表格信息")
         self.save_requested.emit(self.to_payload())
 
+    def _emit_auto_order_check_requested(self) -> None:
+        self.auto_order_check_requested.emit(self.to_payload())
+
+    def _emit_auto_order_service_restart_requested(self) -> None:
+        self.auto_order_service_restart_requested.emit(self.to_payload())
+
+    def _emit_mobile_order_service_start_requested(self) -> None:
+        self.mobile_order_service_start_requested.emit(self.to_payload())
+
+    def _emit_mobile_order_service_stop_requested(self) -> None:
+        self.mobile_order_service_stop_requested.emit(self.to_payload())
+
+    def _emit_mobile_order_service_test_requested(self) -> None:
+        self.mobile_order_service_test_requested.emit(self.to_payload())
+
+    def set_auto_order_check_result(self, message: str) -> None:
+        self.auto_order_check_result_label.setText(self._clean_text(message))
+
+    def set_auto_order_service_status(self, message: str) -> None:
+        self.auto_order_service_status_label.setText(self._clean_text(message))
+
+    def set_mobile_order_service_status(self, message: str) -> None:
+        self.mobile_order_entry_status_label.setText(self._clean_text(message))
+        self._refresh_mobile_order_entry_url()
+
+    def set_mobile_order_entry_url(self, url: str) -> None:
+        self.mobile_order_entry_url_label.setText(self._clean_text(url))
+
+    def _refresh_mobile_order_entry_url(self) -> None:
+        host = self.mobile_order_entry_host_edit.text().strip() or "127.0.0.1"
+        port = self._safe_int(self.mobile_order_entry_port_edit.text(), 9020)
+        self.mobile_order_entry_url_label.setText(f"http://{host}:{port}/mobile")
+
+    def set_wechat_mp_connection_status(self, message: str) -> None:
+        self.wechat_mp_connection_status_label.setText(self._clean_text(message))
+
+    def set_wechat_mp_service_status(self, message: str) -> None:
+        self.set_wechat_mp_connection_status(message)
+
+    def set_wechat_service_status(self, message: str) -> None:
+        self.set_wechat_mp_connection_status(message)
+
+    def set_wechat_mp_service_callback_url(self, url: str) -> None:
+        self.wechat_mp_callback_url_label.setText(self._clean_text(url))
+
+    def set_wechat_service_callback_url(self, url: str) -> None:
+        self.set_wechat_mp_service_callback_url(url)
+
+    def _handle_wechat_mp_callback_path_changed(self, _text: str) -> None:
+        normalized = self._normalize_wechat_mp_callback_path(self.wechat_mp_callback_path_edit.text())
+        if self.wechat_mp_callback_path_edit.text() != normalized:
+            self.wechat_mp_callback_path_edit.blockSignals(True)
+            self.wechat_mp_callback_path_edit.setText(normalized)
+            self.wechat_mp_callback_path_edit.blockSignals(False)
+        self._refresh_wechat_mp_callback_url()
+
+    def _refresh_wechat_mp_callback_url(self) -> None:
+        public_url = self._normalize_wechat_mp_tunnel_public_url(self.wechat_mp_tunnel_public_url_edit.text())
+        callback_path = self._normalize_wechat_mp_callback_path(self.wechat_mp_callback_path_edit.text())
+        if public_url:
+            self.wechat_mp_callback_url_label.setText(f"{public_url}{callback_path}")
+            return
+        self.wechat_mp_callback_url_label.setText("待填写 Cloudflare Tunnel 公网地址后生成")
+
+    def _sync_section_nav(self, index: int) -> None:
+        button = self.section_button_group.button(index)
+        if button is not None:
+            button.setChecked(True)
+
+    @staticmethod
+    def _safe_int(value: object, fallback: int) -> int:
+        try:
+            return max(0, int(str(value).strip()))
+        except (TypeError, ValueError):
+            return fallback
+
+    @classmethod
+    def _normalize_wechat_mp_tunnel_public_url(cls, value: object) -> str:
+        return cls._clean_text(value).rstrip("/")
+
+    @classmethod
+    def _normalize_wechat_mp_callback_path(cls, value: object) -> str:
+        cleaned = cls._clean_text(value)
+        if not cleaned:
+            return cls.WECHAT_MP_DEFAULT_CALLBACK_PATH
+        return "/" + cleaned.lstrip("/")
+
     def _handle_add_product(self) -> None:
         self.product_name_edit.clear()
         self.product_cost_edit.clear()
+        self.product_jd_link_edit.clear()
         self.product_name_edit.setFocus()
         self.status_label.setText("")
 
@@ -670,6 +1035,7 @@ class SettingsPage(QWidget):
         if not self.upsert_product_preset(
             self.product_name_edit.text().strip(),
             self.product_cost_edit.text().strip(),
+            self.product_jd_link_edit.text().strip(),
         ):
             self.status_label.setText("请先填写商品名称")
             return
@@ -685,8 +1051,40 @@ class SettingsPage(QWidget):
         self._refresh_product_selector()
         self.status_label.setText("已删除商品预设")
 
+    def _handle_add_jd_account(self) -> None:
+        self.jd_account_name_edit.clear()
+        self.jd_account_environment_edit.clear()
+        self.jd_account_enabled_checkbox.setChecked(True)
+        self.jd_account_address_slot_verified_checkbox.setChecked(False)
+        self.jd_account_priority_edit.setText(str(len(self._jd_accounts) + 1))
+        self.jd_account_name_edit.setFocus()
+        self.status_label.setText("")
+
+    def _handle_save_jd_account(self) -> None:
+        if not self.upsert_jd_account(
+            self.jd_account_name_edit.text().strip(),
+            self.jd_account_environment_edit.text().strip(),
+            self.jd_account_enabled_checkbox.isChecked(),
+            self.jd_account_address_slot_verified_checkbox.isChecked(),
+            self.jd_account_priority_edit.text().strip(),
+        ):
+            self.status_label.setText("请先填写账号名")
+            return
+        self.status_label.setText("已保存京东账号环境")
+
+    def _handle_remove_jd_account(self) -> None:
+        selected_name = self.jd_account_selector.currentText().strip()
+        if not selected_name:
+            return
+        self._jd_accounts = [
+            account for account in self._jd_accounts if account["name"] != selected_name
+        ]
+        self._refresh_jd_account_selector()
+        self.status_label.setText("已删除京东账号环境")
+
     def _handle_add_shop(self) -> None:
         self.shop_name_edit.clear()
+        self.shop_platform_selector.setCurrentText("抖店")
         self._load_field_mapping(None, use_defaults=True)
         self.shop_name_edit.setFocus()
         self.status_label.setText("")
@@ -696,16 +1094,21 @@ class SettingsPage(QWidget):
         if not shop_name:
             self.status_label.setText("请先填写店铺名称")
             return
+        platform = self.shop_platform_selector.currentText().strip() or "抖店"
         for index, existing in enumerate(self._shops):
             if existing["name"] == shop_name:
-                self._shops[index] = {"name": shop_name}
+                self._shops[index] = {"name": shop_name, "platform": platform}
                 break
         else:
-            self._shops.append({"name": shop_name})
+            self._shops.append({"name": shop_name, "platform": platform})
 
         self._shops = self._normalize_shops(self._shops)
         self._refresh_shop_selector(shop_name)
-        self._refresh_intake_default_shop_selector(self.intake_default_shop_selector.currentText().strip() or shop_name)
+        self._refresh_platform_default_shop_selectors(
+            self.intake_default_douyin_shop_selector.currentText().strip() or self._first_shop_for_platform("抖店"),
+            self.intake_default_wechat_shop_selector.currentText().strip() or self._first_shop_for_platform("微信小店"),
+        )
+        self._refresh_intake_default_shop_selector(self._selected_platform_default_shop() or shop_name)
         self.status_label.setText("已保存店铺")
 
     def _handle_remove_shop(self) -> None:
@@ -715,10 +1118,16 @@ class SettingsPage(QWidget):
         self._shops = [shop for shop in self._shops if shop["name"] != selected_name]
         self._shops = self._normalize_shops(self._shops)
         self._refresh_shop_selector()
-        self._refresh_intake_default_shop_selector()
+        self._refresh_platform_default_shop_selectors(
+            self.intake_default_douyin_shop_selector.currentText().strip(),
+            self.intake_default_wechat_shop_selector.currentText().strip(),
+        )
+        self._refresh_intake_default_shop_selector(self._selected_platform_default_shop())
 
     def _handle_check_table_fields(self) -> None:
         self._clear_missing_field_highlight()
+        self._last_missing_field_names = set()
+        self.clear_missing_field_mappings_button.setEnabled(False)
         if self._on_inspect_table_fields is None:
             self.status_label.setText("当前环境未启用飞书字段检测")
             return
@@ -737,9 +1146,27 @@ class SettingsPage(QWidget):
         missing_fields = [name for name in required_targets if name not in field_names]
         self._apply_missing_field_highlight(set(missing_fields))
         if missing_fields:
+            self._last_missing_field_names = set(missing_fields)
+            self.clear_missing_field_mappings_button.setEnabled(True)
             self.status_label.setText(f"总表缺少字段：{'、'.join(missing_fields)}")
             return
         self.status_label.setText("总表字段检测通过")
+
+    def _handle_clear_missing_field_mappings(self) -> None:
+        missing_fields = set(self._last_missing_field_names)
+        if not missing_fields:
+            self.status_label.setText("请先检测总表字段，再清空缺失映射")
+            return
+        cleared_count = 0
+        for edit in self.mapping_edits.values():
+            if edit.text().strip() in missing_fields:
+                edit.clear()
+                cleared_count += 1
+        self._last_missing_field_names = set()
+        self.clear_missing_field_mappings_button.setEnabled(False)
+        self._clear_missing_field_highlight()
+        self._update_mapping_visibility()
+        self.status_label.setText(f"已清空 {cleared_count} 个缺失字段映射，请点击保存/应用生效")
 
     def _handle_custom_cost_label_changed(self, index: int) -> None:
         key = f"自定义字段{index + 1}"
@@ -755,16 +1182,19 @@ class SettingsPage(QWidget):
             edit.setText(display_name)
         self._update_mapping_visibility()
 
-    def upsert_product_preset(self, name: str, default_cost: str) -> bool:
+    def upsert_product_preset(self, name: str, default_cost: str, jd_link: str | None = None) -> bool:
         product = {
             "name": name.strip(),
             "default_cost": default_cost.strip(),
+            "jd_link": "" if jd_link is None else jd_link.strip(),
         }
         if not product["name"]:
             return False
 
         for index, existing in enumerate(self._product_presets):
             if existing["name"] == product["name"]:
+                if jd_link is None:
+                    product["jd_link"] = self._clean_text(existing.get("jd_link"))
                 if existing == product:
                     self._refresh_product_selector(product["name"])
                     return False
@@ -774,6 +1204,38 @@ class SettingsPage(QWidget):
         else:
             self._product_presets.append(product)
         self._refresh_product_selector(product["name"])
+        return True
+
+    def upsert_jd_account(
+        self,
+        name: str,
+        environment: str,
+        enabled: bool,
+        address_slot_verified: bool,
+        priority: str | int,
+    ) -> bool:
+        account = self._normalize_jd_account(
+            {
+                "name": name,
+                "environment": environment,
+                "enabled": enabled,
+                "address_slot_verified": address_slot_verified,
+                "priority": priority,
+            },
+            len(self._jd_accounts) + 1,
+        )
+        if not account["name"]:
+            return False
+        for index, existing in enumerate(self._jd_accounts):
+            if existing["name"] == account["name"]:
+                if existing == account:
+                    self._refresh_jd_account_selector(account["name"])
+                    return False
+                self._jd_accounts[index] = account
+                self._refresh_jd_account_selector(account["name"])
+                return True
+        self._jd_accounts.append(account)
+        self._refresh_jd_account_selector(account["name"])
         return True
 
     def upsert_procurement_template(self, specification: str, procurement_items: list[dict[str, str]]) -> bool:
@@ -841,20 +1303,180 @@ class SettingsPage(QWidget):
                 self.intake_default_shop_selector.setCurrentIndex(0)
         self.intake_default_shop_selector.blockSignals(False)
 
+    def _refresh_intake_default_platform_selector(self, selected_platform: str | None = None) -> None:
+        target = self._normalize_platform(selected_platform)
+        self.intake_default_platform_selector.blockSignals(True)
+        index = self.intake_default_platform_selector.findText(target)
+        if index >= 0:
+            self.intake_default_platform_selector.setCurrentIndex(index)
+        self.intake_default_platform_selector.blockSignals(False)
+
+    def _refresh_platform_default_shop_selectors(
+        self,
+        douyin_selected_name: str | None = None,
+        wechat_selected_name: str | None = None,
+    ) -> None:
+        self._refresh_platform_default_shop_selector(
+            self.intake_default_douyin_shop_selector,
+            "抖店",
+            douyin_selected_name or self.DEFAULT_SELECTED_SHOP,
+        )
+        self._refresh_platform_default_shop_selector(
+            self.intake_default_wechat_shop_selector,
+            "微信小店",
+            wechat_selected_name or self._first_shop_for_platform("微信小店"),
+        )
+        self._sync_legacy_intake_default_shop_selector()
+
+    def _refresh_platform_default_shop_selector(
+        self,
+        selector: QComboBox,
+        platform: str,
+        selected_name: str | None = None,
+    ) -> None:
+        selector.blockSignals(True)
+        selector.clear()
+        shop_names = self._shop_names_for_platform(platform)
+        selector.addItems(shop_names or [""])
+        target = selected_name or (shop_names[0] if shop_names else "")
+        if target:
+            index = selector.findText(target)
+            if index >= 0:
+                selector.setCurrentIndex(index)
+            elif selector.count() > 0:
+                selector.setCurrentIndex(0)
+        selector.blockSignals(False)
+
+    def _shop_names_for_platform(self, platform: str) -> list[str]:
+        normalized_platform = self._normalize_platform(platform)
+        return [
+            shop["name"]
+            for shop in self._shops
+            if self._normalize_platform(shop.get("platform")) == normalized_platform
+        ]
+
+    def _first_shop_for_platform(self, platform: str) -> str:
+        shop_names = self._shop_names_for_platform(platform)
+        return shop_names[0] if shop_names else ""
+
+    def _selected_platform_default_shop(self) -> str:
+        platform = self.intake_default_platform_selector.currentText().strip() or "抖店"
+        if platform == "微信小店":
+            return self.intake_default_wechat_shop_selector.currentText().strip()
+        return self.intake_default_douyin_shop_selector.currentText().strip() or self.DEFAULT_SELECTED_SHOP
+
+    def _sync_legacy_intake_default_shop_selector(self) -> None:
+        self._refresh_intake_default_shop_selector(self._selected_platform_default_shop() or self.DEFAULT_SELECTED_SHOP)
+
+    def _resolve_platform_default_shop(
+        self,
+        platform: str,
+        configured_name: str,
+        legacy_default_shop_name: str,
+        selected_shop_name: str,
+    ) -> str:
+        candidate_names = self._shop_names_for_platform(platform)
+        if not candidate_names:
+            return ""
+        if configured_name and configured_name in candidate_names:
+            return configured_name
+        if self._platform_for_saved_shop(legacy_default_shop_name) == platform and legacy_default_shop_name in candidate_names:
+            return legacy_default_shop_name
+        if self._platform_for_saved_shop(selected_shop_name) == platform and selected_shop_name in candidate_names:
+            return selected_shop_name
+        selected_base_name = self._shop_base_name(selected_shop_name)
+        if selected_base_name:
+            for candidate_name in candidate_names:
+                if self._shop_base_name(candidate_name) == selected_base_name:
+                    return candidate_name
+        return candidate_names[0]
+
+    def _platform_for_saved_shop(self, shop_name: str) -> str:
+        cleaned_shop_name = self._clean_text(shop_name)
+        for shop in self._shops:
+            if shop["name"] == cleaned_shop_name:
+                return self._normalize_platform(shop.get("platform"))
+        return self._normalize_shop_platform(cleaned_shop_name, "")
+
     @classmethod
     def _normalize_shops(cls, shops: list[dict[str, str]]) -> list[dict[str, str]]:
         normalized: list[dict[str, str]] = []
-        seen: set[str] = set()
+        index_by_name: dict[str, int] = {}
         for name in cls.DEFAULT_SHOPS:
-            normalized.append({"name": name})
-            seen.add(name)
+            index_by_name[name] = len(normalized)
+            normalized.append({"name": name, "platform": "抖店"})
         for shop in shops:
             name = cls._clean_text(shop.get("name"))
-            if not name or name == "草莓店" or name in seen:
+            if not name or name == "草莓店":
                 continue
-            normalized.append({"name": name})
-            seen.add(name)
+            platform = cls._normalize_shop_platform(name, shop.get("platform"))
+            existing_index = index_by_name.get(name)
+            if existing_index is not None:
+                normalized[existing_index] = {"name": name, "platform": platform}
+                continue
+            index_by_name[name] = len(normalized)
+            normalized.append({"name": name, "platform": platform})
         return normalized
+
+    @classmethod
+    def _normalize_platform(cls, value) -> str:
+        cleaned = cls._clean_text(value)
+        return cleaned if cleaned in cls.PLATFORM_OPTIONS else "抖店"
+
+    @classmethod
+    def _normalize_shop_platform(cls, shop_name: str, value) -> str:
+        cleaned = cls._clean_text(value)
+        if cleaned in cls.PLATFORM_OPTIONS:
+            return cleaned
+        if "微信" in cls._clean_text(shop_name):
+            return "微信小店"
+        return "抖店"
+
+    @classmethod
+    def _shop_base_name(cls, shop_name: str) -> str:
+        base_name = cls._clean_text(shop_name)
+        suffixes = (
+            "--微信小店",
+            "--微信",
+            "—微信小店",
+            "—微信",
+            "-微信小店",
+            "-微信",
+            "（微信小店）",
+            "（微信）",
+            "(微信小店)",
+            "(微信)",
+            " 微信小店",
+            " 微信",
+        )
+        for suffix in suffixes:
+            if base_name.endswith(suffix):
+                return base_name[: -len(suffix)].strip()
+        return base_name
+
+    @classmethod
+    def _copy_shop(cls, shop: dict[str, str]) -> dict[str, str]:
+        return {
+            "name": cls._clean_text(shop.get("name")),
+            "platform": cls._normalize_platform(shop.get("platform")),
+        }
+
+    @classmethod
+    def _normalize_jd_account(cls, account: dict[str, object], fallback_priority: int) -> dict[str, object]:
+        return {
+            "name": cls._clean_text(account.get("name")),
+            "environment": cls._clean_text(account.get("environment") or account.get("path")),
+            "enabled": bool(account.get("enabled", True)),
+            "address_slot_verified": bool(account.get("address_slot_verified", False)),
+            "priority": cls._safe_priority(account.get("priority"), fallback_priority),
+        }
+
+    @staticmethod
+    def _safe_priority(value: object, fallback: int) -> int:
+        try:
+            return max(0, int(str(value).strip()))
+        except (TypeError, ValueError):
+            return fallback
 
     def _refresh_product_selector(self, selected_name: str | None = None) -> None:
         self.product_selector.blockSignals(True)
@@ -867,25 +1489,57 @@ class SettingsPage(QWidget):
         self.product_selector.blockSignals(False)
         self._load_selected_product()
 
+    def _refresh_jd_account_selector(self, selected_name: str | None = None) -> None:
+        self.jd_account_selector.blockSignals(True)
+        self.jd_account_selector.clear()
+        self.jd_account_selector.addItems([item["name"] for item in self._jd_accounts])
+        if selected_name:
+            index = self.jd_account_selector.findText(selected_name)
+            if index >= 0:
+                self.jd_account_selector.setCurrentIndex(index)
+        self.jd_account_selector.blockSignals(False)
+        self._load_selected_jd_account()
+
     def _load_selected_product(self) -> None:
         selected_name = self.product_selector.currentText().strip()
         for item in self._product_presets:
             if item["name"] == selected_name:
                 self.product_name_edit.setText(item["name"])
                 self.product_cost_edit.setText(item["default_cost"])
+                self.product_jd_link_edit.setText(self._clean_text(item.get("jd_link")))
                 return
         if not selected_name:
             self.product_name_edit.clear()
             self.product_cost_edit.clear()
+            self.product_jd_link_edit.clear()
+
+    def _load_selected_jd_account(self) -> None:
+        selected_name = self.jd_account_selector.currentText().strip()
+        for item in self._jd_accounts:
+            if item["name"] == selected_name:
+                self.jd_account_name_edit.setText(item["name"])
+                self.jd_account_environment_edit.setText(self._clean_text(item.get("environment")))
+                self.jd_account_enabled_checkbox.setChecked(bool(item.get("enabled")))
+                self.jd_account_address_slot_verified_checkbox.setChecked(bool(item.get("address_slot_verified")))
+                self.jd_account_priority_edit.setText(str(item.get("priority", 1)))
+                return
+        if not selected_name:
+            self.jd_account_name_edit.clear()
+            self.jd_account_environment_edit.clear()
+            self.jd_account_enabled_checkbox.setChecked(True)
+            self.jd_account_address_slot_verified_checkbox.setChecked(False)
+            self.jd_account_priority_edit.setText("")
 
     def _load_selected_shop(self) -> None:
         selected_name = self.shop_selector.currentText().strip()
         for shop in self._shops:
             if shop["name"] == selected_name:
                 self.shop_name_edit.setText(shop["name"])
+                self.shop_platform_selector.setCurrentText(self._normalize_platform(shop.get("platform")))
                 return
         if not selected_name:
             self.shop_name_edit.clear()
+            self.shop_platform_selector.setCurrentText("抖店")
 
     def _apply_missing_field_highlight(self, missing_fields: set[str]) -> None:
         for edit in self.mapping_edits.values():

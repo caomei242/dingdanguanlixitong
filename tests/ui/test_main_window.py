@@ -1,9 +1,16 @@
+import json
+import hashlib
 import time
+import urllib.parse
+import urllib.request
+from dataclasses import replace
 from pathlib import Path
 import re
+from types import SimpleNamespace
 from typing import Optional
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QPalette
 from PySide6.QtWidgets import QFrame, QLabel, QMessageBox, QWidget
 
 from strawberry_order_management.app import build_app
@@ -11,10 +18,22 @@ from strawberry_order_management.config import ConfigStore
 from strawberry_order_management.expenses import ExpenseStore
 from strawberry_order_management.history import HistoryStore
 from strawberry_order_management.models import ParsedOrder, ProcurementItem
+from strawberry_order_management.services.auto_order import (
+    AutoOrderBridgeError,
+    AutoOrderItemResult,
+    AutoOrderTaskSnapshot,
+    AutoOrderTaskTicket,
+)
+from strawberry_order_management.ui import main_window as main_window_module
 from strawberry_order_management.ui.main_window import MainWindow
 
 
 _DEFAULT_DELIVERY_NOTE_PATTERN = re.compile(r"^请电话送货上门谢谢【\d+】$")
+
+
+def _wechat_signature(token: str, timestamp: str, nonce: str) -> str:
+    parts = sorted([token, timestamp, nonce])
+    return hashlib.sha1("".join(parts).encode("utf-8")).hexdigest()
 
 
 def _sample_order(platform: str = "抖店") -> ParsedOrder:
@@ -81,6 +100,131 @@ def _alternate_order(platform: str = "抖店") -> ParsedOrder:
     )
 
 
+def test_main_window_extracts_multiple_orders_from_image_batch(qtbot, tmp_path, monkeypatch):
+    config_store = ConfigStore(tmp_path / "config.json")
+    config_store.save(_settings_payload())
+    progress_messages = []
+    crop_calls = []
+
+    class FakePipeline:
+        def extract_order_batch(self, image_bytes: bytes, on_progress=None):
+            if on_progress is not None:
+                on_progress("批量解析中...")
+            return [
+                {"ok": True, "order": _sample_order(), "source_image_bytes": b"chunk-1"},
+                {"ok": True, "order": _alternate_order(), "source_image_bytes": b"chunk-2"},
+            ]
+
+        def extract_order(self, image_bytes: bytes, on_progress=None):
+            raise AssertionError("批量结果不应再退回单订单识别")
+
+    def fake_crop_sku_image_from_order_screenshot(image_bytes: bytes, *, order_id: str = "") -> str:
+        crop_calls.append((image_bytes, order_id))
+        return f"/tmp/{order_id}-{image_bytes.decode('utf-8')}.png"
+
+    monkeypatch.setattr(
+        main_window_module,
+        "crop_sku_image_from_order_screenshot",
+        fake_crop_sku_image_from_order_screenshot,
+    )
+
+    window = MainWindow(
+        config_store=config_store,
+        order_pipeline_factory=lambda _payload: FakePipeline(),
+    )
+    qtbot.addWidget(window)
+
+    result = window._extract_order_from_image(b"not-an-image", on_progress=progress_messages.append)
+
+    assert [order.order_id for order in result] == [
+        "6952003434324366473",
+        "6952003434324366999",
+    ]
+    assert [order.sku_image_path for order in result] == [
+        "/tmp/6952003434324366473-chunk-1.png",
+        "/tmp/6952003434324366999-chunk-2.png",
+    ]
+    assert crop_calls == [
+        (b"chunk-1", "6952003434324366473"),
+        (b"chunk-2", "6952003434324366999"),
+    ]
+    assert progress_messages == ["批量解析中...", "正在裁剪SKU图片..."]
+
+
+def test_main_window_extracts_single_order_from_batch_using_chunk_image(qtbot, tmp_path, monkeypatch):
+    config_store = ConfigStore(tmp_path / "config.json")
+    config_store.save(_settings_payload())
+    crop_calls = []
+
+    class FakePipeline:
+        def extract_order_batch(self, image_bytes: bytes, on_progress=None):
+            return [{"ok": True, "order": _sample_order(), "source_image_bytes": b"chunk-1"}]
+
+        def extract_order(self, image_bytes: bytes, on_progress=None):
+            raise AssertionError("批量结果不应再退回单订单识别")
+
+    def fake_crop_sku_image_from_order_screenshot(image_bytes: bytes, *, order_id: str = "") -> str:
+        crop_calls.append((image_bytes, order_id))
+        return f"/tmp/{order_id}-{image_bytes.decode('utf-8')}.png"
+
+    monkeypatch.setattr(
+        main_window_module,
+        "crop_sku_image_from_order_screenshot",
+        fake_crop_sku_image_from_order_screenshot,
+    )
+
+    window = MainWindow(
+        config_store=config_store,
+        order_pipeline_factory=lambda _payload: FakePipeline(),
+    )
+    qtbot.addWidget(window)
+
+    result = window._extract_order_from_image(b"full-image")
+
+    assert result.order_id == "6952003434324366473"
+    assert result.sku_image_path == "/tmp/6952003434324366473-chunk-1.png"
+    assert crop_calls == [(b"chunk-1", "6952003434324366473")]
+
+
+def test_main_window_returns_partial_batch_with_failed_metadata(qtbot, tmp_path, monkeypatch):
+    config_store = ConfigStore(tmp_path / "config.json")
+    config_store.save(_settings_payload())
+    crop_calls = []
+
+    class FakePipeline:
+        def extract_order_batch(self, image_bytes: bytes, on_progress=None):
+            return [
+                {"ok": True, "order": _sample_order(), "source_image_bytes": b"chunk-1"},
+                {"ok": False, "order": None, "error": "第 2 单识别失败：MCP OCR 响应超时，请重试；可重试或手动补录"},
+            ]
+
+        def extract_order(self, image_bytes: bytes, on_progress=None):
+            raise AssertionError("批量结果不应再退回单订单识别")
+
+    def fake_crop_sku_image_from_order_screenshot(image_bytes: bytes, *, order_id: str = "") -> str:
+        crop_calls.append((image_bytes, order_id))
+        return f"/tmp/{order_id}-{image_bytes.decode('utf-8')}.png"
+
+    monkeypatch.setattr(
+        main_window_module,
+        "crop_sku_image_from_order_screenshot",
+        fake_crop_sku_image_from_order_screenshot,
+    )
+
+    window = MainWindow(
+        config_store=config_store,
+        order_pipeline_factory=lambda _payload: FakePipeline(),
+    )
+    qtbot.addWidget(window)
+
+    result = window._extract_order_from_image(b"not-an-image")
+
+    assert result["total_count"] == 2
+    assert result["failed_messages"] == ["第 2 单识别失败：MCP OCR 响应超时，请重试；可重试或手动补录"]
+    assert [order.order_id for order in result["recognized_orders"]] == ["6952003434324366473"]
+    assert crop_calls == [(b"chunk-1", "6952003434324366473")]
+
+
 def _settings_payload() -> dict:
     return {
         "ocr_base_url": "https://api.minimaxi.com/v1",
@@ -120,7 +264,34 @@ def _settings_payload() -> dict:
             "采购数量3": "",
             "采购成本3": "",
         },
-        "product_presets": [{"name": "澳洲婴儿水", "default_cost": "18.50"}],
+        "product_presets": [
+            {
+                "name": "澳洲婴儿水",
+                "default_cost": "18.50",
+                "jd_link": "https://item.jd.com/1001.html",
+            }
+        ],
+        "jd_accounts": [
+            {
+                "name": "京东账号A",
+                "environment": "/Users/gd/.jd/account-a",
+                "enabled": True,
+                "address_slot_verified": True,
+                "priority": 1,
+            }
+        ],
+        "auto_order_bridge_enabled": False,
+        "auto_order_bridge_base_url": "",
+        "auto_order_bridge_api_key": "",
+        "auto_order_bridge_submit_path": "/auto-order/tasks",
+        "auto_order_bridge_poll_path_template": "/auto-order/tasks/{task_id}",
+        "auto_order_bridge_poll_interval_seconds": 3,
+        "auto_order_bridge_timeout_seconds": 1200,
+        "wechat_service_enabled": False,
+        "wechat_service_host": "127.0.0.1",
+        "wechat_service_port": 9030,
+        "wechat_service_api_key": "",
+        "wechat_service_callback_path": "/wechat/callback",
         "shops": [
             {
                 "name": "乐宝零食店",
@@ -129,6 +300,71 @@ def _settings_payload() -> dict:
         ],
         "selected_shop_name": "乐宝零食店",
     }
+
+
+class _FutureWechatSettingsPage(main_window_module.SettingsPage):
+    wechat_service_start_requested = Signal(object)
+    wechat_service_stop_requested = Signal(object)
+    wechat_service_test_requested = Signal(object)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._wechat_payload = {
+            "wechat_service_enabled": False,
+            "wechat_service_host": "127.0.0.1",
+            "wechat_service_port": 9030,
+            "wechat_service_api_key": "",
+            "wechat_service_callback_path": "/wechat/callback",
+        }
+        self.wechat_service_status_message = ""
+        self.wechat_service_callback_url = ""
+
+    def load_payload(self, payload: dict) -> None:
+        super().load_payload(payload)
+        self._wechat_payload = {
+            "wechat_service_enabled": bool(payload.get("wechat_service_enabled")),
+            "wechat_service_host": str(payload.get("wechat_service_host", "")).strip() or "127.0.0.1",
+            "wechat_service_port": int(payload.get("wechat_service_port", 9030) or 9030),
+            "wechat_service_api_key": str(payload.get("wechat_service_api_key", "")).strip(),
+            "wechat_service_callback_path": str(payload.get("wechat_service_callback_path", "")).strip()
+            or "/wechat/callback",
+        }
+
+    def to_payload(self) -> dict:
+        payload = super().to_payload()
+        payload.update(self._wechat_payload)
+        return payload
+
+    def set_wechat_service_status(self, message: str) -> None:
+        self.wechat_service_status_message = message
+
+    def set_wechat_service_callback_url(self, url: str) -> None:
+        self.wechat_service_callback_url = url
+
+
+class _FakeWechatServiceManager:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, object]] = []
+
+    def start(self, config: dict) -> dict:
+        self.calls.append(("start", dict(config)))
+        return {
+            "ok": True,
+            "base_url": "http://127.0.0.1:9130",
+            "callback_url": "http://127.0.0.1:9130/wechat/callback",
+            "status_text": "运行中：http://127.0.0.1:9130",
+        }
+
+    def stop(self) -> None:
+        self.calls.append(("stop", None))
+
+    def test_connection(self, config: dict) -> dict:
+        self.calls.append(("test", dict(config)))
+        return {
+            "ok": True,
+            "base_url": "http://127.0.0.1:9130",
+            "callback_url": "http://127.0.0.1:9130/wechat/callback",
+        }
 
 
 def _assert_rich_history_snapshot(
@@ -207,21 +443,47 @@ def test_main_window_uses_custom_app_icon(qtbot, tmp_path):
     assert window.windowIcon().isNull() is False
 
 
+def test_build_app_forces_light_palette_roles():
+    app = build_app()
+    palette = app.palette()
+
+    assert app.styleSheet()
+    assert palette.color(QPalette.ColorRole.Window).name().lower() == "#e9eef5"
+    assert palette.color(QPalette.ColorRole.Base).name().lower() == "#ffffff"
+    assert palette.color(QPalette.ColorRole.AlternateBase).name().lower() == "#f6f8fc"
+    assert palette.color(QPalette.ColorRole.ToolTipBase).name().lower() == "#ffffff"
+    assert palette.color(QPalette.ColorRole.ToolTipText).name().lower() == "#20304a"
+    assert palette.color(QPalette.ColorRole.Highlight).name().lower() == "#3478f6"
+
+
 def test_main_window_wraps_pages_in_mac_style_shell(qtbot, tmp_path):
     window = MainWindow(config_store=ConfigStore(tmp_path / "config.json"), history_store=HistoryStore(tmp_path / "history.json"))
     qtbot.addWidget(window)
     window.show()
     qtbot.waitUntil(lambda: window.nav.height() > 0)
 
+    sidebar = window.findChild(QFrame, "WindowSidebar")
+    brand_title = window.findChild(QLabel, "BrandTitle")
+    brand_subtitle = window.findChild(QLabel, "BrandSubtitle")
+    brand_divider = window.findChild(QFrame, "BrandDivider")
+
     assert window.findChild(QFrame, "WindowShell") is not None
     assert window.findChild(QFrame, "WindowChromeBar") is None
     assert window.findChild(QWidget, "TrafficLights") is None
-    assert window.findChild(QFrame, "WindowSidebar") is not None
+    assert sidebar is not None
     assert window.findChild(QFrame, "WindowContentShell") is not None
-    assert window.nav.count() == 5
+    assert brand_title is not None
+    assert brand_title.text() == "草莓"
+    assert brand_subtitle is not None
+    assert brand_subtitle.text() == "订单管理系统"
+    assert brand_divider is not None
+    assert window.nav.parent() is sidebar
+    assert window.nav.width() == 152
+    assert window.nav.count() == 6
     assert [window.nav.item(index).text() for index in range(window.nav.count())] == [
         "订单录入",
         "历史订单",
+        "自动拍单",
         "财务报表",
         "经营开支",
         "设置",
@@ -281,7 +543,7 @@ def test_main_window_can_prefill_order_expense_from_history(qtbot, tmp_path):
 
     window._handle_history_expense_request(saved_row["record_id"])
 
-    assert window.nav.currentRow() == 3
+    assert window.nav.currentRow() == 4
     assert window.stack.currentWidget() is window.expense_page
     assert window.expense_page._current_scope == "订单级"
     assert window.expense_page._selected_record_id == ""
@@ -455,6 +717,1027 @@ def test_main_window_records_failure_when_feishu_submit_errors(qtbot, tmp_path, 
     assert window.intake_page.capture_widget.status_label.text() == "飞书写入失败：无权限编辑该表"
 
 
+def test_main_window_submits_to_feishu_then_starts_auto_order(qtbot, tmp_path, monkeypatch):
+    from strawberry_order_management.services.auto_order import (
+        AutoOrderItemResult,
+        AutoOrderResult,
+    )
+
+    config_store = ConfigStore(tmp_path / "config.json")
+    history_store = HistoryStore(tmp_path / "history.json")
+    config_store.save(_settings_payload())
+    call_order = []
+    captured_requests = []
+
+    class FakeFeishuClient:
+        def __init__(self, app_id: str, app_secret: str, table_app_token: str, table_id: str):
+            pass
+
+        def get_tenant_access_token(self) -> str:
+            return "tenant_token_123"
+
+        def create_record(self, access_token: str, fields: dict) -> dict:
+            call_order.append("feishu")
+            return {"data": {"record_id": "rec_123"}}
+
+    class FakeAutoOrderExecutor:
+        def run(self, request):
+            call_order.append("auto_order")
+            captured_requests.append(request)
+            return AutoOrderResult(
+                order_status="失败",
+                message="当前版本未接入真实京东执行器",
+                last_run_at="2026-04-17 12:00:00",
+                item_results=(
+                    AutoOrderItemResult(
+                        procurement_index=0,
+                        status="失败",
+                        account_name="京东账号A",
+                        jd_order_id="",
+                        error_message="当前版本未接入真实京东执行器",
+                        last_run_at="2026-04-17 12:00:00",
+                    ),
+                ),
+            )
+
+    monkeypatch.setattr("strawberry_order_management.ui.main_window.FeishuClient", FakeFeishuClient)
+
+    window = MainWindow(
+        config_store=config_store,
+        history_store=history_store,
+        auto_order_executor=FakeAutoOrderExecutor(),
+    )
+    qtbot.addWidget(window)
+
+    window.intake_page.show_order(_sample_order())
+    window.intake_page.shop_selector.setCurrentText("乐宝零食店")
+    window.intake_page.submit_auto_order_button.click()
+
+    qtbot.waitUntil(
+        lambda: window.intake_page.auto_order_status_label.text() == "已送入自动拍单：失败",
+        timeout=3000,
+    )
+
+    assert call_order == ["feishu", "auto_order"]
+    assert captured_requests[0].source == "intake"
+    assert captured_requests[0].procurement_indices == (0,)
+    record = history_store.list_items()[0]
+    assert record["status"] == "已写入飞书"
+    assert record["auto_order_status"] == "失败"
+    assert record["auto_order_message"] == "当前版本未接入真实京东执行器"
+    assert record["order_snapshot"]["procurement_items"][0]["jd_status"] == "失败"
+    assert record["order_snapshot"]["procurement_items"][0]["jd_account_name"] == "京东账号A"
+
+
+def test_main_window_prefers_order_procurement_jd_link_over_product_preset(qtbot, tmp_path, monkeypatch):
+    config_store = ConfigStore(tmp_path / "config.json")
+    history_store = HistoryStore(tmp_path / "history.json")
+    settings_payload = _settings_payload()
+    config_store.save(settings_payload)
+
+    window = MainWindow(
+        config_store=config_store,
+        history_store=history_store,
+    )
+    qtbot.addWidget(window)
+
+    row = {
+        "record_id": "record-1",
+        "shop_name": "乐宝零食店",
+        "order_snapshot": {
+            **_sample_order().__dict__,
+            "procurement_items": [
+                {
+                    "product_name": "澳洲婴儿水",
+                    "quantity": "2",
+                    "cost": "19.00",
+                    "tracking_number": "",
+                    "jd_link": "https://item.jd.com/real-item.html",
+                },
+                {"product_name": "", "quantity": "1", "cost": ""},
+                {"product_name": "", "quantity": "1", "cost": ""},
+            ],
+        },
+        "address_snapshot": {"output_one": "结果一", "output_two": "结果二"},
+    }
+
+    request = window._build_auto_order_request(
+        row,
+        source="history",
+        procurement_indices=(0,),
+        settings_payload=settings_payload,
+    )
+
+    assert request.procurement_items[0]["jd_link"] == "https://item.jd.com/real-item.html"
+
+
+def test_main_window_submits_to_feishu_then_tracks_http_auto_order_task(qtbot, tmp_path, monkeypatch):
+    config_store = ConfigStore(tmp_path / "config.json")
+    history_store = HistoryStore(tmp_path / "history.json")
+    payload = _settings_payload()
+    payload.update(
+        {
+            "auto_order_bridge_enabled": True,
+            "auto_order_bridge_base_url": "http://127.0.0.1:9000",
+            "auto_order_bridge_api_key": "bridge-key",
+            "auto_order_bridge_poll_interval_seconds": 0,
+            "auto_order_bridge_timeout_seconds": 1200,
+        }
+    )
+    config_store.save(payload)
+    call_order = []
+
+    class FakeFeishuClient:
+        def __init__(self, app_id: str, app_secret: str, table_app_token: str, table_id: str):
+            pass
+
+        def get_tenant_access_token(self) -> str:
+            return "tenant_token_123"
+
+        def create_record(self, access_token: str, fields: dict) -> dict:
+            call_order.append("feishu")
+            return {"data": {"record_id": "rec_123"}}
+
+    class FakeAutoOrderBridge:
+        def __init__(self):
+            self.poll_count = 0
+
+        def submit(self, request):
+            call_order.append("submit")
+            return type(
+                "Ticket",
+                (),
+                {
+                    "task_id": "task-1",
+                    "task_status": "queued",
+                    "message": "排队中",
+                    "submitted_at": "2026-04-17 12:00:00",
+                    "updated_at": "2026-04-17 12:00:00",
+                },
+            )()
+
+        def poll(self, ticket):
+            self.poll_count += 1
+            call_order.append(f"poll-{self.poll_count}")
+            if self.poll_count == 1:
+                return type(
+                    "Snapshot",
+                    (),
+                    {
+                        "task_id": "task-1",
+                        "task_status": "running",
+                        "message": "执行中",
+                        "submitted_at": "2026-04-17 12:00:00",
+                        "updated_at": "2026-04-17 12:00:02",
+                        "item_results": (),
+                    },
+                )()
+            return type(
+                "Snapshot",
+                (),
+                {
+                    "task_id": "task-1",
+                    "task_status": "succeeded",
+                    "message": "已到待付款",
+                    "submitted_at": "2026-04-17 12:00:00",
+                    "updated_at": "2026-04-17 12:00:05",
+                    "item_results": (
+                        type(
+                            "ItemResult",
+                            (),
+                            {
+                                "procurement_index": 0,
+                                "status": "待付款",
+                                "account_name": "京东账号A",
+                                "jd_order_id": "JD8932001",
+                                "error_message": "",
+                                "last_run_at": "2026-04-17 12:00:05",
+                            },
+                        )(),
+                    ),
+                },
+            )()
+
+    monkeypatch.setattr("strawberry_order_management.ui.main_window.FeishuClient", FakeFeishuClient)
+
+    window = MainWindow(
+        config_store=config_store,
+        history_store=history_store,
+        auto_order_executor=FakeAutoOrderBridge(),
+    )
+    qtbot.addWidget(window)
+
+    window.intake_page.show_order(_sample_order())
+    window.intake_page.shop_selector.setCurrentText("乐宝零食店")
+    window.intake_page.submit_auto_order_button.click()
+
+    qtbot.waitUntil(
+        lambda: window.intake_page.auto_order_status_label.text() == "已送入自动拍单：已到待付款",
+        timeout=3000,
+    )
+
+    record = history_store.list_items()[0]
+    assert call_order == ["feishu", "submit", "poll-1", "poll-2"]
+    assert record["auto_order_status"] == "已到待付款"
+    assert record["auto_order_task_id"] == "task-1"
+    assert record["auto_order_task_status"] == "succeeded"
+    assert record["auto_order_task_submitted_at"] == "2026-04-17 12:00:00"
+    assert record["auto_order_task_last_polled_at"] == "2026-04-17 12:00:05"
+    assert record["order_snapshot"]["procurement_items"][0]["jd_status"] == "待付款"
+    assert record["order_snapshot"]["procurement_items"][0]["jd_order_id"] == "JD8932001"
+
+
+def test_main_window_marks_auto_order_failed_without_calling_bridge_when_jd_link_missing(qtbot, tmp_path, monkeypatch):
+    config_store = ConfigStore(tmp_path / "config.json")
+    history_store = HistoryStore(tmp_path / "history.json")
+    payload = _settings_payload()
+    payload.update(
+        {
+            "product_presets": [{"name": "澳洲婴儿水", "default_cost": "18.50", "jd_link": ""}],
+            "auto_order_bridge_enabled": True,
+            "auto_order_bridge_base_url": "http://127.0.0.1:9000",
+            "auto_order_bridge_api_key": "bridge-key",
+            "auto_order_bridge_poll_interval_seconds": 0,
+            "auto_order_bridge_timeout_seconds": 1200,
+        }
+    )
+    config_store.save(payload)
+    bridge_calls = []
+
+    class FakeFeishuClient:
+        def __init__(self, app_id: str, app_secret: str, table_app_token: str, table_id: str):
+            pass
+
+        def get_tenant_access_token(self) -> str:
+            return "tenant_token_123"
+
+        def create_record(self, access_token: str, fields: dict) -> dict:
+            return {"data": {"record_id": "rec_123"}}
+
+    class FakeAutoOrderBridge:
+        def submit(self, request):
+            bridge_calls.append(request)
+            raise AssertionError("缺少京东链接时不应该发起桥接请求")
+
+    monkeypatch.setattr("strawberry_order_management.ui.main_window.FeishuClient", FakeFeishuClient)
+
+    window = MainWindow(
+        config_store=config_store,
+        history_store=history_store,
+        auto_order_executor=FakeAutoOrderBridge(),
+    )
+    qtbot.addWidget(window)
+
+    window.intake_page.show_order(_sample_order())
+    window.intake_page.shop_selector.setCurrentText("乐宝零食店")
+    window.intake_page.submit_auto_order_button.click()
+
+    qtbot.waitUntil(
+        lambda: window.intake_page.auto_order_status_label.text() == "已送入自动拍单：失败",
+        timeout=3000,
+    )
+
+    record = history_store.list_items()[0]
+    assert bridge_calls == []
+    assert record["auto_order_status"] == "失败"
+    assert "采购1未配置京东链接" in record["auto_order_message"]
+
+
+def test_main_window_marks_auto_order_failed_without_calling_bridge_when_address_output_one_missing(
+    qtbot,
+    tmp_path,
+    monkeypatch,
+):
+    config_store = ConfigStore(tmp_path / "config.json")
+    history_store = HistoryStore(tmp_path / "history.json")
+    payload = _settings_payload()
+    payload.update(
+        {
+            "auto_order_bridge_enabled": True,
+            "auto_order_bridge_base_url": "http://127.0.0.1:9000",
+            "auto_order_bridge_api_key": "bridge-key",
+            "auto_order_bridge_poll_interval_seconds": 0,
+            "auto_order_bridge_timeout_seconds": 1200,
+        }
+    )
+    config_store.save(payload)
+    bridge_calls = []
+
+    class FakeFeishuClient:
+        def __init__(self, app_id: str, app_secret: str, table_app_token: str, table_id: str):
+            pass
+
+        def get_tenant_access_token(self) -> str:
+            return "tenant_token_123"
+
+        def create_record(self, access_token: str, fields: dict) -> dict:
+            return {"data": {"record_id": "rec_123"}}
+
+    class FakeAutoOrderBridge:
+        def submit(self, request):
+            bridge_calls.append(request)
+            raise AssertionError("缺少结果一时不应该发起桥接请求")
+
+    monkeypatch.setattr("strawberry_order_management.ui.main_window.FeishuClient", FakeFeishuClient)
+
+    window = MainWindow(
+        config_store=config_store,
+        history_store=history_store,
+        auto_order_executor=FakeAutoOrderBridge(),
+    )
+    qtbot.addWidget(window)
+
+    order = _sample_order()
+    window.intake_page.show_order(order)
+    window.intake_page.shop_selector.setCurrentText("乐宝零食店")
+    window.intake_page.address_widget.output_one.clear()
+    window.intake_page.address_widget.output_two.setPlainText("请电话送货上门谢谢【3612】")
+    window.intake_page.submit_auto_order_button.click()
+
+    qtbot.waitUntil(
+        lambda: window.intake_page.auto_order_status_label.text() == "已送入自动拍单：失败",
+        timeout=3000,
+    )
+
+    record = history_store.list_items()[0]
+    assert bridge_calls == []
+    assert record["auto_order_status"] == "失败"
+    assert "缺少地址提取结果一" in record["auto_order_message"]
+
+
+def test_main_window_blocks_bridge_submit_when_account_address_slot_not_verified(qtbot, tmp_path, monkeypatch):
+    config_store = ConfigStore(tmp_path / "config.json")
+    history_store = HistoryStore(tmp_path / "history.json")
+    payload = _settings_payload()
+    payload.update(
+        {
+            "jd_accounts": [
+                {
+                    "name": "京东账号A",
+                    "environment": "/Users/gd/.jd/account-a",
+                    "enabled": True,
+                    "address_slot_verified": False,
+                    "priority": 1,
+                }
+            ],
+            "auto_order_bridge_enabled": True,
+            "auto_order_bridge_base_url": "http://127.0.0.1:9000",
+            "auto_order_bridge_api_key": "bridge-key",
+            "auto_order_bridge_poll_interval_seconds": 0,
+            "auto_order_bridge_timeout_seconds": 1200,
+        }
+    )
+    config_store.save(payload)
+    bridge_calls = []
+
+    class FakeFeishuClient:
+        def __init__(self, app_id: str, app_secret: str, table_app_token: str, table_id: str):
+            pass
+
+        def get_tenant_access_token(self) -> str:
+            return "tenant_token_123"
+
+        def create_record(self, access_token: str, fields: dict) -> dict:
+            return {"data": {"record_id": "rec_123"}}
+
+    class FakeAutoOrderBridge:
+        def submit(self, request):
+            bridge_calls.append(request)
+            raise AssertionError("账号地址槽未验证时不应该发起桥接请求")
+
+    monkeypatch.setattr("strawberry_order_management.ui.main_window.FeishuClient", FakeFeishuClient)
+
+    window = MainWindow(
+        config_store=config_store,
+        history_store=history_store,
+        auto_order_executor=FakeAutoOrderBridge(),
+    )
+    qtbot.addWidget(window)
+
+    window.intake_page.show_order(_sample_order())
+    window.intake_page.shop_selector.setCurrentText("乐宝零食店")
+    window.intake_page.submit_auto_order_button.click()
+
+    qtbot.waitUntil(
+        lambda: window.intake_page.auto_order_status_label.text() == "已送入自动拍单：失败",
+        timeout=3000,
+    )
+
+    record = history_store.list_items()[0]
+    assert bridge_calls == []
+    assert "地址槽已验证" in record["auto_order_message"]
+    assert record["auto_order_debug"]["summary"] == record["auto_order_message"]
+
+
+def test_main_window_can_run_auto_order_environment_check(qtbot, tmp_path):
+    from strawberry_order_management.mock_auto_order_service import RealAutoOrderHttpServer
+
+    class FakeBrowserRunner:
+        def inspect_environment(self, payload: dict) -> dict:
+            return {
+                "status": "success",
+                "message": "京东环境可用",
+                "account_name": "京东账号A",
+                "checked_at": "2026-04-17 12:00:00",
+                "checks": [
+                    {"label": "HTTP 服务连通", "status": "success", "message": "服务可访问"},
+                    {"label": "当前是否已登录京东", "status": "success", "message": "已登录京东"},
+                    {"label": "自动拍单地址槽", "status": "success", "message": "已找到自动拍单地址槽"},
+                ],
+            }
+
+        def run_item(self, payload: dict) -> dict:
+            return {"jd_order_id": "JD9001"}
+
+    server = RealAutoOrderHttpServer(
+        host="127.0.0.1",
+        port=0,
+        api_key="bridge-key",
+        browser_runner=FakeBrowserRunner(),
+    )
+    server.start()
+    try:
+        config_store = ConfigStore(tmp_path / "config.json")
+        payload = _settings_payload()
+        payload.update(
+            {
+                "auto_order_bridge_enabled": True,
+                "auto_order_bridge_base_url": server.url(),
+                "auto_order_bridge_api_key": "bridge-key",
+            }
+        )
+        config_store.save(payload)
+
+        window = MainWindow(
+            config_store=config_store,
+            history_store=HistoryStore(tmp_path / "history.json"),
+        )
+        qtbot.addWidget(window)
+
+        window.settings_page.run_auto_order_check_button.click()
+
+        qtbot.waitUntil(
+            lambda: "已登录京东" in window.settings_page.auto_order_check_result_label.text(),
+            timeout=3000,
+        )
+    finally:
+        server.stop()
+
+
+def test_main_window_auto_starts_service_before_auto_order_environment_check(qtbot, tmp_path, monkeypatch):
+    config_store = ConfigStore(tmp_path / "config.json")
+    payload = _settings_payload()
+    payload.update(
+        {
+            "auto_order_bridge_enabled": True,
+            "auto_order_bridge_base_url": "http://127.0.0.1:9010",
+            "auto_order_bridge_api_key": "bridge-key",
+        }
+    )
+    config_store.save(payload)
+
+    class FakeServiceManager:
+        def __init__(self) -> None:
+            self.ensure_calls = []
+
+        def ensure_service(self, bridge_config: dict) -> bool:
+            self.ensure_calls.append(dict(bridge_config))
+            return True
+
+        def restart_service(self, bridge_config: dict) -> bool:
+            raise AssertionError("环境自检前只需要自动拉起，不应该先走重启")
+
+        def should_restart_after_failure(self, bridge_config: dict, message: str) -> bool:
+            return False
+
+        def status_text(self, bridge_config=None) -> str:
+            return "运行中"
+
+        def shutdown(self) -> None:
+            return None
+
+    class FakeBridge:
+        def __init__(self, config: dict):
+            self.config = config
+
+        def check(self, verified_accounts):
+            return SimpleNamespace(
+                status="success",
+                message="京东环境可用",
+                account_name="京东账号A",
+                checked_at="2026-04-18 19:30:00",
+                checks=(),
+            )
+
+    monkeypatch.setattr("strawberry_order_management.ui.main_window.LocalHttpAutoOrderBridge", FakeBridge)
+
+    manager = FakeServiceManager()
+    window = MainWindow(
+        config_store=config_store,
+        history_store=HistoryStore(tmp_path / "history.json"),
+        auto_order_service_manager=manager,
+    )
+    qtbot.addWidget(window)
+
+    window.settings_page.run_auto_order_check_button.click()
+
+    qtbot.waitUntil(
+        lambda: "成功：京东环境可用" in window.settings_page.auto_order_check_result_label.text(),
+        timeout=3000,
+    )
+
+    assert len(manager.ensure_calls) == 1
+    assert window.settings_page.auto_order_service_status_label.text() == "运行中"
+
+
+def test_main_window_auto_starts_service_before_bridge_submit(qtbot, tmp_path, monkeypatch):
+    config_store = ConfigStore(tmp_path / "config.json")
+    history_store = HistoryStore(tmp_path / "history.json")
+    payload = _settings_payload()
+    payload.update(
+        {
+            "auto_order_bridge_enabled": True,
+            "auto_order_bridge_base_url": "http://127.0.0.1:9010",
+            "auto_order_bridge_api_key": "bridge-key",
+            "auto_order_bridge_poll_interval_seconds": 0,
+            "auto_order_bridge_timeout_seconds": 1200,
+        }
+    )
+    config_store.save(payload)
+
+    class FakeServiceManager:
+        def __init__(self) -> None:
+            self.ensure_calls = []
+
+        def ensure_service(self, bridge_config: dict) -> bool:
+            self.ensure_calls.append(dict(bridge_config))
+            return True
+
+        def restart_service(self, bridge_config: dict) -> bool:
+            raise AssertionError("正常提交前不应该先走重启")
+
+        def should_restart_after_failure(self, bridge_config: dict, message: str) -> bool:
+            return False
+
+        def status_text(self, bridge_config=None) -> str:
+            return "运行中"
+
+        def shutdown(self) -> None:
+            return None
+
+    class FakeFeishuClient:
+        def __init__(self, app_id: str, app_secret: str, table_app_token: str, table_id: str):
+            pass
+
+        def get_tenant_access_token(self) -> str:
+            return "tenant_token_123"
+
+        def create_record(self, access_token: str, fields: dict) -> dict:
+            return {"data": {"record_id": "rec_123"}}
+
+    class FakeAutoOrderBridge:
+        def __init__(self) -> None:
+            self.submit_calls = []
+            self.poll_count = 0
+
+        def submit(self, request):
+            self.submit_calls.append(request)
+            return AutoOrderTaskTicket(
+                task_id="task-ensure-1",
+                task_status="queued",
+                message="排队中",
+                submitted_at="2026-04-18 19:31:00",
+                updated_at="2026-04-18 19:31:00",
+            )
+
+        def poll(self, ticket):
+            self.poll_count += 1
+            return AutoOrderTaskSnapshot(
+                task_id=ticket.task_id,
+                task_status="succeeded",
+                message="已到待付款",
+                submitted_at="2026-04-18 19:31:00",
+                updated_at="2026-04-18 19:31:02",
+                item_results=(
+                    AutoOrderItemResult(
+                        procurement_index=0,
+                        status="待付款",
+                        account_name="京东账号A",
+                        jd_order_id="JD910001",
+                        error_message="",
+                        last_run_at="2026-04-18 19:31:02",
+                    ),
+                ),
+            )
+
+    monkeypatch.setattr("strawberry_order_management.ui.main_window.FeishuClient", FakeFeishuClient)
+
+    manager = FakeServiceManager()
+    bridge = FakeAutoOrderBridge()
+    window = MainWindow(
+        config_store=config_store,
+        history_store=history_store,
+        auto_order_executor=bridge,
+        auto_order_service_manager=manager,
+    )
+    qtbot.addWidget(window)
+
+    window.intake_page.show_order(_sample_order())
+    window.intake_page.shop_selector.setCurrentText("乐宝零食店")
+    window.intake_page.submit_auto_order_button.click()
+
+    qtbot.waitUntil(
+        lambda: window.intake_page.auto_order_status_label.text() == "已送入自动拍单：已到待付款",
+        timeout=3000,
+    )
+
+    assert len(manager.ensure_calls) == 1
+    assert len(bridge.submit_calls) == 1
+    assert window.settings_page.auto_order_service_status_label.text() == "运行中"
+
+
+def test_main_window_restarts_service_once_when_bridge_submit_hits_service_unavailable(
+    qtbot,
+    tmp_path,
+    monkeypatch,
+):
+    config_store = ConfigStore(tmp_path / "config.json")
+    history_store = HistoryStore(tmp_path / "history.json")
+    payload = _settings_payload()
+    payload.update(
+        {
+            "auto_order_bridge_enabled": True,
+            "auto_order_bridge_base_url": "http://127.0.0.1:9010",
+            "auto_order_bridge_api_key": "bridge-key",
+            "auto_order_bridge_poll_interval_seconds": 0,
+            "auto_order_bridge_timeout_seconds": 1200,
+        }
+    )
+    config_store.save(payload)
+
+    class FakeServiceManager:
+        def __init__(self) -> None:
+            self.ensure_calls = []
+            self.restart_calls = []
+            self.failure_checks = []
+
+        def ensure_service(self, bridge_config: dict) -> bool:
+            self.ensure_calls.append(dict(bridge_config))
+            return True
+
+        def restart_service(self, bridge_config: dict) -> bool:
+            self.restart_calls.append(dict(bridge_config))
+            return True
+
+        def should_restart_after_failure(self, bridge_config: dict, message: str) -> bool:
+            self.failure_checks.append((dict(bridge_config), message))
+            return "503" in message
+
+        def status_text(self, bridge_config=None) -> str:
+            return "运行中"
+
+        def shutdown(self) -> None:
+            return None
+
+    class FakeFeishuClient:
+        def __init__(self, app_id: str, app_secret: str, table_app_token: str, table_id: str):
+            pass
+
+        def get_tenant_access_token(self) -> str:
+            return "tenant_token_123"
+
+        def create_record(self, access_token: str, fields: dict) -> dict:
+            return {"data": {"record_id": "rec_123"}}
+
+    class FakeAutoOrderBridge:
+        def __init__(self) -> None:
+            self.submit_count = 0
+
+        def submit(self, request):
+            self.submit_count += 1
+            if self.submit_count == 1:
+                raise AutoOrderBridgeError(
+                    "自动拍单服务请求失败：503 Server Error: Service Unavailable for url: http://127.0.0.1:9010/auto-order/tasks"
+                )
+            return AutoOrderTaskTicket(
+                task_id="task-restart-1",
+                task_status="queued",
+                message="排队中",
+                submitted_at="2026-04-18 19:32:00",
+                updated_at="2026-04-18 19:32:00",
+            )
+
+        def poll(self, ticket):
+            return AutoOrderTaskSnapshot(
+                task_id=ticket.task_id,
+                task_status="succeeded",
+                message="已到待付款",
+                submitted_at="2026-04-18 19:32:00",
+                updated_at="2026-04-18 19:32:03",
+                item_results=(
+                    AutoOrderItemResult(
+                        procurement_index=0,
+                        status="待付款",
+                        account_name="京东账号A",
+                        jd_order_id="JD910002",
+                        error_message="",
+                        last_run_at="2026-04-18 19:32:03",
+                    ),
+                ),
+            )
+
+    monkeypatch.setattr("strawberry_order_management.ui.main_window.FeishuClient", FakeFeishuClient)
+
+    manager = FakeServiceManager()
+    bridge = FakeAutoOrderBridge()
+    window = MainWindow(
+        config_store=config_store,
+        history_store=history_store,
+        auto_order_executor=bridge,
+        auto_order_service_manager=manager,
+    )
+    qtbot.addWidget(window)
+
+    window.intake_page.show_order(_sample_order())
+    window.intake_page.shop_selector.setCurrentText("乐宝零食店")
+    window.intake_page.submit_auto_order_button.click()
+
+    qtbot.waitUntil(
+        lambda: window.intake_page.auto_order_status_label.text() == "已送入自动拍单：已到待付款",
+        timeout=3000,
+    )
+
+    assert len(manager.ensure_calls) == 1
+    assert len(manager.restart_calls) == 1
+    assert len(manager.failure_checks) == 1
+    assert bridge.submit_count == 2
+
+
+def test_main_window_shows_manual_retry_hint_for_untracked_auto_order_task_after_restart(qtbot, tmp_path):
+    config_store = ConfigStore(tmp_path / "config.json")
+    history_store = HistoryStore(tmp_path / "history.json")
+    config_store.save(_settings_payload())
+    history_store.append(
+        {
+            "shop_name": "乐宝零食店",
+            "sync_source": "确认写入飞书",
+            "status": "已写入飞书",
+            "message": "写入成功",
+            "created_at": "2026-04-17T10:24:18",
+            "auto_order_status": "执行中",
+            "auto_order_message": "",
+            "auto_order_task_id": "task-1",
+            "auto_order_task_status": "running",
+            "auto_order_task_submitted_at": "2026-04-17 12:00:00",
+            "auto_order_task_last_polled_at": "2026-04-17 12:00:03",
+            "order_snapshot": {
+                "order_id": "69525544900545379782",
+                "placed_at": "2026-04-17 10:19:50",
+                "platform": "抖店",
+                "order_status": "已拍单未发货",
+                "product_name": "澳大利亚进口婴儿水",
+                "quantity": "1",
+                "income_amount": "142.00",
+                "recipient_name": "谢",
+                "phone_number": "15781251572",
+                "code": "8165",
+                "address": "虚拟地址",
+                "delivery_note": "",
+                "procurement_items": [
+                    {"product_name": "27000-赵露思款", "quantity": "1", "cost": "89", "jd_status": "执行中"},
+                    {"product_name": "", "quantity": "", "cost": ""},
+                    {"product_name": "", "quantity": "", "cost": ""},
+                ],
+            },
+            "address_snapshot": {"output_one": "", "output_two": ""},
+        }
+    )
+
+    window = MainWindow(
+        config_store=config_store,
+        history_store=history_store,
+    )
+    qtbot.addWidget(window)
+
+    window.history_page.list_widget.setCurrentRow(0)
+
+    assert "上次任务未续追，请确认后手动重试" in window.history_page.auto_order_resume_hint_label.text()
+
+
+def test_main_window_syncs_stale_terminal_auto_order_task_on_reload(qtbot, tmp_path):
+    config_store = ConfigStore(tmp_path / "config.json")
+    history_store = HistoryStore(tmp_path / "history.json")
+    payload = _settings_payload()
+    payload["auto_order_bridge_enabled"] = True
+    payload["auto_order_bridge_base_url"] = "http://127.0.0.1:9010"
+    payload["auto_order_bridge_api_key"] = "bridge-key"
+    config_store.save(payload)
+    saved_row = history_store.append(
+        {
+            "record_id": "history-1",
+            "shop_name": "乐宝零食店",
+            "sync_source": "确认写入飞书",
+            "status": "已写入飞书",
+            "message": "写入成功",
+            "created_at": "2026-04-18T20:24:18",
+            "auto_order_status": "执行中",
+            "auto_order_message": "",
+            "auto_order_task_id": "task-1",
+            "auto_order_task_status": "running",
+            "auto_order_task_submitted_at": "2026-04-18 20:24:18",
+            "auto_order_task_last_polled_at": "2026-04-18 20:24:21",
+            "order_snapshot": {
+                "order_id": "69525544900545379782",
+                "placed_at": "2026-04-18 20:19:50",
+                "platform": "抖店",
+                "order_status": "待发货",
+                "product_name": "澳大利亚进口婴儿水",
+                "quantity": "1",
+                "income_amount": "142.00",
+                "recipient_name": "谢",
+                "phone_number": "15781251572",
+                "code": "8165",
+                "address": "虚拟地址",
+                "delivery_note": "",
+                "procurement_items": [
+                    {"product_name": "27000-赵露思款", "quantity": "1", "cost": "89", "jd_status": "执行中"},
+                    {"product_name": "", "quantity": "", "cost": ""},
+                    {"product_name": "", "quantity": "", "cost": ""},
+                ],
+            },
+            "address_snapshot": {"output_one": "", "output_two": ""},
+        }
+    )
+
+    class FakeBridge:
+        def __init__(self):
+            self.poll_calls = []
+
+        def submit(self, request):
+            raise AssertionError("should not submit during stale sync")
+
+        def poll(self, ticket):
+            self.poll_calls.append(ticket)
+            return AutoOrderTaskSnapshot(
+                task_id=ticket.task_id,
+                task_status="succeeded",
+                message="已到待付款",
+                submitted_at=ticket.submitted_at,
+                updated_at="2026-04-18 20:25:00",
+                item_results=(
+                    AutoOrderItemResult(
+                        procurement_index=0,
+                        status="待付款",
+                        account_name="京东账号A",
+                        jd_order_id="JD123",
+                        last_run_at="2026-04-18 20:25:00",
+                    ),
+                ),
+                debug_steps=(
+                    {"at": "2026-04-18 20:24:59", "text": "提交订单｜命中提交按钮"},
+                    {"at": "2026-04-18 20:25:00", "text": "到达待付款｜命中待付款/收银台"},
+                ),
+                debug_updated_at="2026-04-18 20:25:00",
+                debug_stage="到达待付款",
+            )
+
+    bridge = FakeBridge()
+    window = MainWindow(
+        config_store=config_store,
+        history_store=history_store,
+        auto_order_executor=bridge,
+    )
+    qtbot.addWidget(window)
+
+    record = history_store.get(saved_row["record_id"])
+    assert len(bridge.poll_calls) == 1
+    assert record["auto_order_task_status"] == "succeeded"
+    assert record["auto_order_status"] == "已到待付款"
+    assert record["auto_order_message"] == "已到待付款"
+    assert record["order_snapshot"]["procurement_items"][0]["jd_status"] == "待付款"
+    assert record["order_snapshot"]["procurement_items"][0]["jd_order_id"] == "JD123"
+
+
+def test_main_window_does_not_start_auto_order_when_feishu_submit_fails(qtbot, tmp_path, monkeypatch):
+    config_store = ConfigStore(tmp_path / "config.json")
+    history_store = HistoryStore(tmp_path / "history.json")
+    config_store.save(_settings_payload())
+    auto_order_calls = []
+
+    class FakeFeishuClient:
+        def __init__(self, app_id: str, app_secret: str, table_app_token: str, table_id: str):
+            pass
+
+        def get_tenant_access_token(self) -> str:
+            return "tenant_token_123"
+
+        def create_record(self, access_token: str, fields: dict) -> dict:
+            raise ValueError("飞书写入失败：无权限编辑该表")
+
+    class FakeAutoOrderExecutor:
+        def run(self, request):
+            auto_order_calls.append(request)
+            raise AssertionError("不应该在飞书失败后启动自动拍单")
+
+    monkeypatch.setattr("strawberry_order_management.ui.main_window.FeishuClient", FakeFeishuClient)
+
+    window = MainWindow(
+        config_store=config_store,
+        history_store=history_store,
+        auto_order_executor=FakeAutoOrderExecutor(),
+    )
+    qtbot.addWidget(window)
+
+    window.intake_page.show_order(_sample_order())
+    window.intake_page.shop_selector.setCurrentText("乐宝零食店")
+    window.intake_page.submit_auto_order_button.click()
+
+    qtbot.waitUntil(
+        lambda: window.intake_page.capture_widget.status_label.text() == "飞书写入失败：无权限编辑该表",
+        timeout=3000,
+    )
+
+    assert auto_order_calls == []
+    record = history_store.list_items()[0]
+    assert record["auto_order_status"] == ""
+
+
+def test_main_window_history_retries_only_unsuccessful_auto_order_slots(qtbot, tmp_path):
+    from strawberry_order_management.services.auto_order import AutoOrderResult
+
+    config_store = ConfigStore(tmp_path / "config.json")
+    history_store = HistoryStore(tmp_path / "history.json")
+    config_store.save(_settings_payload())
+    saved_row = history_store.append(
+        {
+            "shop_name": "乐宝零食店",
+            "sync_source": "确认写入飞书",
+            "status": "已写入飞书",
+            "message": "写入成功",
+            "created_at": "2026-04-17T10:24:18",
+            "auto_order_status": "部分成功",
+            "order_snapshot": {
+                "order_id": "69525544900545379782",
+                "placed_at": "2026-04-17 10:19:50",
+                "platform": "抖店",
+                "order_status": "已拍单未发货",
+                "product_name": "澳大利亚进口婴儿水",
+                "quantity": "1",
+                "income_amount": "142.00",
+                "recipient_name": "谢",
+                "phone_number": "15781251572",
+                "code": "8165",
+                "address": "虚拟地址",
+                "delivery_note": "",
+                "procurement_items": [
+                    {
+                        "product_name": "27000-赵露思款",
+                        "quantity": "1",
+                        "cost": "89",
+                        "jd_status": "待付款",
+                        "jd_order_id": "JD8932001",
+                    },
+                    {
+                        "product_name": "瓶盖粉色配件",
+                        "quantity": "1",
+                        "cost": "13.8",
+                        "jd_status": "失败",
+                        "jd_error_message": "当前版本未接入真实京东执行器",
+                    },
+                    {"product_name": "", "quantity": "", "cost": ""},
+                ],
+            },
+            "address_snapshot": {"output_one": "", "output_two": ""},
+        }
+    )
+    captured_requests = []
+
+    class FakeAutoOrderExecutor:
+        def run(self, request):
+            captured_requests.append(request)
+            return AutoOrderResult(
+                order_status="部分成功",
+                message="当前版本未接入真实京东执行器",
+                last_run_at="2026-04-17 12:00:00",
+                item_results=(),
+            )
+
+    window = MainWindow(
+        config_store=config_store,
+        history_store=history_store,
+        auto_order_executor=FakeAutoOrderExecutor(),
+    )
+    qtbot.addWidget(window)
+
+    window.history_page.load_rows(history_store.list_items())
+    window.history_page.list_widget.setCurrentRow(0)
+    window.history_page.auto_order_action_button.click()
+
+    assert captured_requests[0].history_record_id == saved_row["record_id"]
+    assert captured_requests[0].source == "history"
+    assert captured_requests[0].procurement_indices == (1,)
+
+
 def test_main_window_submits_to_feishu_in_background(qtbot, tmp_path, monkeypatch):
     config_store = ConfigStore(tmp_path / "config.json")
     history_store = HistoryStore(tmp_path / "history.json")
@@ -535,6 +1818,40 @@ def test_main_window_persists_submit_failure_before_worker_start(qtbot, tmp_path
     assert record["sync_source"] == "确认写入飞书"
     assert record["message"] == "请先在设置页填写：总表 Table ID"
     assert record["order_snapshot"]["order_id"] == _sample_order().order_id
+
+
+def test_main_window_blocks_intake_submit_when_placed_at_missing(qtbot, tmp_path, monkeypatch):
+    config_store = ConfigStore(tmp_path / "config.json")
+    history_store = HistoryStore(tmp_path / "history.json")
+    config_store.save(_settings_payload())
+
+    window = MainWindow(config_store=config_store, history_store=history_store)
+    qtbot.addWidget(window)
+
+    window.intake_page.show_order(replace(_sample_order(), placed_at=""))
+    window.intake_page.shop_selector.setCurrentText("乐宝零食店")
+
+    build_task_called = {"value": False}
+    start_called = {"value": False}
+
+    def fake_build_task(payload: dict) -> dict:
+        build_task_called["value"] = True
+        return {}
+
+    def fake_start_submit_job(task: dict) -> None:
+        start_called["value"] = True
+
+    monkeypatch.setattr(window, "_build_feishu_submission_task", fake_build_task)
+    monkeypatch.setattr(window, "_start_submit_job", fake_start_submit_job)
+
+    window.intake_page.submit_button.click()
+
+    assert window.intake_page.capture_widget.status_label.text() == (
+        "请先补齐下单时间，格式：YYYY-MM-DD HH:MM 或 YYYY-MM-DD HH:MM:SS"
+    )
+    assert build_task_called["value"] is False
+    assert start_called["value"] is False
+    assert history_store.list_items() == []
 
 
 def test_main_window_ignores_missing_history_row_during_async_completion(qtbot, tmp_path):
@@ -822,6 +2139,66 @@ def test_main_window_save_history_edit_updates_existing_feishu_record(qtbot, tmp
     assert history_store.get(selected_row["record_id"])["message"] == "已保存并同步飞书"
 
 
+def test_main_window_save_history_edit_updates_shop_name_and_resubmits_to_new_shop(
+    qtbot, tmp_path, monkeypatch
+):
+    config_store = ConfigStore(tmp_path / "config.json")
+    history_store = HistoryStore(tmp_path / "history.json")
+    config_store.save(_settings_payload())
+
+    captured: dict[str, object] = {"updated": []}
+
+    class FakeFeishuClient:
+        def __init__(self, app_id: str, app_secret: str, table_app_token: str, table_id: str):
+            pass
+
+        def get_tenant_access_token(self) -> str:
+            return "tenant_token_123"
+
+        def update_record(self, access_token: str, record_id: str, fields: dict) -> dict:
+            captured["updated"].append(
+                {
+                    "access_token": access_token,
+                    "record_id": record_id,
+                    "fields": fields,
+                }
+            )
+            return {"data": {"record_id": record_id}}
+
+        def create_record(self, access_token: str, fields: dict) -> dict:
+            raise AssertionError("save history edit should update existing feishu record")
+
+    monkeypatch.setattr("strawberry_order_management.ui.main_window.FeishuClient", FakeFeishuClient)
+
+    window = MainWindow(config_store=config_store, history_store=history_store)
+    qtbot.addWidget(window)
+
+    selected_row = history_store.append(
+        window._build_history_snapshot(
+            {"shop_name": "乐宝零食店", "order": _alternate_order()},
+            "确认写入飞书",
+            "已写入飞书",
+            "写入成功",
+            {"data": {"record_id": "rec_existing"}},
+        )
+    )
+    window.history_page.load_rows(history_store.list_items())
+    window.history_page.list_widget.setCurrentRow(0)
+
+    window.history_page.detail_shop_combo.setCurrentText("欢宝零食店")
+    window.history_page.save_button.click()
+
+    qtbot.waitUntil(
+        lambda: len(captured["updated"]) == 1
+        and history_store.get(selected_row["record_id"])["message"] == "已保存并同步飞书",
+        timeout=3000,
+    )
+
+    assert window.history_page.detail_title_label.text() == "欢宝零食店"
+    assert captured["updated"][0]["fields"]["店铺"] == "欢宝零食店"
+    assert history_store.get(selected_row["record_id"])["shop_name"] == "欢宝零食店"
+
+
 def test_main_window_save_history_edit_recreates_when_feishu_record_missing(qtbot, tmp_path, monkeypatch):
     config_store = ConfigStore(tmp_path / "config.json")
     history_store = HistoryStore(tmp_path / "history.json")
@@ -1012,7 +2389,7 @@ def test_main_window_resubmits_selected_history_row_in_place(qtbot, tmp_path, mo
         )
     )
     window.history_page.load_rows(history_store.list_items())
-    window.history_page.list_widget.setCurrentRow(1)
+    window.history_page.select_record(selected_row["record_id"])
 
     window.history_page.save_button.click()
 
@@ -1041,6 +2418,44 @@ def test_main_window_resubmits_selected_history_row_in_place(qtbot, tmp_path, mo
     saved_product_presets = config_store.load()["product_presets"]
     assert initial_product_presets[0] in saved_product_presets
     assert any(item["name"] == "蓝莓" and item["default_cost"] == "12.50" for item in saved_product_presets)
+
+
+def test_main_window_blocks_history_save_when_placed_at_missing(qtbot, tmp_path, monkeypatch):
+    config_store = ConfigStore(tmp_path / "config.json")
+    history_store = HistoryStore(tmp_path / "history.json")
+    config_store.save(_settings_payload())
+
+    window = MainWindow(config_store=config_store, history_store=history_store)
+    qtbot.addWidget(window)
+
+    saved_row = history_store.append(
+        window._build_history_snapshot(
+            {"shop_name": "乐宝零食店", "order": replace(_sample_order(), placed_at="")},
+            "仅存历史",
+            "仅存历史",
+            "",
+        )
+    )
+    window.history_page.load_rows(history_store.list_items())
+    window.history_page.list_widget.setCurrentRow(0)
+
+    build_task_called = {"value": False}
+
+    def fake_build_task(payload: dict) -> dict:
+        build_task_called["value"] = True
+        return {}
+
+    monkeypatch.setattr(window, "_build_feishu_submission_task", fake_build_task)
+
+    window.history_page.save_button.click()
+
+    assert window.intake_page.capture_widget.status_label.text() == (
+        "请先补齐下单时间，格式：YYYY-MM-DD HH:MM 或 YYYY-MM-DD HH:MM:SS"
+    )
+    assert build_task_called["value"] is False
+    refreshed_row = history_store.get(saved_row["record_id"])
+    assert refreshed_row["status"] == "仅存历史"
+    assert refreshed_row["message"] == ""
 
 
 def test_main_window_resubmits_history_using_edited_snapshot(qtbot, tmp_path, monkeypatch):
@@ -1122,6 +2537,84 @@ def test_main_window_resubmits_history_using_edited_snapshot(qtbot, tmp_path, mo
     assert updated_row["order_snapshot"]["delivery_note"] == "改后备注"
     assert updated_row["order_snapshot"]["income_amount"] == "55.00"
     assert updated_row["feishu_result"] == {"data": {"record_id": "rec_1"}}
+
+
+def test_main_window_history_resubmit_skips_missing_feishu_fields(qtbot, tmp_path, monkeypatch):
+    config_store = ConfigStore(tmp_path / "config.json")
+    history_store = HistoryStore(tmp_path / "history.json")
+    config_store.save(_settings_payload())
+
+    captured: dict[str, object] = {}
+
+    class FakeFeishuClient:
+        def __init__(self, app_id: str, app_secret: str, table_app_token: str, table_id: str):
+            pass
+
+        def get_tenant_access_token(self) -> str:
+            return "tenant_token_123"
+
+        def list_field_names(self, access_token: str) -> set[str]:
+            return {
+                "店铺",
+                "平台",
+                "备注",
+                "订单日期",
+                "下单时间",
+                "收入金额",
+                "平台扣点比例",
+                "平台扣点金额",
+                "其他成本",
+                "采购总成本",
+                "毛利润",
+                "包装费",
+                "发货地址",
+                "采购商品1",
+                "采购数量1",
+                "采购成本1",
+            }
+
+        def update_record(self, access_token: str, record_id: str, fields: dict) -> dict:
+            captured["access_token"] = access_token
+            captured["record_id"] = record_id
+            captured["fields"] = fields
+            return {"data": {"record_id": record_id}}
+
+        def create_record(self, access_token: str, fields: dict) -> dict:
+            raise AssertionError("history resubmit should update existing feishu record")
+
+    monkeypatch.setattr("strawberry_order_management.ui.main_window.FeishuClient", FakeFeishuClient)
+
+    window = MainWindow(config_store=config_store, history_store=history_store)
+    qtbot.addWidget(window)
+
+    selected_row = history_store.append(
+        window._build_history_snapshot(
+            {"shop_name": "乐宝零食店", "order": _alternate_order()},
+            "确认写入飞书",
+            "已写入飞书",
+            "写入成功",
+            {"data": {"record_id": "rec_1"}},
+        )
+    )
+    window.history_page.load_rows(history_store.list_items())
+    window.history_page.list_widget.setCurrentRow(0)
+
+    window.history_page.save_button.click()
+
+    qtbot.waitUntil(
+        lambda: "跳过12个缺失字段" in window.intake_page.capture_widget.status_label.text(),
+        timeout=3000,
+    )
+
+    assert captured["access_token"] == "tenant_token_123"
+    assert captured["record_id"] == "rec_1"
+    assert "订单编号" not in captured["fields"]
+    assert "订单状态" not in captured["fields"]
+    assert captured["fields"]["备注"] == _alternate_order().delivery_note
+    assert history_store.get(selected_row["record_id"])["message"] == (
+        "已保存并同步飞书，已跳过缺失字段："
+        "订单编号、订单状态、商品名称、规格、数量、收件人、手机号、编号、同步方式、同步状态、同步说明、录入时间"
+    )
 
 
 def test_main_window_auto_persists_history_edited_products_to_library(qtbot, tmp_path, monkeypatch):
@@ -1265,6 +2758,176 @@ def test_main_window_auto_persists_procurement_template_when_saving_history(qtbo
             ],
         }
     ]
+
+
+def test_main_window_mobile_order_entry_creates_confirm_later_draft(qtbot, tmp_path):
+    config_store = ConfigStore(tmp_path / "config.json")
+    history_store = HistoryStore(tmp_path / "history.json")
+    config_store.save(
+        {
+            **_settings_payload(),
+            "mobile_order_entry_enabled": True,
+            "mobile_order_entry_host": "127.0.0.1",
+            "mobile_order_entry_port": 0,
+            "mobile_order_entry_api_key": "mobile-key",
+            "intake_default_shop_name": "乐宝零食店",
+            "shops": [{"name": "乐宝零食店", "platform": "微信小店"}],
+        }
+    )
+    window = MainWindow(config_store=config_store, history_store=history_store)
+    qtbot.addWidget(window)
+
+    window.settings_page.start_mobile_order_service_button.click()
+    base_url = window._mobile_order_server.base_url
+    assert window.settings_page.mobile_order_entry_url_label.text() == f"{base_url}/mobile"
+    request = urllib.request.Request(
+        f"{base_url}/mobile/orders/drafts",
+        data=json.dumps(
+            {
+                "text": "张春娜[2666]15789799611山西省太原市小店区北营街道富力金禧城A区5栋1单元2402[2666]"
+            },
+            ensure_ascii=False,
+        ).encode("utf-8"),
+        headers={
+            "Authorization": "Bearer mobile-key",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+
+    with urllib.request.urlopen(request, timeout=2) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+
+    assert payload["ok"] is True
+    assert payload["draft_record_id"]
+    row = history_store.list_items()[0]
+    assert row["shop_name"] == "乐宝零食店"
+    assert row["sync_source"] == "手机助手草稿"
+    assert row["status"] == "待确认"
+    assert row["order_snapshot"]["platform"] == "微信小店"
+    assert row["address_snapshot"]["output_two"] == "请电话送货上门谢谢【2666】"
+    assert "feishu_result" not in row
+
+
+def test_main_window_mobile_entry_can_mount_wechat_callback_on_same_service(qtbot, tmp_path):
+    config_store = ConfigStore(tmp_path / "config.json")
+    history_store = HistoryStore(tmp_path / "history.json")
+    config_store.save(
+        {
+            **_settings_payload(),
+            "mobile_order_entry_enabled": True,
+            "mobile_order_entry_host": "127.0.0.1",
+            "mobile_order_entry_port": 0,
+            "mobile_order_entry_api_key": "mobile-key",
+            "wechat_mp_enabled": True,
+            "wechat_mp_token": "wechat-token",
+            "wechat_mp_tunnel_public_url": "https://orders.example.com",
+            "wechat_mp_callback_path": "/wechat/callback",
+            "intake_default_shop_name": "乐宝零食店",
+            "shops": [{"name": "乐宝零食店", "platform": "微信小店"}],
+        }
+    )
+    window = MainWindow(config_store=config_store, history_store=history_store)
+    qtbot.addWidget(window)
+
+    assert window.settings_page.wechat_mp_callback_url_label.text() == "https://orders.example.com/wechat/callback"
+    assert window.settings_page.wechat_mp_connection_status_label.text() == (
+        "未启动：请先启动手机助手入口，再让 Tunnel 指到这个端口"
+    )
+
+    window.settings_page.start_mobile_order_service_button.click()
+
+    assert window.settings_page.wechat_mp_connection_status_label.text() == (
+        "运行中：公众号回调已复用手机助手入口"
+    )
+    signature = _wechat_signature("wechat-token", "1714108800", "nonce-1")
+    query = urllib.parse.urlencode(
+        {
+            "signature": signature,
+            "timestamp": "1714108800",
+            "nonce": "nonce-1",
+            "echostr": "hello-wechat",
+        }
+    )
+    with urllib.request.urlopen(
+        f"{window._mobile_order_server.base_url}/wechat/callback?{query}",
+        timeout=2,
+    ) as response:
+        body = response.read().decode("utf-8")
+
+    assert body == "hello-wechat"
+
+
+def test_main_window_wires_optional_wechat_service_controls_and_updates_callback_url(
+    qtbot,
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.setattr(main_window_module, "SettingsPage", _FutureWechatSettingsPage)
+    config_store = ConfigStore(tmp_path / "config.json")
+    config_store.save(
+        {
+            **_settings_payload(),
+            "wechat_service_enabled": True,
+            "wechat_service_host": "0.0.0.0",
+            "wechat_service_port": 9031,
+            "wechat_service_api_key": "wechat-key",
+            "wechat_service_callback_path": "/wechat/callback",
+        }
+    )
+    manager = _FakeWechatServiceManager()
+
+    window = MainWindow(config_store=config_store, wechat_service_manager=manager)
+    qtbot.addWidget(window)
+
+    assert window.settings_page.wechat_service_status_message == (
+        "未启动：回调地址 http://0.0.0.0:9031/wechat/callback"
+    )
+    assert window.settings_page.wechat_service_callback_url == "http://0.0.0.0:9031/wechat/callback"
+
+    window.settings_page.wechat_service_start_requested.emit(window.settings_page.to_payload())
+    assert manager.calls[0][0] == "start"
+    assert manager.calls[0][1]["api_key"] == "wechat-key"
+    assert window.settings_page.wechat_service_status_message == "运行中：http://127.0.0.1:9130"
+    assert window.settings_page.wechat_service_callback_url == "http://127.0.0.1:9130/wechat/callback"
+
+    window.settings_page.wechat_service_test_requested.emit(window.settings_page.to_payload())
+    assert manager.calls[1][0] == "test"
+    assert window.settings_page.wechat_service_status_message == "连接成功：http://127.0.0.1:9130"
+
+    window.settings_page.wechat_service_stop_requested.emit(window.settings_page.to_payload())
+    assert manager.calls[2] == ("stop", None)
+    assert window.settings_page.wechat_service_status_message == (
+        "未启动：回调地址 http://0.0.0.0:9031/wechat/callback"
+    )
+    assert window.settings_page.wechat_service_callback_url == "http://0.0.0.0:9031/wechat/callback"
+
+
+def test_main_window_reports_placeholder_status_for_optional_wechat_service_without_manager(
+    qtbot,
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.setattr(main_window_module, "SettingsPage", _FutureWechatSettingsPage)
+    config_store = ConfigStore(tmp_path / "config.json")
+    config_store.save(
+        {
+            **_settings_payload(),
+            "wechat_service_enabled": True,
+            "wechat_service_host": "127.0.0.1",
+            "wechat_service_port": 9030,
+            "wechat_service_api_key": "wechat-key",
+        }
+    )
+
+    window = MainWindow(config_store=config_store)
+    qtbot.addWidget(window)
+
+    assert window.settings_page.wechat_service_callback_url == "http://127.0.0.1:9030/wechat/callback"
+    window.settings_page.wechat_service_start_requested.emit(window.settings_page.to_payload())
+
+    assert window.settings_page.wechat_service_status_message == "待接入：请补充微信公众号服务管理器"
+    assert window.settings_page.wechat_service_callback_url == "http://127.0.0.1:9030/wechat/callback"
 
 
 def test_main_window_updates_procurement_template_when_history_order_changes(qtbot, tmp_path):

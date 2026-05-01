@@ -19,6 +19,7 @@ class ScreenshotInputWidget(QFrame):
         title.setObjectName("SectionTitle")
         self.status_label = QLabel("")
         self.status_label.setObjectName("MutedText")
+        self.status_label.setWordWrap(True)
         self.choose_button = QPushButton("选择图片")
         self.paste_button = QPushButton("粘贴截图")
 
